@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/auth0/go-jwt-middleware/v2/validator"
-	"github.com/jamestelfer/chinmina-bridge/internal/credentialhandler"
-	"github.com/jamestelfer/chinmina-bridge/internal/jwt"
-	"github.com/jamestelfer/chinmina-bridge/internal/vendor"
+	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	api "github.com/buildkite/go-buildkite/v3/buildkite"
-	"github.com/jamestelfer/chinmina-bridge/internal/buildkite"
-	"github.com/jamestelfer/chinmina-bridge/internal/config"
+	"github.com/chinmina/chinmina-bridge/internal/buildkite"
+	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

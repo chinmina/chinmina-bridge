@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jamestelfer/chinmina-bridge/internal/audit"
-	"github.com/jamestelfer/chinmina-bridge/internal/jwt"
-	"github.com/jamestelfer/chinmina-bridge/internal/vendor"
+	"github.com/chinmina/chinmina-bridge/internal/audit"
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 )
 

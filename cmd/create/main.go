@@ -13,7 +13,7 @@ import (
 	"github.com/go-jose/go-jose/v4/json"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	localjwt "github.com/jamestelfer/chinmina-bridge/internal/jwt"
+	localjwt "github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/sethvargo/go-envconfig"
 )
 

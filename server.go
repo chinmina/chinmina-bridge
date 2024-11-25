@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jamestelfer/chinmina-bridge/internal/config"
+	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/rs/zerolog/log"
 )
 

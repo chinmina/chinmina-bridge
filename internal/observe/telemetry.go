@@ -7,9 +7,9 @@ import (
 	"net/http/httptrace"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zerologr"
-	"github.com/jamestelfer/chinmina-bridge/internal/config"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"

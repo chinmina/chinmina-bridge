@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/jamestelfer/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/maypok86/otter"
 	"github.com/rs/zerolog/log"
 )

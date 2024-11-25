@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jamestelfer/chinmina-bridge/internal/credentialhandler"
-	"github.com/jamestelfer/chinmina-bridge/internal/jwt"
-	"github.com/jamestelfer/chinmina-bridge/internal/vendor"
+	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/rs/zerolog/log"
 )
 

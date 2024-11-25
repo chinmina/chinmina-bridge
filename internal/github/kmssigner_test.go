@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/jamestelfer/chinmina-bridge/internal/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

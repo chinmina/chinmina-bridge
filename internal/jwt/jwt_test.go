@@ -15,9 +15,9 @@ import (
 	"github.com/justinas/alice"
 
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
-	"github.com/jamestelfer/chinmina-bridge/internal/audit"
-	"github.com/jamestelfer/chinmina-bridge/internal/config"
-	"github.com/jamestelfer/chinmina-bridge/internal/testhelpers"
+	"github.com/chinmina/chinmina-bridge/internal/audit"
+	"github.com/chinmina/chinmina-bridge/internal/config"
+	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

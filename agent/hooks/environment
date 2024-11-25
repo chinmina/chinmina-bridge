@@ -8,7 +8,7 @@
 # connect to the service and include the correct audience.
 #
 BUILDKITE_PLUGIN_GITHUB_APP_AUTH_VENDOR_URL="http://chinmina-bridge" \
-BUILDKITE_PLUGIN_GITHUB_APP_AUTH_AUDIENCE="github-app-auth:jamestelfer" \
+BUILDKITE_PLUGIN_GITHUB_APP_AUTH_AUDIENCE="github-app-auth:chinmina" \
     source /buildkite/plugins/github-app-auth-buildkite-plugin/hooks/environment
 
 # optional: it is possible to change the git URL, converting it from SSH to
