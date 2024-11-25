@@ -72,7 +72,7 @@ release:
     If needed, binaries of this build can be found below.
 
     > [!IMPORTANT]
-    > Releases can be verified with Sigstore's `cosign`: see the [release verification documentation](./docs/verifying-releases.md) in this repo for details.
+    > Releases can be verified with Sigstore's `cosign`. See the the [release verification guide](https://chinmina.github.io/guides/verifying-releases/) for instructions.
 
 kos:
   - id: chinmina-bridge
