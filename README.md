@@ -41,4 +41,4 @@ if you're confident.
 
 ## License
 
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjamestelfer%2Fchinmina-bridge.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjamestelfer%2Fchinmina-bridge?ref=badge_large)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fchinmina%2Fchinmina-bridge.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fchinmina%2Fchinmina-bridge?ref=badge_large)

@@ -3,7 +3,7 @@ package credentialhandler_test
 import (
 	"testing"
 
-	"github.com/jamestelfer/chinmina-bridge/internal/credentialhandler"
+	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/stretchr/testify/assert"
 )
 

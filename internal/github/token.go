@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
+	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v61/github"
-	"github.com/jamestelfer/chinmina-bridge/internal/config"
 	"github.com/rs/zerolog/log"
 )
 

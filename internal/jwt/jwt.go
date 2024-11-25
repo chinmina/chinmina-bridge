@@ -15,8 +15,8 @@ import (
 	"github.com/auth0/go-jwt-middleware/v2/jwks"
 	"github.com/auth0/go-jwt-middleware/v2/validator"
 
-	"github.com/jamestelfer/chinmina-bridge/internal/audit"
-	"github.com/jamestelfer/chinmina-bridge/internal/config"
+	"github.com/chinmina/chinmina-bridge/internal/audit"
+	"github.com/chinmina/chinmina-bridge/internal/config"
 )
 
 // Middleware returns HTTP middleware that verifies the JWT and

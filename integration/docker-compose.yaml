@@ -33,7 +33,7 @@ services:
       - SERVER_PORT=80
       - BUILDKITE_API_TOKEN
       - JWT_BUILDKITE_ORGANIZATION_SLUG
-      - JWT_AUDIENCE=github-app-auth:jamestelfer
+      - JWT_AUDIENCE=github-app-auth:chinmina
       - GITHUB_APP_PRIVATE_KEY_ARN
       - GITHUB_APP_PRIVATE_KEY
       - GITHUB_APP_ID

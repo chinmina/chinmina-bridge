@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jamestelfer/chinmina-bridge/internal/audit"
-	"github.com/jamestelfer/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/audit"
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
 )
 
 // Auditor is a function that wraps a PipelineTokenVendor and records the result

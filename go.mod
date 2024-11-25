@@ -1,4 +1,4 @@
-module github.com/jamestelfer/chinmina-bridge
+module github.com/chinmina/chinmina-bridge
 
 go 1.23.1
 
