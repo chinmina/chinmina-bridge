@@ -59,6 +59,17 @@ func configureServerRoutes(ctx context.Context, cfg config.Config) (http.Handler
 		return nil, fmt.Errorf("vendor cache configuration failed: %w", err)
 	}
 
+	// Fetch the organization profile from the GitHub repository
+	github.LoadProfile(ctx, gh, cfg.Server.OrgProfileURL)
+
+	// Start Goroutine to refresh the organization profile every 5 minutes
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			github.LoadProfile(ctx, gh, cfg.Server.OrgProfileURL)
+		}
+	}()
+
 	tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken)))
 
 	mux.Handle("POST /token", authorizedRouteMiddleware.Then(handlePostToken(tokenVendor)))

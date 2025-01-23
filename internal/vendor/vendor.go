@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -55,6 +57,14 @@ func New(
 	tokenVendor TokenVendor,
 ) PipelineTokenVendor {
 	return func(ctx context.Context, claims jwt.BuildkiteClaims, requestedRepoURL string) (*PipelineRepositoryToken, error) {
+		// Check for the existence of organization profiles in the current context
+		_, ok := ctx.Value("profileConfig").(github.ProfileConfig)
+		if !ok {
+			log.Info().Msg("No organization profile found. Continuing.")
+		}
+
+		// TODO: Check if the requested profile exists in the organization profile
+
 		// use buildkite api to find the repository for the pipeline
 		pipelineRepoURL, err := repoLookup(ctx, claims.OrganizationSlug, claims.PipelineSlug)
 		if err != nil {
