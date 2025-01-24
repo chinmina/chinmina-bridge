@@ -230,8 +230,36 @@ organization:
 }
 
 // Test the case where the profile is inconsistent with the request made to Chinmina
-// For example, the target repository is not included in the targeted profile
+// In this case, the target repository is not included in the targeted profile
 func TestInconsistentProfile(t *testing.T) {
+	profile := `
+organization:
+  profiles:
+    # allow read access to a set of buildkite-plugins
+    - name: "buildkite-plugin"
+      # array of repos accessible to the profile
+      repositories: 
+        - deploy-templates-buildkite-plugin
+        - very-private-buildkite-plugin
+      permissions: ["contents:read"]
+      
+    # allow package access to any repository
+    - name: "package-registry"
+      # '*' indicates all, when specified must be only value. No other wildcards supported.
+      repositories: ["*"]
+      permissions: ["packages:read"]
+`
+	profileName := "buildkite-plugin"
+	repositoryName := "fake-repo"
+	profileConfig, err := github.ValidateProfile(context.Background(), profile)
+	require.NoError(t, err)
+	_, ok := profileConfig.HasProfile(profileName)
+	assert.Equal(t, ok, true)
+	assert.Equal(t, profileConfig.HasRepository(profileName, repositoryName), false)
+}
+
+// Test the case where the profile does not exist
+func TestNonExistentProfile(t *testing.T) {
 	profile := `
 organization:
   profiles:
@@ -253,12 +281,12 @@ organization:
 	repositoryName := "fake-repo"
 	profileConfig, err := github.ValidateProfile(context.Background(), profile)
 	require.NoError(t, err)
-	assert.Equal(t, profileConfig.HasProfile(profileName), false)
+	_, ok := profileConfig.HasProfile(profileName)
+	assert.Equal(t, ok, false)
 	assert.Equal(t, profileConfig.HasRepository(profileName, repositoryName), false)
 }
 
-// Test the case where the profile is inconsistent with the request made to Chinmina
-// For example, the target repository is not included in the targeted profile
+// Test the case where the profile is OK
 func TestConsistentProfile(t *testing.T) {
 	profile := `
 organization:
@@ -281,6 +309,7 @@ organization:
 	repositoryName := "deploy-templates-buildkite-plugin"
 	profileConfig, err := github.ValidateProfile(context.Background(), profile)
 	require.NoError(t, err)
-	assert.Equal(t, profileConfig.HasProfile(profileName), true)
+	_, ok := profileConfig.HasProfile(profileName)
+	assert.Equal(t, ok, true)
 	assert.Equal(t, profileConfig.HasRepository(profileName, repositoryName), true)
 }

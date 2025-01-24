@@ -74,23 +74,23 @@ func LoadProfile(ctx context.Context, gh Client, orgProfileURL string) error {
 	return nil
 }
 
-func (config *ProfileConfig) HasProfile(name string) bool {
+func (config *ProfileConfig) HasProfile(name string) (Profile, bool) {
 	for _, profile := range config.Organization.Profiles {
 		if profile.Name == name {
-			return true
+			return profile, true
 		}
 	}
-	return false
+	return Profile{}, false
 }
 
 func (config *ProfileConfig) HasRepository(profileName string, repo string) bool {
-	for _, profile := range config.Organization.Profiles {
-		if profile.Name == profileName {
-			for _, repository := range profile.Repositories {
-				if repository == repo {
-					return true
-				}
-			}
+	profile, ok := config.HasProfile(profileName)
+	if !ok {
+		return false
+	}
+	for _, repository := range profile.Repositories {
+		if repository == repo {
+			return true
 		}
 	}
 	return false
