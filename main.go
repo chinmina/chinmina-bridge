@@ -60,17 +60,30 @@ func configureServerRoutes(ctx context.Context, cfg config.Config) (http.Handler
 	}
 
 	// Fetch the organization profile from the GitHub repository
-	github.LoadProfile(ctx, gh, cfg.Server.OrgProfileURL)
+	err = gh.FetchOrganizationProfile(cfg.Server.OrgProfileURL)
+	if err != nil {
+		log.Info().Err(err).Msg("organization profile load failed, continuing")
+	}
 
 	// Start Goroutine to refresh the organization profile every 5 minutes
 	go func() {
+		// We don't want goroutine panics to cascade - recover and log
+		defer func() {
+			if r := recover(); r != nil {
+				log.Info().Interface("recover", r).Msg("refresh goroutine recovered from panic")
+			}
+		}()
 		for {
+
 			time.Sleep(5 * time.Minute)
-			github.LoadProfile(ctx, gh, cfg.Server.OrgProfileURL)
+			err = gh.FetchOrganizationProfile(cfg.Server.OrgProfileURL)
+			if err != nil {
+				log.Info().Err(err).Msg("organization profile refresh failed, continuing")
+			}
 		}
 	}()
 
-	tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken)))
+	tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken, gh.OrganizationProfile)))
 
 	mux.Handle("POST /token", authorizedRouteMiddleware.Then(handlePostToken(tokenVendor)))
 	mux.Handle("POST /git-credentials", authorizedRouteMiddleware.Then(handlePostGitCredentials(tokenVendor)))

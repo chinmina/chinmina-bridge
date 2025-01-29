@@ -17,8 +17,9 @@ import (
 )
 
 type Client struct {
-	client         *github.Client
-	installationID int64
+	client              *github.Client
+	installationID      int64
+	organizationProfile ProfileConfig
 }
 
 func New(ctx context.Context, cfg config.GithubConfig) (Client, error) {
@@ -61,6 +62,7 @@ func New(ctx context.Context, cfg config.GithubConfig) (Client, error) {
 	return Client{
 		client,
 		cfg.InstallationID,
+		ProfileConfig{},
 	}, nil
 }
 

@@ -1,11 +1,10 @@
-# org-name.yaml
-organization:
-  profiles:
+organisation:
+  profilez:
     # allow read access to a set of buildkite-plugins
     - name: "buildkite-plugin"
       # array of repos accessible to the profile
       repositories: 
-        - deploy-templates-buildkite-plugin
+        - somewhat-private-buildkite-plugin
         - very-private-buildkite-plugin
       permissions: ["contents:read"]
       

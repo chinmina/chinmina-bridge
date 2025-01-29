@@ -2,7 +2,9 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
@@ -56,22 +58,22 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 	return profileConfig, nil
 }
 
-func LoadProfile(ctx context.Context, gh Client, orgProfileURL string) error {
+func LoadProfile(ctx context.Context, gh Client, orgProfileURL string) (ProfileConfig, error) {
 	// get the profile
 	profile, err := GetProfile(ctx, gh, orgProfileURL)
 	if err != nil {
-		return err
+		return ProfileConfig{}, err
 	}
 
 	// validate the profile
 	profileConfig, err := ValidateProfile(ctx, profile)
 	if err != nil {
-		return err
+		return ProfileConfig{}, err
 	}
 	//Store it in the shared GitHub context so it can be referenced in the Vendor functionality
-	log.Info().Msg(fmt.Sprintf("Profile loaded: %s", orgProfileURL))
-	ctx = context.WithValue(ctx, "profileConfig", profileConfig)
-	return nil
+	log.Info().Str("url", orgProfileURL).Msg("organization profile configuration loaded")
+
+	return profileConfig, nil
 }
 
 func (config *ProfileConfig) HasProfile(name string) (Profile, bool) {
@@ -94,4 +96,20 @@ func (config *ProfileConfig) HasRepository(profileName string, repo string) bool
 		}
 	}
 	return false
+}
+
+func (c Client) OrganizationProfile(ctx context.Context) (ProfileConfig, error) {
+	if reflect.DeepEqual(c.organizationProfile, ProfileConfig{}) {
+		return c.organizationProfile, errors.New("organization profile not loaded")
+	}
+	return c.organizationProfile, nil
+}
+
+func (c *Client) FetchOrganizationProfile(profileURL string) error {
+	profile, err := LoadProfile(context.Background(), *c, profileURL)
+	if err != nil {
+		return err
+	}
+	c.organizationProfile = profile
+	return nil
 }

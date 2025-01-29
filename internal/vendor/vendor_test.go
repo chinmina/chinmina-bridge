@@ -16,7 +16,7 @@ func TestVendor_FailWhenPipelineLookupFails(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
 		return "", errors.New("pipeline not found")
 	})
-	v := vendor.New(repoLookup, nil)
+	v := vendor.New(repoLookup, nil, nil)
 
 	_, err := v(context.Background(), jwt.BuildkiteClaims{}, "repo-url")
 	require.ErrorContains(t, err, "could not find repository for pipeline")
@@ -26,7 +26,7 @@ func TestVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
 		return "repo-url-mismatch", nil
 	})
-	v := vendor.New(repoLookup, nil)
+	v := vendor.New(repoLookup, nil, nil)
 
 	// when there is a difference between the requested pipeline (by Git
 	// generally) and the repo associated with the pipeline, return success but
@@ -48,7 +48,7 @@ func TestVendor_FailsWhenTokenVendorFails(t *testing.T) {
 	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURL string) (string, time.Time, error) {
 		return "", time.Time{}, errors.New("token vendor failed")
 	})
-	v := vendor.New(repoLookup, tokenVendor)
+	v := vendor.New(repoLookup, tokenVendor, nil)
 
 	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "repo-url")
 	assert.ErrorContains(t, err, "token vendor failed")
@@ -64,7 +64,7 @@ func TestVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURL string) (string, time.Time, error) {
 		return "vended-token-value", vendedDate, nil
 	})
-	v := vendor.New(repoLookup, tokenVendor)
+	v := vendor.New(repoLookup, tokenVendor, nil)
 
 	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "repo-url")
 	assert.NoError(t, err)
