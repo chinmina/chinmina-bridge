@@ -13,6 +13,34 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type ProfileConfig struct {
+	Organization struct {
+		Profiles []Profile `yaml:"profiles"`
+	} `yaml:"organization"`
+}
+
+type Profile struct {
+	Name         string   `yaml:"name"`
+	Repositories []string `yaml:"repositories"`
+	Permissions  []string `yaml:"permissions"`
+}
+
+func (c Client) OrganizationProfile(ctx context.Context) (ProfileConfig, error) {
+	if reflect.DeepEqual(c.organizationProfile, ProfileConfig{}) {
+		return c.organizationProfile, errors.New("organization profile not loaded")
+	}
+	return c.organizationProfile, nil
+}
+
+func (c *Client) FetchOrganizationProfile(profileURL string) error {
+	profile, err := LoadProfile(context.Background(), *c, profileURL)
+	if err != nil {
+		return err
+	}
+	c.organizationProfile = profile
+	return nil
+}
+
 // Decomposes the path into the owner, repo, and path (no http prefix)
 func DecomposePath(path string) (string, string, string) {
 	parts := strings.SplitN(path, "/", 4)
@@ -33,18 +61,6 @@ func GetProfile(ctx context.Context, gh Client, orgProfileURI string) (string, e
 		return "", err
 	}
 	return profile.GetContent()
-}
-
-type ProfileConfig struct {
-	Organization struct {
-		Profiles []Profile `yaml:"profiles"`
-	} `yaml:"organization"`
-}
-
-type Profile struct {
-	Name         string   `yaml:"name"`
-	Repositories []string `yaml:"repositories"`
-	Permissions  []string `yaml:"permissions"`
 }
 
 func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error) {
@@ -96,20 +112,4 @@ func (config *ProfileConfig) HasRepository(profileName string, repo string) bool
 		}
 	}
 	return false
-}
-
-func (c Client) OrganizationProfile(ctx context.Context) (ProfileConfig, error) {
-	if reflect.DeepEqual(c.organizationProfile, ProfileConfig{}) {
-		return c.organizationProfile, errors.New("organization profile not loaded")
-	}
-	return c.organizationProfile, nil
-}
-
-func (c *Client) FetchOrganizationProfile(profileURL string) error {
-	profile, err := LoadProfile(context.Background(), *c, profileURL)
-	if err != nil {
-		return err
-	}
-	c.organizationProfile = profile
-	return nil
 }

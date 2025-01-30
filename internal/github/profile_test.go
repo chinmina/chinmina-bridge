@@ -20,7 +20,7 @@ var profile string
 //go:embed profile/invalid_profile.yaml
 var invalidProfile string
 
-// Test that the
+// Test that the URL Decomposition logic works as expected
 func TestURLDecomposition(t *testing.T) {
 	// Example of a valid profile URL
 	configURL := "github.com/chinmina/chinmina-bridge/docs/profile.yaml"
@@ -31,7 +31,7 @@ func TestURLDecomposition(t *testing.T) {
 	assert.Equal(t, "chinmina-bridge", repo)
 	assert.Equal(t, "docs/profile.yaml", path)
 
-	// Example of a valid profile URL
+	// Example of an invalid profile URL
 	configURL = "github.com/chinmina/non-existent-profile.yaml"
 	// Test that the profile URL is valid
 	owner, repo, path = github.DecomposePath(configURL)
