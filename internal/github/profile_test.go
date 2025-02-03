@@ -197,7 +197,7 @@ func TestLoadProfile(t *testing.T) {
 }
 
 func TestFetchProfile(t *testing.T) {
-
+	profileChan := make(chan *github.ProfileConfig, 1)
 	router := http.NewServeMux()
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
@@ -226,17 +226,24 @@ func TestFetchProfile(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
+
+	validatedProfile, err := github.ValidateProfile(context.Background(), profile)
+	require.NoError(t, err)
 	// Test that we get an error attempting to load it before fetching
-	_, err = gh.OrganizationProfile(context.Background())
+	_, err = gh.OrganizationProfile(context.Background(), profileChan)
 	require.Error(t, err)
 
-	err = gh.FetchOrganizationProfile(configURL)
+	err = gh.FetchOrganizationProfile(configURL, profileChan)
 	require.NoError(t, err)
+	chanVal := <-profileChan
+	assert.Equal(t, validatedProfile, *chanVal)
 
-	_, err = gh.OrganizationProfile(context.Background())
+	err = gh.FetchOrganizationProfile(configURL, profileChan)
+	loadedProfile, err := gh.OrganizationProfile(context.Background(), profileChan)
 	require.NoError(t, err)
+	assert.Equal(t, *loadedProfile, validatedProfile)
 
-	err = gh.FetchOrganizationProfile(fakeURL)
+	err = gh.FetchOrganizationProfile(fakeURL, profileChan)
 	require.Error(t, err)
 }
 

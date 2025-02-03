@@ -2,13 +2,14 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
 )
@@ -25,19 +26,43 @@ type Profile struct {
 	Permissions  []string `yaml:"permissions"`
 }
 
-func (c Client) OrganizationProfile(ctx context.Context) (ProfileConfig, error) {
-	if reflect.DeepEqual(c.organizationProfile, ProfileConfig{}) {
-		return c.organizationProfile, errors.New("organization profile not loaded")
+func (p ProfileConfig) MarshalZerologObject(e *zerolog.Event) {
+	result, err := json.Marshal(p)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to marshal ProfileConfig")
 	}
-	return c.organizationProfile, nil
+	e.Str("profileConfig", string(result))
 }
 
-func (c *Client) FetchOrganizationProfile(profileURL string) error {
+func (c *Client) OrganizationProfile(ctx context.Context, profileChan chan (*ProfileConfig)) (*ProfileConfig, error) {
+	// If there are profiles in the channel, return the first one.
+	// Otherwise we will return the existing org profile.
+	emptyProfile := ProfileConfig{}
+	for {
+		select {
+		case profile := <-profileChan:
+			// Check whether the received profile differs
+			if !c.organizationProfile.CompareAndSwap(profile, profile) {
+				c.organizationProfile.Store(profile)
+				log.Info().EmbedObject(c.organizationProfile.Load()).Msg("organization profile configuration loaded")
+			} 
+		default:
+			// This comparison needs to be atomic, because this comparison could be made across threads.
+			// Handle the initial case where the profile is not loaded
+			if c.organizationProfile.CompareAndSwap(nil, &emptyProfile) {
+				return c.organizationProfile.Load(), errors.New("organization profile not loaded")
+			}
+		}
+		return c.organizationProfile.Load(), nil
+	}
+}
+
+func (c *Client) FetchOrganizationProfile(profileURL string, profileChan chan (*ProfileConfig)) error {
 	profile, err := LoadProfile(context.Background(), *c, profileURL)
 	if err != nil {
 		return err
 	}
-	c.organizationProfile = profile
+	profileChan <- &profile
 	return nil
 }
 

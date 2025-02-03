@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
@@ -19,7 +20,7 @@ import (
 type Client struct {
 	client              *github.Client
 	installationID      int64
-	organizationProfile ProfileConfig
+	organizationProfile atomic.Pointer[ProfileConfig]
 }
 
 func New(ctx context.Context, cfg config.GithubConfig) (Client, error) {
@@ -62,11 +63,11 @@ func New(ctx context.Context, cfg config.GithubConfig) (Client, error) {
 	return Client{
 		client,
 		cfg.InstallationID,
-		ProfileConfig{},
+		atomic.Pointer[ProfileConfig]{},
 	}, nil
 }
 
-func (c Client) CreateAccessToken(ctx context.Context, repositoryURL string) (string, time.Time, error) {
+func (c *Client) CreateAccessToken(ctx context.Context, repositoryURL string) (string, time.Time, error) {
 	u, err := url.Parse(repositoryURL)
 	if err != nil {
 		return "", time.Time{}, err

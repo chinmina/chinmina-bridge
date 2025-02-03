@@ -24,7 +24,7 @@ type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug s
 type TokenVendor func(ctx context.Context, repositoryURL string) (string, time.Time, error)
 
 // Retrieve an organization profile from the current state of the GitHub client
-type ConfigurationStore func(ctx context.Context) (github.ProfileConfig, error)
+type ConfigurationStore func(ctx context.Context, profileChan chan (*github.ProfileConfig)) (*github.ProfileConfig, error)
 
 type PipelineRepositoryToken struct {
 	OrganizationSlug string    `json:"organizationSlug"`
@@ -64,7 +64,11 @@ func New(
 
 		// Load the configuration from the GitHub client
 		// TODO: actually handle the profile
-		// profile, err := orgProfile(ctx)
+		// 	_, err = orgProfile(ctx, profileChan)
+		//	if err != nil {
+		//		log.Info().Err(err).Msg("organization profile not found, continuing")
+		//	}
+		//
 
 		// use buildkite api to find the repository for the pipeline
 		pipelineRepoURL, err := repoLookup(ctx, claims.OrganizationSlug, claims.PipelineSlug)

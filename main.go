@@ -22,7 +22,7 @@ import (
 	"github.com/justinas/alice"
 )
 
-func configureServerRoutes(ctx context.Context, cfg config.Config) (http.Handler, error) {
+func configureServerRoutes(ctx context.Context, cfg config.Config, refreshChannel chan (*github.ProfileConfig)) (http.Handler, error) {
 	// wrap a mux such that HTTP telemetry is configured by default
 	muxWithoutTelemetry := http.NewServeMux()
 	mux := observe.NewMux(muxWithoutTelemetry)
@@ -60,28 +60,10 @@ func configureServerRoutes(ctx context.Context, cfg config.Config) (http.Handler
 	}
 
 	// Fetch the organization profile from the GitHub repository
-	err = gh.FetchOrganizationProfile(cfg.Server.OrgProfileURL)
+	err = gh.FetchOrganizationProfile(cfg.Server.OrgProfileURL, refreshChannel)
 	if err != nil {
 		log.Info().Err(err).Msg("organization profile load failed, continuing")
 	}
-
-	// Start Goroutine to refresh the organization profile every 5 minutes
-	go func() {
-		// We don't want goroutine panics to cascade - recover and log
-		defer func() {
-			if r := recover(); r != nil {
-				log.Info().Interface("recover", r).Msg("refresh goroutine recovered from panic")
-			}
-		}()
-		for {
-
-			time.Sleep(5 * time.Minute)
-			err = gh.FetchOrganizationProfile(cfg.Server.OrgProfileURL)
-			if err != nil {
-				log.Info().Err(err).Msg("organization profile refresh failed, continuing")
-			}
-		}
-	}()
 
 	tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken, gh.OrganizationProfile)))
 
@@ -106,6 +88,7 @@ func main() {
 }
 
 func launchServer() error {
+	profileChan := make(chan *github.ProfileConfig)
 	ctx := context.Background()
 
 	cfg, err := config.Load(context.Background())
@@ -128,10 +111,35 @@ func launchServer() error {
 	}
 
 	// setup routing and dependencies
-	handler, err := configureServerRoutes(ctx, cfg)
+	handler, err := configureServerRoutes(ctx, cfg, profileChan)
 	if err != nil {
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
+
+	// Start Goroutine to refresh the organization profile every 5 minutes.
+	// Unfortunately this does mean we need another GitHub client.
+	gh, err := github.New(ctx, cfg.Github)
+	if err != nil {
+		return fmt.Errorf("github configuration failed: %w", err)
+	}
+
+	go func() {
+		// We don't want goroutine panics to cascade - recover and log
+		defer func() {
+			if r := recover(); r != nil {
+				log.Info().Interface("recover", r).Msg("refresh goroutine recovered from panic")
+			}
+		}()
+		for {
+
+			time.Sleep(5 * time.Minute)
+			err = gh.FetchOrganizationProfile(cfg.Server.OrgProfileURL, profileChan)
+			if err != nil {
+				log.Info().Err(err).Msg("organization profile refresh failed, continuing")
+			}
+
+		}
+	}()
 
 	// start the server
 	server := &http.Server{
