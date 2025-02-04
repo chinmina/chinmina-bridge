@@ -4,10 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
-
-	"github.com/chinmina/chinmina-bridge/internal/audit"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -81,8 +78,7 @@ func GetProfile(ctx context.Context, gh Client, orgProfileURI string) (string, e
 	owner, repo, path := DecomposePath(orgProfileURI)
 	profile, _, _, err := gh.client.Repositories.GetContents(ctx, owner, repo, path, nil)
 	if err != nil {
-		entry := audit.Log(ctx)
-		entry.Error = fmt.Sprintf("Unable to load organization profile %s", err.Error())
+		log.Info().Err(err).Msg("organization profile load failed, continuing")
 		return "", err
 	}
 	return profile.GetContent()
@@ -92,8 +88,7 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 	profileConfig := ProfileConfig{}
 	err := yaml.UnmarshalStrict([]byte(profile), &profileConfig)
 	if err != nil {
-		entry := audit.Log(ctx)
-		entry.Error = fmt.Sprintf("Organization profile invalid %s", err.Error())
+		log.Info().Err(err).Msg("organization profile invalid")
 		return ProfileConfig{}, err
 	}
 	return profileConfig, nil
