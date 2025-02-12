@@ -88,7 +88,6 @@ func (c *Client) CreateAccessToken(ctx context.Context, repositoryURL string) (s
 	}
 
 	log.Info().Int("limit", r.Rate.Limit).Int("remaining", r.Rate.Remaining).Msg("github token API rate")
-
 	return tok.GetToken(), tok.GetExpiresAt().Time, nil
 }
 

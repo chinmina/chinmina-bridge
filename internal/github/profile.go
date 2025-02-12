@@ -6,8 +6,10 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/google/go-github/v61/github"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 )
 
@@ -42,7 +44,7 @@ func (c *Client) OrganizationProfile(ctx context.Context, profileChan chan (*Pro
 			if !c.organizationProfile.CompareAndSwap(profile, profile) {
 				c.organizationProfile.Store(profile)
 				log.Info().EmbedObject(c.organizationProfile.Load()).Msg("organization profile configuration loaded")
-			} 
+			}
 		default:
 			// This comparison needs to be atomic, because this comparison could be made across threads.
 			// Handle the initial case where the profile is not loaded
@@ -76,11 +78,29 @@ func GetProfile(ctx context.Context, gh Client, orgProfileURI string) (string, e
 
 	// get the profile
 	owner, repo, path := DecomposePath(orgProfileURI)
+	token, _, err := gh.CreateAccessToken(ctx, "https://github.com/"+owner+"/"+repo)
+	if err != nil {
+		log.Info().Err(err).Msg("token unable to be created")
+		return "", err
+	}
+
+	// Configure the http client with the token
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	// Set up a client to use the token. There's a bit of a dance here to ensure this remains testable
+	// using our existing mocks
+	client := github.NewClient(tc)
+	client.BaseURL = gh.client.BaseURL
+	gh.client = client
 	profile, _, _, err := gh.client.Repositories.GetContents(ctx, owner, repo, path, nil)
 	if err != nil {
 		log.Info().Err(err).Msg("organization profile load failed, continuing")
 		return "", err
 	}
+
 	return profile.GetContent()
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
@@ -46,6 +47,16 @@ func TestRepositoryContents(t *testing.T) {
 
 	router := http.NewServeMux()
 
+	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
+
+	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+
+		JSON(w, &api.InstallationToken{
+			Token:     api.String("expected-token"),
+			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
+		})
+	})
+
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
 
 		JSON(w, &api.RepositoryContent{
@@ -80,6 +91,16 @@ func TestRepositoryContents(t *testing.T) {
 func TestInvalidRepositoryContents(t *testing.T) {
 
 	router := http.NewServeMux()
+
+	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
+
+	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+
+		JSON(w, &api.InstallationToken{
+			Token:     api.String("expected-token"),
+			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
+		})
+	})
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
@@ -129,6 +150,16 @@ func TestInvalidProfile(t *testing.T) {
 
 func TestLoadProfile(t *testing.T) {
 	router := http.NewServeMux()
+
+	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
+
+	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+
+		JSON(w, &api.InstallationToken{
+			Token:     api.String("expected-token"),
+			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
+		})
+	})
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
 
@@ -199,6 +230,16 @@ func TestLoadProfile(t *testing.T) {
 func TestFetchProfile(t *testing.T) {
 	profileChan := make(chan *github.ProfileConfig, 1)
 	router := http.NewServeMux()
+
+	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
+
+	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+
+		JSON(w, &api.InstallationToken{
+			Token:     api.String("expected-token"),
+			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
+		})
+	})
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
 
