@@ -22,7 +22,7 @@ import (
 	"github.com/justinas/alice"
 )
 
-func configureServerRoutes(ctx context.Context, cfg config.Config, refreshChannel chan (*github.ProfileConfig)) (http.Handler, error) {
+func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *github.ProfileStore) (http.Handler, error) {
 	// wrap a mux such that HTTP telemetry is configured by default
 	muxWithoutTelemetry := http.NewServeMux()
 	mux := observe.NewMux(muxWithoutTelemetry)
@@ -59,13 +59,7 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, refreshChanne
 		return nil, fmt.Errorf("vendor cache configuration failed: %w", err)
 	}
 
-	// Fetch the organization profile from the GitHub repository
-	err = gh.FetchOrganizationProfile(cfg.Server.OrgProfileURL, refreshChannel)
-	if err != nil {
-		log.Info().Err(err).Msg("organization profile load failed, continuing")
-	}
-
-	tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken, gh.OrganizationProfile)))
+	tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken, orgProfile)))
 
 	mux.Handle("POST /token", authorizedRouteMiddleware.Then(handlePostToken(tokenVendor)))
 	mux.Handle("POST /git-credentials", authorizedRouteMiddleware.Then(handlePostGitCredentials(tokenVendor)))
@@ -88,7 +82,7 @@ func main() {
 }
 
 func launchServer() error {
-	profileChan := make(chan *github.ProfileConfig)
+	orgProfile := github.NewProfileStore()
 	ctx := context.Background()
 
 	cfg, err := config.Load(context.Background())
@@ -111,7 +105,7 @@ func launchServer() error {
 	}
 
 	// setup routing and dependencies
-	handler, err := configureServerRoutes(ctx, cfg, profileChan)
+	handler, err := configureServerRoutes(ctx, cfg, orgProfile)
 	if err != nil {
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
@@ -123,23 +117,7 @@ func launchServer() error {
 		return fmt.Errorf("github configuration failed: %w", err)
 	}
 
-	go func() {
-		// We don't want goroutine panics to cascade - recover and log
-		defer func() {
-			if r := recover(); r != nil {
-				log.Info().Interface("recover", r).Msg("refresh goroutine recovered from panic")
-			}
-		}()
-		for {
-
-			time.Sleep(5 * time.Minute)
-			err = gh.FetchOrganizationProfile(cfg.Server.OrgProfileURL, profileChan)
-			if err != nil {
-				log.Info().Err(err).Msg("organization profile refresh failed, continuing")
-			}
-
-		}
-	}()
+	go refreshOrgProfile(orgProfile, gh, cfg.Server.OrgProfileURL)
 
 	// start the server
 	server := &http.Server{
@@ -204,4 +182,20 @@ func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
 	transport.MaxConnsPerHost = cfg.OutgoingHttpMaxConnsPerHost
 
 	return transport
+}
+
+func refreshOrgProfile(profileStore *github.ProfileStore, gh github.Client, orgProfileURL string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Info().Interface("recover", r).Msg("refresh goroutine recovered from panic")
+		}
+	}()
+	for {
+		profileConfig, err := github.FetchOrganizationProfile(orgProfileURL, gh)
+		if err != nil {
+			log.Info().Err(err).Msg("organization profile refresh failed, continuing")
+		}
+		profileStore.Update(&profileConfig)
+		time.Sleep(5 * time.Minute)
+	}
 }

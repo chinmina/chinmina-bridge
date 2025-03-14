@@ -23,9 +23,6 @@ type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug s
 // GitHub repository that the vendor has permissions to access.
 type TokenVendor func(ctx context.Context, repositoryURL string) (string, time.Time, error)
 
-// Retrieve an organization profile from the current state of the GitHub client
-type ConfigurationStore func(ctx context.Context, profileChan chan (*github.ProfileConfig)) (*github.ProfileConfig, error)
-
 type PipelineRepositoryToken struct {
 	OrganizationSlug string    `json:"organizationSlug"`
 	PipelineSlug     string    `json:"pipelineSlug"`
@@ -58,7 +55,7 @@ func (t PipelineRepositoryToken) ExpiryUnix() string {
 func New(
 	repoLookup RepositoryLookup,
 	tokenVendor TokenVendor,
-	orgProfile ConfigurationStore,
+	orgProfile *github.ProfileStore,
 ) PipelineTokenVendor {
 	return func(ctx context.Context, claims jwt.BuildkiteClaims, requestedRepoURL string) (*PipelineRepositoryToken, error) {
 

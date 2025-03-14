@@ -5,13 +5,21 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 
-	"github.com/google/go-github/v61/github"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 )
+
+// type ProfileStore struct {
+// 	ProfileConfig *ProfileConfig
+// }
+
+type ProfileStore struct {
+	mu     sync.Mutex
+	config ProfileConfig
+}
 
 type ProfileConfig struct {
 	Organization struct {
@@ -28,41 +36,39 @@ type Profile struct {
 func (p ProfileConfig) MarshalZerologObject(e *zerolog.Event) {
 	result, err := json.Marshal(p)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to marshal ProfileConfig")
+		e.Err(err).Msg("failed to marshal ProfileConfig")
 	}
 	e.Str("profileConfig", string(result))
 }
 
-func (c *Client) OrganizationProfile(ctx context.Context, profileChan chan (*ProfileConfig)) (*ProfileConfig, error) {
-	// If there are profiles in the channel, return the first one.
-	// Otherwise we will return the existing org profile.
-	emptyProfile := ProfileConfig{}
-	for {
-		select {
-		case profile := <-profileChan:
-			// Check whether the received profile differs
-			if !c.organizationProfile.CompareAndSwap(profile, profile) {
-				c.organizationProfile.Store(profile)
-				log.Info().EmbedObject(c.organizationProfile.Load()).Msg("organization profile configuration loaded")
-			}
-		default:
-			// This comparison needs to be atomic, because this comparison could be made across threads.
-			// Handle the initial case where the profile is not loaded
-			if c.organizationProfile.CompareAndSwap(nil, &emptyProfile) {
-				return c.organizationProfile.Load(), errors.New("organization profile not loaded")
-			}
-		}
-		return c.organizationProfile.Load(), nil
-	}
+func NewProfileStore() *ProfileStore {
+	return &ProfileStore{}
 }
 
-func (c *Client) FetchOrganizationProfile(profileURL string, profileChan chan (*ProfileConfig)) error {
-	profile, err := LoadProfile(context.Background(), *c, profileURL)
-	if err != nil {
-		return err
+func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.config.Organization.Profiles) == 0 {
+		return p.config, errors.New("organization profile not loaded")
 	}
-	profileChan <- &profile
-	return nil
+	return p.config, nil
+}
+
+// Not sure how we can possibly pass back an error here so we won't return one
+func (p *ProfileStore) Update(profile *ProfileConfig) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.config.Organization = profile.Organization
+	return
+}
+
+func FetchOrganizationProfile(profileURL string, gh Client) (ProfileConfig, error) {
+	profile, err := LoadProfile(context.Background(), gh, profileURL)
+	if err != nil {
+		return ProfileConfig{}, err
+	}
+
+	return profile, nil
 }
 
 // Decomposes the path into the owner, repo, and path (no http prefix)
@@ -78,26 +84,15 @@ func GetProfile(ctx context.Context, gh Client, orgProfileURI string) (string, e
 
 	// get the profile
 	owner, repo, path := DecomposePath(orgProfileURI)
-	token, _, err := gh.CreateAccessToken(ctx, "https://github.com/"+owner+"/"+repo)
+	client, err := gh.NewWithTokenAuth(ctx, owner, repo)
 	if err != nil {
-		log.Info().Err(err).Msg("token unable to be created")
 		return "", err
 	}
-
-	// Configure the http client with the token
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	// Set up a client to use the token. There's a bit of a dance here to ensure this remains testable
-	// using our existing mocks
-	client := github.NewClient(tc)
 	client.BaseURL = gh.client.BaseURL
 	gh.client = client
 	profile, _, _, err := gh.client.Repositories.GetContents(ctx, owner, repo, path, nil)
 	if err != nil {
-		log.Info().Err(err).Msg("organization profile load failed, continuing")
+		log.Info().Err(err).Str("repo", repo).Str("owner", owner).Str("path", path).Msg("organization profile load failed, continuing")
 		return "", err
 	}
 
@@ -126,7 +121,6 @@ func LoadProfile(ctx context.Context, gh Client, orgProfileURL string) (ProfileC
 	if err != nil {
 		return ProfileConfig{}, err
 	}
-	//Store it in the shared GitHub context so it can be referenced in the Vendor functionality
 	log.Info().Str("url", orgProfileURL).Msg("organization profile configuration loaded")
 
 	return profileConfig, nil

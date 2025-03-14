@@ -150,6 +150,35 @@ func JSON(w http.ResponseWriter, payload any) {
 	_, _ = w.Write(res)
 }
 
+func TestNewWithTokenFailureEmpty(t *testing.T) {
+	router := http.NewServeMux()
+
+	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	// generate valid key for testing
+	key := generateKey(t)
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{
+			ApiURL:         svr.URL,
+			PrivateKey:     key,
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+	)
+	require.NoError(t, err)
+
+	_, err = gh.NewWithTokenAuth(context.Background(), "owner", "repo")
+	require.Error(t, err)
+
+}
+
 // generateKey creates and PEM encodes a valid RSA private key for testing.
 func generateKey(t *testing.T) string {
 	t.Helper()

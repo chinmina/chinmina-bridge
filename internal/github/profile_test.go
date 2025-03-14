@@ -228,8 +228,8 @@ func TestLoadProfile(t *testing.T) {
 }
 
 func TestFetchProfile(t *testing.T) {
-	profileChan := make(chan *github.ProfileConfig, 1)
 	router := http.NewServeMux()
+	profileStore := github.NewProfileStore()
 
 	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
 
@@ -271,20 +271,20 @@ func TestFetchProfile(t *testing.T) {
 	validatedProfile, err := github.ValidateProfile(context.Background(), profile)
 	require.NoError(t, err)
 	// Test that we get an error attempting to load it before fetching
-	_, err = gh.OrganizationProfile(context.Background(), profileChan)
+	_, err = profileStore.GetOrganization()
 	require.Error(t, err)
 
-	err = gh.FetchOrganizationProfile(configURL, profileChan)
+	orgProfile, err := github.FetchOrganizationProfile(configURL, gh)
 	require.NoError(t, err)
-	chanVal := <-profileChan
-	assert.Equal(t, validatedProfile, *chanVal)
+	assert.Equal(t, validatedProfile, orgProfile)
 
-	err = gh.FetchOrganizationProfile(configURL, profileChan)
-	loadedProfile, err := gh.OrganizationProfile(context.Background(), profileChan)
+	orgProfile, err = github.FetchOrganizationProfile(configURL, gh)
+	profileStore.Update(&orgProfile)
+	loadedProfile, err := profileStore.GetOrganization()
 	require.NoError(t, err)
-	assert.Equal(t, *loadedProfile, validatedProfile)
+	assert.Equal(t, loadedProfile, validatedProfile)
 
-	err = gh.FetchOrganizationProfile(fakeURL, profileChan)
+	_, err = github.FetchOrganizationProfile(fakeURL, gh)
 	require.Error(t, err)
 }
 

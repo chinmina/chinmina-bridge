@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
@@ -15,12 +14,12 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v61/github"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/oauth2"
 )
 
 type Client struct {
-	client              *github.Client
-	installationID      int64
-	organizationProfile atomic.Pointer[ProfileConfig]
+	client         *github.Client
+	installationID int64
 }
 
 func New(ctx context.Context, cfg config.GithubConfig) (Client, error) {
@@ -63,7 +62,6 @@ func New(ctx context.Context, cfg config.GithubConfig) (Client, error) {
 	return Client{
 		client,
 		cfg.InstallationID,
-		atomic.Pointer[ProfileConfig]{},
 	}, nil
 }
 
@@ -106,6 +104,25 @@ func createSigner(ctx context.Context, cfg config.GithubConfig) (ghinstallation.
 	}
 
 	return nil, errors.New("no private key configuration specified")
+}
+
+func (c *Client) NewWithTokenAuth(ctx context.Context, owner string, repo string) (*github.Client, error) {
+	token, _, err := c.CreateAccessToken(ctx, "https://github.com/"+owner+"/"+repo)
+	if err != nil {
+		log.Info().Err(err).Str("repo", repo).Str("owner", owner).Msg("could not create token to load organization profile")
+		return &github.Client{}, err
+	}
+
+	// Configure the http client with the token
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	// Set up a client to use the token. There's a bit of a dance here to ensure this remains testable
+	// using our existing mocks
+	client := github.NewClient(tc)
+	return client, nil
 }
 
 func RepoForURL(u url.URL) (string, string) {
