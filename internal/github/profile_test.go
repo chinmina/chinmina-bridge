@@ -34,7 +34,7 @@ func TestURLDecomposition(t *testing.T) {
 
 	// Example of an invalid profile URL
 	configURL = "github.com/chinmina/non-existent-profile.yaml"
-	// Test that the profile URL is valid
+	// Test that the profile URL is invalid (path contains missing owner/repo)
 	owner, repo, path = github.DecomposePath(configURL)
 	assert.Equal(t, "", owner)
 	assert.Equal(t, "", repo)
