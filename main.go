@@ -117,7 +117,7 @@ func launchServer() error {
 		return fmt.Errorf("github configuration failed: %w", err)
 	}
 
-	go refreshOrgProfile(orgProfile, gh, cfg.Server.OrgProfileURL)
+	go refreshOrgProfile(ctx, orgProfile, gh, cfg.Server.OrgProfileURL)
 
 	// start the server
 	server := &http.Server{
@@ -184,7 +184,7 @@ func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
 	return transport
 }
 
-func refreshOrgProfile(profileStore *github.ProfileStore, gh github.Client, orgProfileURL string) {
+func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, gh github.Client, orgProfileURL string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Info().Interface("recover", r).Msg("refresh goroutine recovered from panic")
@@ -196,6 +196,12 @@ func refreshOrgProfile(profileStore *github.ProfileStore, gh github.Client, orgP
 			log.Info().Err(err).Msg("organization profile refresh failed, continuing")
 		}
 		profileStore.Update(&profileConfig)
-		time.Sleep(5 * time.Minute)
+		select {
+		case <-time.After(5 * time.Minute):
+			// continue
+		case <-ctx.Done():
+			log.Info().Msg("refresh goroutine shutting down gracefully")
+			return
+		}
 	}
 }
