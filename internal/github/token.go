@@ -65,7 +65,7 @@ func New(ctx context.Context, cfg config.GithubConfig) (Client, error) {
 	}, nil
 }
 
-func (c *Client) CreateAccessToken(ctx context.Context, repositoryURL string) (string, time.Time, error) {
+func (c Client) CreateAccessToken(ctx context.Context, repositoryURL string) (string, time.Time, error) {
 	u, err := url.Parse(repositoryURL)
 	if err != nil {
 		return "", time.Time{}, err
@@ -106,7 +106,7 @@ func createSigner(ctx context.Context, cfg config.GithubConfig) (ghinstallation.
 	return nil, errors.New("no private key configuration specified")
 }
 
-func (c *Client) NewWithTokenAuth(ctx context.Context, owner string, repo string) (*github.Client, error) {
+func (c Client) NewWithTokenAuth(ctx context.Context, owner string, repo string) (*github.Client, error) {
 	token, _, err := c.CreateAccessToken(ctx, "https://github.com/"+owner+"/"+repo)
 	if err != nil {
 		log.Info().Err(err).Str("repo", repo).Str("owner", owner).Msg("could not create token to load organization profile")
