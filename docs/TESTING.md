@@ -28,6 +28,7 @@ You'll then need to set the following environment variables to be fed into the `
 - BUILDKITE_AGENT_TOKEN
 - BUILDKITE_AGENT_TAGS
 - GITHUB_APP_PRIVATE_KEY
+- GITHUB_ORG_PROFILE
 
 Once this is done, you can use the following command to compile your current code and start docker containers (including Jaeger for traces):
 
