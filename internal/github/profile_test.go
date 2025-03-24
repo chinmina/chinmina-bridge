@@ -39,18 +39,14 @@ func TestURLDecomposition(t *testing.T) {
 	assert.Equal(t, "", owner)
 	assert.Equal(t, "", repo)
 	assert.Equal(t, "", path)
-
 }
 
 // Test that repository contents are handled correctly
 func TestRepositoryContents(t *testing.T) {
-
 	router := http.NewServeMux()
-
 	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
 
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
-
 		JSON(w, &api.InstallationToken{
 			Token:     api.String("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
@@ -58,7 +54,6 @@ func TestRepositoryContents(t *testing.T) {
 	})
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
-
 		JSON(w, &api.RepositoryContent{
 			Content: &profile,
 		})
@@ -89,13 +84,10 @@ func TestRepositoryContents(t *testing.T) {
 }
 
 func TestInvalidRepositoryContents(t *testing.T) {
-
 	router := http.NewServeMux()
-
 	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
 
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
-
 		JSON(w, &api.InstallationToken{
 			Token:     api.String("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
@@ -133,7 +125,6 @@ func TestInvalidRepositoryContents(t *testing.T) {
 
 // Test that the profile that is loaded is valid
 func TestValidProfile(t *testing.T) {
-
 	_, err := github.ValidateProfile(context.Background(), profile)
 
 	require.NoError(t, err)
@@ -141,11 +132,9 @@ func TestValidProfile(t *testing.T) {
 
 // Test case where the profile that is loaded is invalid
 func TestInvalidProfile(t *testing.T) {
-
 	_, err := github.ValidateProfile(context.Background(), invalidProfile)
 
 	require.Error(t, err)
-
 }
 
 func TestLoadProfile(t *testing.T) {
@@ -154,7 +143,6 @@ func TestLoadProfile(t *testing.T) {
 	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
 
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
-
 		JSON(w, &api.InstallationToken{
 			Token:     api.String("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
@@ -162,21 +150,18 @@ func TestLoadProfile(t *testing.T) {
 	})
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
-
 		JSON(w, &api.RepositoryContent{
 			Content: &profile,
 		})
 	})
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/invalid-profile.yaml", func(w http.ResponseWriter, r *http.Request) {
-
 		JSON(w, &api.RepositoryContent{
 			Content: &invalidProfile,
 		})
 	})
 
 	router.HandleFunc("/repos/chinmina/non-existent-profile.yaml", func(w http.ResponseWriter, r *http.Request) {
-
 		w.WriteHeader(http.StatusTeapot)
 	})
 
@@ -229,7 +214,6 @@ func TestLoadProfile(t *testing.T) {
 			assert.Equal(t, tc.expectedConfig, result)
 		})
 	}
-
 }
 
 func TestFetchProfile(t *testing.T) {
@@ -239,7 +223,6 @@ func TestFetchProfile(t *testing.T) {
 	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
 
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
-
 		JSON(w, &api.InstallationToken{
 			Token:     api.String("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
@@ -247,7 +230,6 @@ func TestFetchProfile(t *testing.T) {
 	})
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
-
 		JSON(w, &api.RepositoryContent{
 			Content: &profile,
 		})
@@ -284,6 +266,8 @@ func TestFetchProfile(t *testing.T) {
 	assert.Equal(t, validatedProfile, orgProfile)
 
 	orgProfile, err = github.FetchOrganizationProfile(configURL, gh)
+	require.NoError(t, err)
+
 	profileStore.Update(&orgProfile)
 	loadedProfile, err := profileStore.GetOrganization()
 	require.NoError(t, err)
@@ -296,7 +280,6 @@ func TestFetchProfile(t *testing.T) {
 // Test the case where the profile is inconsistent with the request made to Chinmina
 // In this case, the target repository is not included in the targeted profile
 func TestProfile(t *testing.T) {
-
 	testCases := []struct {
 		profileName           string
 		repositoryName        string
@@ -327,6 +310,7 @@ func TestProfile(t *testing.T) {
 		t.Run(tc.profileName, func(t *testing.T) {
 			profileConfig, err := github.ValidateProfile(context.Background(), profile)
 			require.NoError(t, err)
+
 			_, ok := profileConfig.HasProfile(tc.profileName)
 			assert.Equal(t, ok, tc.expectedHasProfile)
 			assert.Equal(t, profileConfig.HasRepository(tc.profileName, tc.repositoryName), tc.expectedHasRepository)
