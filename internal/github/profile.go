@@ -12,10 +12,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// type ProfileStore struct {
-// 	ProfileConfig *ProfileConfig
-// }
-
 type ProfileStore struct {
 	mu     sync.Mutex
 	config ProfileConfig
