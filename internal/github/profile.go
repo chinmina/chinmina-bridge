@@ -129,17 +129,18 @@ func LoadProfile(ctx context.Context, gh Client, orgProfileURL string) (ProfileC
 	return profileConfig, nil
 }
 
-func (config *ProfileConfig) HasProfile(name string) (Profile, bool) {
+func (config *ProfileConfig) LookupProfile(name string) (Profile, bool) {
 	for _, profile := range config.Organization.Profiles {
 		if profile.Name == name {
 			return profile, true
 		}
 	}
+
 	return Profile{}, false
 }
 
 func (config *ProfileConfig) HasRepository(profileName string, repo string) bool {
-	profile, ok := config.HasProfile(profileName)
+	profile, ok := config.LookupProfile(profileName)
 	if !ok {
 		return false
 	}
