@@ -64,8 +64,8 @@ func (p *ProfileStore) Update(profile *ProfileConfig) {
 	p.config.Organization = profile.Organization
 }
 
-func FetchOrganizationProfile(profileURL string, gh Client) (ProfileConfig, error) {
-	profile, err := LoadProfile(context.Background(), gh, profileURL)
+func FetchOrganizationProfile(ctx context.Context, profileURL string, gh Client) (ProfileConfig, error) {
+	profile, err := LoadProfile(ctx, gh, profileURL)
 	if err != nil {
 		return ProfileConfig{}, err
 	}

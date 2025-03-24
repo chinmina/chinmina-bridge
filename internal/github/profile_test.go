@@ -257,15 +257,16 @@ func TestFetchProfile(t *testing.T) {
 
 	validatedProfile, err := github.ValidateProfile(context.Background(), profile)
 	require.NoError(t, err)
+
 	// Test that we get an error attempting to load it before fetching
 	_, err = profileStore.GetOrganization()
 	require.Error(t, err)
 
-	orgProfile, err := github.FetchOrganizationProfile(configURL, gh)
+	orgProfile, err := github.FetchOrganizationProfile(context.Background(), configURL, gh)
 	require.NoError(t, err)
 	assert.Equal(t, validatedProfile, orgProfile)
 
-	orgProfile, err = github.FetchOrganizationProfile(configURL, gh)
+	orgProfile, err = github.FetchOrganizationProfile(context.Background(), configURL, gh)
 	require.NoError(t, err)
 
 	profileStore.Update(&orgProfile)
@@ -273,7 +274,7 @@ func TestFetchProfile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, loadedProfile, validatedProfile)
 
-	_, err = github.FetchOrganizationProfile(fakeURL, gh)
+	_, err = github.FetchOrganizationProfile(context.Background(), fakeURL, gh)
 	require.Error(t, err)
 }
 
