@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"slices"
+
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
@@ -34,6 +36,7 @@ func (p ProfileConfig) MarshalZerologObject(e *zerolog.Event) {
 	if err != nil {
 		e.Err(err).Msg("failed to marshal ProfileConfig")
 	}
+
 	e.Str("profileConfig", string(result))
 }
 
@@ -44,18 +47,20 @@ func NewProfileStore() *ProfileStore {
 func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	if len(p.config.Organization.Profiles) == 0 {
 		return p.config, errors.New("organization profile not loaded")
 	}
+
 	return p.config, nil
 }
 
-// Not sure how we can possibly pass back an error here so we won't return one
+// Update the currently stored organization profile
 func (p *ProfileStore) Update(profile *ProfileConfig) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	p.config.Organization = profile.Organization
-	return
 }
 
 func FetchOrganizationProfile(profileURL string, gh Client) (ProfileConfig, error) {
@@ -77,13 +82,13 @@ func DecomposePath(path string) (string, string, string) {
 }
 
 func GetProfile(ctx context.Context, gh Client, orgProfileURI string) (string, error) {
-
 	// get the profile
 	owner, repo, path := DecomposePath(orgProfileURI)
 	client, err := gh.NewWithTokenAuth(ctx, owner, repo)
 	if err != nil {
 		return "", err
 	}
+
 	client.BaseURL = gh.client.BaseURL
 	gh.client = client
 	profile, _, _, err := gh.client.Repositories.GetContents(ctx, owner, repo, path, nil)
@@ -102,6 +107,7 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 		log.Info().Err(err).Msg("organization profile invalid")
 		return ProfileConfig{}, err
 	}
+
 	return profileConfig, nil
 }
 
@@ -117,6 +123,7 @@ func LoadProfile(ctx context.Context, gh Client, orgProfileURL string) (ProfileC
 	if err != nil {
 		return ProfileConfig{}, err
 	}
+
 	log.Info().Str("url", orgProfileURL).Msg("organization profile configuration loaded")
 
 	return profileConfig, nil
@@ -136,10 +143,6 @@ func (config *ProfileConfig) HasRepository(profileName string, repo string) bool
 	if !ok {
 		return false
 	}
-	for _, repository := range profile.Repositories {
-		if repository == repo {
-			return true
-		}
-	}
-	return false
+
+	return slices.Contains(profile.Repositories, repo)
 }
