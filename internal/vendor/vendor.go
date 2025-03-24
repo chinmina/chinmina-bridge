@@ -55,17 +55,9 @@ func (t PipelineRepositoryToken) ExpiryUnix() string {
 func New(
 	repoLookup RepositoryLookup,
 	tokenVendor TokenVendor,
-	orgProfile *github.ProfileStore,
+	orgProfile *github.ProfileStore, // as yet unused parameter, provided to allow for org profile lookup
 ) PipelineTokenVendor {
 	return func(ctx context.Context, claims jwt.BuildkiteClaims, requestedRepoURL string) (*PipelineRepositoryToken, error) {
-
-		// Load the configuration from the GitHub client
-		// TODO: actually handle the profile
-		// 	_, err = orgProfile(ctx, profileChan)
-		//	if err != nil {
-		//		log.Info().Err(err).Msg("organization profile not found, continuing")
-		//	}
-		//
 
 		// use buildkite api to find the repository for the pipeline
 		pipelineRepoURL, err := repoLookup(ctx, claims.OrganizationSlug, claims.PipelineSlug)
