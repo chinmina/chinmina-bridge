@@ -35,6 +35,7 @@ func (p ProfileConfig) MarshalZerologObject(e *zerolog.Event) {
 	result, err := json.Marshal(p)
 	if err != nil {
 		e.Err(err).Msg("failed to marshal ProfileConfig")
+		return
 	}
 
 	e.Str("profileConfig", string(result))
@@ -72,12 +73,14 @@ func FetchOrganizationProfile(profileURL string, gh Client) (ProfileConfig, erro
 	return profile, nil
 }
 
-// Decomposes the path into the owner, repo, and path (no http prefix)
+// DecomposePath into the owner, repo, and path (no http prefix), assuming the
+// path is in the format host/owner/repo/path_seg1/path_seg2/...
 func DecomposePath(path string) (string, string, string) {
 	parts := strings.SplitN(path, "/", 4)
 	if len(parts) < 4 {
 		return "", "", ""
 	}
+
 	return parts[1], parts[2], parts[3]
 }
 
