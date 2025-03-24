@@ -203,24 +203,29 @@ func TestLoadProfile(t *testing.T) {
 	testCases := []struct {
 		configURL      string
 		expectedConfig github.ProfileConfig
+		errorAssertion assert.ErrorAssertionFunc
 	}{
 		{
 			configURL:      "github.com/chinmina/chinmina-bridge/docs/profile.yaml",
 			expectedConfig: validProfile,
+			errorAssertion: assert.NoError,
 		},
 		{
 			configURL:      "github.com/chinmina/non-existent-profile.yaml",
 			expectedConfig: github.ProfileConfig{},
+			errorAssertion: assert.Error,
 		},
 		{
 			configURL:      "github.com/chinmina/chinmina-bridge/docs/invalid-profile.yaml",
 			expectedConfig: github.ProfileConfig{},
+			errorAssertion: assert.Error,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.configURL, func(t *testing.T) {
-			result, _ := github.LoadProfile(context.Background(), gh, tc.configURL)
+			result, err := github.LoadProfile(context.Background(), gh, tc.configURL)
+			tc.errorAssertion(t, err)
 			assert.Equal(t, tc.expectedConfig, result)
 		})
 	}
