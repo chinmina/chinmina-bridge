@@ -111,13 +111,17 @@ func launchServer() error {
 	}
 
 	// Start Goroutine to refresh the organization profile every 5 minutes.
-	// Unfortunately this does mean we need another GitHub client.
-	gh, err := github.New(ctx, cfg.Github)
-	if err != nil {
-		return fmt.Errorf("github configuration failed: %w", err)
-	}
+	orgProfileURL := cfg.Server.OrgProfileURL
 
-	go refreshOrgProfile(ctx, orgProfile, gh, cfg.Server.OrgProfileURL)
+	if orgProfileURL != "" {
+		// Separate GH client for the profile refresh
+		gh, err := github.New(ctx, cfg.Github)
+		if err != nil {
+			return fmt.Errorf("github configuration failed: %w", err)
+		}
+
+		go refreshOrgProfile(ctx, orgProfile, gh, cfg.Server.OrgProfileURL)
+	}
 
 	// start the server
 	server := &http.Server{
@@ -187,15 +191,21 @@ func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
 func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, gh github.Client, orgProfileURL string) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Info().Interface("recover", r).Msg("refresh goroutine recovered from panic")
+			log.Info().Interface("recover", r).Msg("background profile refresh failed; will attempt to continue.")
 		}
 	}()
+
 	for {
 		profileConfig, err := github.FetchOrganizationProfile(orgProfileURL, gh)
 		if err != nil {
+			// log the failure to fetch, then continue. This may be transient, so we
+			// need to keep trying.
 			log.Info().Err(err).Msg("organization profile refresh failed, continuing")
+		} else {
+			// only update the profile if retrieval succeeded
+			profileStore.Update(&profileConfig)
 		}
-		profileStore.Update(&profileConfig)
+
 		select {
 		case <-time.After(5 * time.Minute):
 			// continue
