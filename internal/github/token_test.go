@@ -187,6 +187,18 @@ func TestBothTransportOptions(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	_, err = github.New(
+		context.Background(),
+		config.GithubConfig{
+			ApiURL:         svr.URL,
+			PrivateKey:     key,
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+		github.WithTokenTransport,
+	)
+	require.NoError(t, err)
+
 }
 
 func JSON(w http.ResponseWriter, payload any) {

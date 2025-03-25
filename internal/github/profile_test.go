@@ -69,7 +69,7 @@ func TestRepositoryContents(t *testing.T) {
 	key := generateKey(t)
 
 	// Example of a valid profile URL
-	configURL, _ := url.Parse("github.com/chinmina/chinmina-bridge/docs/profile.yaml")
+	configURL, _ := url.Parse("https://github.com/chinmina/chinmina-bridge/docs/profile.yaml")
 	gh, err := github.New(
 		context.Background(),
 		config.GithubConfig{
@@ -108,7 +108,7 @@ func TestInvalidRepositoryContents(t *testing.T) {
 	key := generateKey(t)
 
 	// Example of an invalid profile URL
-	configURL, err := url.Parse("github.com/chinmina/chinmina-bridge/docs/profile.yaml")
+	configURL, err := url.Parse("https://github.com/chinmina/chinmina-bridge/docs/profile.yaml")
 	if err != nil {
 		fmt.Errorf("url conversion from string format failed: %w", err)
 	}
@@ -197,17 +197,17 @@ func TestLoadProfile(t *testing.T) {
 		errorAssertion assert.ErrorAssertionFunc
 	}{
 		{
-			configURL:      "github.com/chinmina/chinmina-bridge/docs/profile.yaml",
+			configURL:      "https://github.com/chinmina/chinmina-bridge/docs/profile.yaml",
 			expectedConfig: validProfile,
 			errorAssertion: assert.NoError,
 		},
 		{
-			configURL:      "github.com/chinmina/non-existent-profile.yaml",
+			configURL:      "https://github.com/chinmina/non-existent-profile.yaml",
 			expectedConfig: github.ProfileConfig{},
 			errorAssertion: assert.Error,
 		},
 		{
-			configURL:      "github.com/chinmina/chinmina-bridge/docs/invalid-profile.yaml",
+			configURL:      "https://github.com/chinmina/chinmina-bridge/docs/invalid-profile.yaml",
 			expectedConfig: github.ProfileConfig{},
 			errorAssertion: assert.Error,
 		},
@@ -249,11 +249,11 @@ func TestFetchProfile(t *testing.T) {
 	key := generateKey(t)
 
 	// Example of a valid profile URL
-	configURL, err := url.Parse("github.com/chinmina/chinmina-bridge/docs/profile.yaml")
+	configURL, err := url.Parse("https://github.com/chinmina/chinmina-bridge/docs/profile.yaml")
 	if err != nil {
 		fmt.Errorf("url conversion from string format failed: %w", err)
 	}
-	fakeURL, err := url.Parse("github.com/chinmina/chinmina-bridge/docs/fake-profile.yaml")
+	fakeURL, err := url.Parse("https://github.com/chinmina/chinmina-bridge/docs/fake-profile.yaml")
 	if err != nil {
 		fmt.Errorf("url conversion from string format failed: %w", err)
 	}
