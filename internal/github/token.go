@@ -22,19 +22,40 @@ type Client struct {
 	installationID int64
 }
 
-func New(ctx context.Context, cfg config.GithubConfig) (Client, error) {
-	signer, err := createSigner(ctx, cfg)
-	if err != nil {
-		return Client{}, fmt.Errorf("could not create signer for GitHub transport: %w", err)
+type ClientConfig struct {
+	transportFactory func(context.Context, config.GithubConfig, http.RoundTripper) (http.RoundTripper, error)
+}
+
+type ClientOption func(*ClientConfig)
+
+func WithAppTransport(clientConfig *ClientConfig) {
+	clientConfig.transportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
+		return createAppTransport(ctx, cfg, wrapped)
+	}
+}
+
+func WithTokenTransport(clientConfig *ClientConfig) {
+	clientConfig.transportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
+		appTransport, err := createAppTransport(ctx, cfg, wrapped)
+		if err != nil {
+			return nil, err
+		}
+
+		transport := ghinstallation.NewFromAppsTransport(appTransport, cfg.InstallationID), nil
+	}
+}
+
+func New(ctx context.Context, cfg config.GithubConfig, config ...ClientOption) (Client, error) {
+	clientConfig := &ClientConfig{}
+	WithAppTransport(clientConfig)
+
+	for _, c := range config {
+		c(clientConfig)
 	}
 
 	// We're calling "installation_token", which is JWT authenticated, so we use
 	// the AppsTransport.
-	appInstallationTransport, err := ghinstallation.NewAppsTransportWithOptions(
-		http.DefaultTransport,
-		cfg.ApplicationID,
-		ghinstallation.WithSigner(signer),
-	)
+	authTransport, err := clientConfig.transportFactory(ctx, cfg, http.DefaultTransport)
 	if err != nil {
 		return Client{}, fmt.Errorf("could not create GitHub transport: %w", err)
 	}
@@ -43,26 +64,75 @@ func New(ctx context.Context, cfg config.GithubConfig) (Client, error) {
 	// will be used concurrently.
 	client := github.NewClient(
 		&http.Client{
-			Transport: appInstallationTransport,
+			Transport: authTransport,
 		},
 	)
-
-	// for testing use
-	if cfg.ApiURL != "" {
-		apiURL := cfg.ApiURL
-		if !strings.HasSuffix(apiURL, "/") {
-			apiURL += "/"
-		}
-
-		appInstallationTransport.BaseURL = cfg.ApiURL
-		u, _ := url.Parse(apiURL)
-		client.BaseURL = u
-	}
 
 	return Client{
 		client,
 		cfg.InstallationID,
 	}, nil
+}
+
+func NewTokenClient(ctx context.Context, cfg config.GithubConfig) (Client, error) {
+
+	tokenTransport := ghinstallation.NewFromAppsTransport(appInstallationTransport, cfg.InstallationID)
+
+	// Create a client for use with the application credentials. This client
+	// will be used concurrently.
+	client := github.NewClient(
+		&http.Client{
+			Transport: tokenTransport,
+		},
+	)
+
+	// for testing use
+	// if cfg.ApiURL != "" {
+	// 	apiURL := cfg.ApiURL
+	// 	if !strings.HasSuffix(apiURL, "/") {
+	// 		apiURL += "/"
+	// 	}
+
+	// 	appInstallationTransport.BaseURL = cfg.ApiURL
+	// 	u, _ := url.Parse(apiURL)
+	// 	client.BaseURL = u
+	// }
+
+	return Client{
+		client,
+		cfg.InstallationID,
+	}, nil
+}
+
+func createAppTransport(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (*ghinstallation.AppsTransport, error) {
+	signer, err := createSigner(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not create signer for GitHub transport: %w", err)
+	}
+
+	// We're calling "installation_token", which is JWT authenticated, so we use
+	// the AppsTransport.
+	appInstallationTransport, err := ghinstallation.NewAppsTransportWithOptions(
+		wrapped,
+		cfg.ApplicationID,
+		ghinstallation.WithSigner(signer),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not create GitHub transport: %w", err)
+	}
+	// // for testing use
+	// if cfg.ApiURL != "" {
+	// 	apiURL := cfg.ApiURL
+	// 	if !strings.HasSuffix(apiURL, "/") {
+	// 		apiURL += "/"
+	// 	}
+
+	// 	appInstallationTransport.BaseURL = cfg.ApiURL
+	// 	u, _ := url.Parse(apiURL)
+	// 	client.BaseURL = u
+	// }
+
+	return appInstallationTransport, nil
 }
 
 func (c Client) CreateAccessToken(ctx context.Context, repositoryURL string) (string, time.Time, error) {
