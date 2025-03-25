@@ -14,7 +14,6 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v61/github"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/oauth2"
 )
 
 type Client struct {
@@ -41,7 +40,8 @@ func WithTokenTransport(clientConfig *ClientConfig) {
 			return nil, err
 		}
 
-		transport := ghinstallation.NewFromAppsTransport(appTransport, cfg.InstallationID), nil
+		transport := ghinstallation.NewFromAppsTransport(appTransport, cfg.InstallationID)
+		return transport, nil
 	}
 }
 
@@ -68,35 +68,15 @@ func New(ctx context.Context, cfg config.GithubConfig, config ...ClientOption) (
 		},
 	)
 
-	return Client{
-		client,
-		cfg.InstallationID,
-	}, nil
-}
-
-func NewTokenClient(ctx context.Context, cfg config.GithubConfig) (Client, error) {
-
-	tokenTransport := ghinstallation.NewFromAppsTransport(appInstallationTransport, cfg.InstallationID)
-
-	// Create a client for use with the application credentials. This client
-	// will be used concurrently.
-	client := github.NewClient(
-		&http.Client{
-			Transport: tokenTransport,
-		},
-	)
-
 	// for testing use
-	// if cfg.ApiURL != "" {
-	// 	apiURL := cfg.ApiURL
-	// 	if !strings.HasSuffix(apiURL, "/") {
-	// 		apiURL += "/"
-	// 	}
-
-	// 	appInstallationTransport.BaseURL = cfg.ApiURL
-	// 	u, _ := url.Parse(apiURL)
-	// 	client.BaseURL = u
-	// }
+	if cfg.ApiURL != "" {
+		apiURL := cfg.ApiURL
+		if !strings.HasSuffix(apiURL, "/") {
+			apiURL += "/"
+		}
+		u, _ := url.Parse(apiURL)
+		client.BaseURL = u
+	}
 
 	return Client{
 		client,
@@ -120,18 +100,6 @@ func createAppTransport(ctx context.Context, cfg config.GithubConfig, wrapped ht
 	if err != nil {
 		return nil, fmt.Errorf("could not create GitHub transport: %w", err)
 	}
-	// // for testing use
-	// if cfg.ApiURL != "" {
-	// 	apiURL := cfg.ApiURL
-	// 	if !strings.HasSuffix(apiURL, "/") {
-	// 		apiURL += "/"
-	// 	}
-
-	// 	appInstallationTransport.BaseURL = cfg.ApiURL
-	// 	u, _ := url.Parse(apiURL)
-	// 	client.BaseURL = u
-	// }
-
 	return appInstallationTransport, nil
 }
 
@@ -174,25 +142,6 @@ func createSigner(ctx context.Context, cfg config.GithubConfig) (ghinstallation.
 	}
 
 	return nil, errors.New("no private key configuration specified")
-}
-
-func (c Client) NewWithTokenAuth(ctx context.Context, owner string, repo string) (*github.Client, error) {
-	token, _, err := c.CreateAccessToken(ctx, "https://github.com/"+owner+"/"+repo)
-	if err != nil {
-		log.Info().Err(err).Str("repo", repo).Str("owner", owner).Msg("could not create token to load organization profile")
-		return &github.Client{}, err
-	}
-
-	// Configure the http client with the token
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	// Set up a client to use the token. There's a bit of a dance here to ensure this remains testable
-	// using our existing mocks
-	client := github.NewClient(tc)
-	return client, nil
 }
 
 func RepoForURL(u url.URL) (string, string) {

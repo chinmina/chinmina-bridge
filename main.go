@@ -115,7 +115,7 @@ func launchServer() error {
 
 	if orgProfileURL != "" {
 		// Separate GH client for the profile refresh
-		gh, err := github.New(ctx, cfg.Github)
+		gh, err := github.New(ctx, cfg.Github, github.WithTokenTransport)
 		if err != nil {
 			return fmt.Errorf("github configuration failed: %w", err)
 		}

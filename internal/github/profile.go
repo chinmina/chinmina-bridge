@@ -87,13 +87,6 @@ func DecomposePath(path string) (string, string, string) {
 func GetProfile(ctx context.Context, gh Client, orgProfileURI string) (string, error) {
 	// get the profile
 	owner, repo, path := DecomposePath(orgProfileURI)
-	client, err := gh.NewWithTokenAuth(ctx, owner, repo)
-	if err != nil {
-		return "", err
-	}
-
-	client.BaseURL = gh.client.BaseURL
-	gh.client = client
 	profile, _, _, err := gh.client.Repositories.GetContents(ctx, owner, repo, path, nil)
 	if err != nil {
 		log.Info().Err(err).Str("repo", repo).Str("owner", owner).Str("path", path).Msg("organization profile load failed, continuing")
