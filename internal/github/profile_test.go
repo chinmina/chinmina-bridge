@@ -3,8 +3,10 @@ package github_test
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -24,18 +26,19 @@ var invalidProfile string
 // Test that the URL Decomposition logic works as expected
 func TestURLDecomposition(t *testing.T) {
 	// Example of a valid profile URL
-	configURL := "github.com/chinmina/chinmina-bridge/docs/profile.yaml"
-
+	configURL, _ := url.Parse("https://github.com/chinmina/chinmina-bridge/docs/profile.yaml")
 	// Test that the profile URL is valid
-	owner, repo, path := github.DecomposePath(configURL)
+
+	owner, repo, path := github.DecomposePath(*configURL)
 	assert.Equal(t, "chinmina", owner)
 	assert.Equal(t, "chinmina-bridge", repo)
 	assert.Equal(t, "docs/profile.yaml", path)
 
 	// Example of an invalid profile URL
-	configURL = "github.com/chinmina/non-existent-profile.yaml"
+	configURL, _ = url.Parse("https://github.com/chinmina/non-existent-profile.yaml")
+
 	// Test that the profile URL is invalid (path contains missing owner/repo)
-	owner, repo, path = github.DecomposePath(configURL)
+	owner, repo, path = github.DecomposePath(*configURL)
 	assert.Equal(t, "", owner)
 	assert.Equal(t, "", repo)
 	assert.Equal(t, "", path)
@@ -66,7 +69,7 @@ func TestRepositoryContents(t *testing.T) {
 	key := generateKey(t)
 
 	// Example of a valid profile URL
-	configURL := "github.com/chinmina/chinmina-bridge/docs/profile.yaml"
+	configURL, _ := url.Parse("github.com/chinmina/chinmina-bridge/docs/profile.yaml")
 	gh, err := github.New(
 		context.Background(),
 		config.GithubConfig{
@@ -79,7 +82,7 @@ func TestRepositoryContents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load the profile
-	profile, err = github.GetProfile(context.Background(), gh, configURL)
+	profile, err = github.GetProfile(context.Background(), gh, *configURL)
 	require.NoError(t, err)
 }
 
@@ -105,7 +108,10 @@ func TestInvalidRepositoryContents(t *testing.T) {
 	key := generateKey(t)
 
 	// Example of an invalid profile URL
-	configURL := "github.com/chinmina/chinmina-bridge/docs/profile.yaml"
+	configURL, err := url.Parse("github.com/chinmina/chinmina-bridge/docs/profile.yaml")
+	if err != nil {
+		fmt.Errorf("url conversion from string format failed: %w", err)
+	}
 	gh, err := github.New(
 		context.Background(),
 		config.GithubConfig{
@@ -118,7 +124,7 @@ func TestInvalidRepositoryContents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load the profile
-	_, err = github.GetProfile(context.Background(), gh, configURL)
+	_, err = github.GetProfile(context.Background(), gh, *configURL)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, ": 418")
 }
@@ -209,7 +215,8 @@ func TestLoadProfile(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.configURL, func(t *testing.T) {
-			result, err := github.LoadProfile(context.Background(), gh, tc.configURL)
+			updatedURL, err := url.Parse(tc.configURL)
+			result, err := github.LoadProfile(context.Background(), gh, *updatedURL)
 			tc.errorAssertion(t, err)
 			assert.Equal(t, tc.expectedConfig, result)
 		})
@@ -242,8 +249,14 @@ func TestFetchProfile(t *testing.T) {
 	key := generateKey(t)
 
 	// Example of a valid profile URL
-	configURL := "github.com/chinmina/chinmina-bridge/docs/profile.yaml"
-	fakeURL := "github.com/chinmina/chinmina-bridge/docs/fake-profile.yaml"
+	configURL, err := url.Parse("github.com/chinmina/chinmina-bridge/docs/profile.yaml")
+	if err != nil {
+		fmt.Errorf("url conversion from string format failed: %w", err)
+	}
+	fakeURL, err := url.Parse("github.com/chinmina/chinmina-bridge/docs/fake-profile.yaml")
+	if err != nil {
+		fmt.Errorf("url conversion from string format failed: %w", err)
+	}
 	gh, err := github.New(
 		context.Background(),
 		config.GithubConfig{
@@ -262,11 +275,11 @@ func TestFetchProfile(t *testing.T) {
 	_, err = profileStore.GetOrganization()
 	require.Error(t, err)
 
-	orgProfile, err := github.FetchOrganizationProfile(context.Background(), configURL, gh)
+	orgProfile, err := github.FetchOrganizationProfile(context.Background(), *configURL, gh)
 	require.NoError(t, err)
 	assert.Equal(t, validatedProfile, orgProfile)
 
-	orgProfile, err = github.FetchOrganizationProfile(context.Background(), configURL, gh)
+	orgProfile, err = github.FetchOrganizationProfile(context.Background(), *configURL, gh)
 	require.NoError(t, err)
 
 	profileStore.Update(&orgProfile)
@@ -274,7 +287,7 @@ func TestFetchProfile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, loadedProfile, validatedProfile)
 
-	_, err = github.FetchOrganizationProfile(context.Background(), fakeURL, gh)
+	_, err = github.FetchOrganizationProfile(context.Background(), *fakeURL, gh)
 	require.Error(t, err)
 }
 

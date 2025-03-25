@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -110,17 +111,23 @@ func launchServer() error {
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
 
-	// Start Goroutine to refresh the organization profile every 5 minutes.
 	orgProfileURL := cfg.Server.OrgProfileURL
 
+	// Start Goroutine to refresh the organization profile every 5 minutes
 	if orgProfileURL != "" {
 		// Separate GH client for the profile refresh
+		orgProfileURL, err := url.Parse(cfg.Server.OrgProfileURL)
+		if err != nil {
+			log.Warn().Str("URL", cfg.Server.OrgProfileURL).Msg("Unable to parse url from string format")
+
+		}
+
 		gh, err := github.New(ctx, cfg.Github, github.WithTokenTransport)
 		if err != nil {
 			return fmt.Errorf("github configuration failed: %w", err)
 		}
 
-		go refreshOrgProfile(ctx, orgProfile, gh, cfg.Server.OrgProfileURL)
+		go refreshOrgProfile(ctx, orgProfile, gh, *orgProfileURL)
 	}
 
 	// start the server
@@ -188,7 +195,7 @@ func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
 	return transport
 }
 
-func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, gh github.Client, orgProfileURL string) {
+func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, gh github.Client, orgProfileURL url.URL) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Info().Interface("recover", r).Msg("background profile refresh failed; will attempt to continue.")
