@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/url"
 	"strings"
 	"sync"
 
@@ -65,8 +64,8 @@ func (p *ProfileStore) Update(profile *ProfileConfig) {
 	p.config.Organization = profile.Organization
 }
 
-func FetchOrganizationProfile(ctx context.Context, profileURL url.URL, gh Client) (ProfileConfig, error) {
-	profile, err := LoadProfile(ctx, gh, profileURL)
+func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh Client) (ProfileConfig, error) {
+	profile, err := LoadProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
 		return ProfileConfig{}, err
 	}
@@ -76,28 +75,23 @@ func FetchOrganizationProfile(ctx context.Context, profileURL url.URL, gh Client
 
 // DecomposePath into the owner, repo, and path (no http prefix), assuming the
 // path is in the format host/owner/repo/path_seg1/path_seg2/...
-func DecomposePath(url url.URL) (string, string, string) {
-
-	path := url.Path
-
-	// Extract org_name & repo_name
-	refined_path, _ := strings.CutPrefix(path, "/")
+func DecomposePath(profileLocation string) (string, string, string) {
 
 	// Eg: "/cultureamp/chinmina/docs/profile.yaml"
-	remainingPath := strings.SplitN(refined_path, "/", 3)
+	location := strings.SplitN(profileLocation, ":", 3)
 
-	if len(remainingPath) != 3 {
+	if len(location) != 3 {
 		return "", "", ""
 	}
 
-	orgName, repoName, filePath := remainingPath[0], remainingPath[1], remainingPath[2]
+	orgName, repoName, filePath := location[0], location[1], location[2]
 
 	return orgName, repoName, filePath
 }
 
-func GetProfile(ctx context.Context, gh Client, orgProfileURI url.URL) (string, error) {
+func GetProfile(ctx context.Context, gh Client, orgProfileLocation string) (string, error) {
 	// get the profile
-	owner, repo, path := DecomposePath(orgProfileURI)
+	owner, repo, path := DecomposePath(orgProfileLocation)
 	profile, _, _, err := gh.client.Repositories.GetContents(ctx, owner, repo, path, nil)
 	if err != nil {
 		log.Info().Err(err).Str("repo", repo).Str("owner", owner).Str("path", path).Msg("organization profile load failed, continuing")
@@ -118,9 +112,9 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 	return profileConfig, nil
 }
 
-func LoadProfile(ctx context.Context, gh Client, orgProfileURL url.URL) (ProfileConfig, error) {
+func LoadProfile(ctx context.Context, gh Client, orgProfileLocation string) (ProfileConfig, error) {
 	// get the profile
-	profile, err := GetProfile(ctx, gh, orgProfileURL)
+	profile, err := GetProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
 		return ProfileConfig{}, err
 	}
@@ -131,7 +125,7 @@ func LoadProfile(ctx context.Context, gh Client, orgProfileURL url.URL) (Profile
 		return ProfileConfig{}, err
 	}
 
-	log.Info().Str("url", orgProfileURL.String()).Msg("organization profile configuration loaded")
+	log.Info().Str("url", orgProfileLocation).Msg("organization profile configuration loaded")
 
 	return profileConfig, nil
 }

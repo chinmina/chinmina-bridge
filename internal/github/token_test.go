@@ -144,7 +144,7 @@ func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
 	assert.ErrorContains(t, err, ": 418")
 }
 
-func TestBothTransportOptions(t *testing.T) {
+func TestTransportOptions(t *testing.T) {
 
 	router := http.NewServeMux()
 
@@ -198,6 +198,19 @@ func TestBothTransportOptions(t *testing.T) {
 		github.WithTokenTransport,
 	)
 	require.NoError(t, err)
+
+	// Fail on invalid config
+	_, err = github.New(
+		context.Background(),
+		config.GithubConfig{
+			ApiURL:         svr.URL,
+			PrivateKey:     "badkey",
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+		github.WithTokenTransport,
+	)
+	require.Error(t, err)
 
 }
 

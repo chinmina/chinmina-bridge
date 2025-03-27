@@ -20,7 +20,7 @@ type ServerConfig struct {
 
 	OutgoingHttpMaxIdleConns    int    `env:"SERVER_OUTGOING_MAX_IDLE_CONNS, default=100"`
 	OutgoingHttpMaxConnsPerHost int    `env:"SERVER_OUTGOING_MAX_CONNS_PER_HOST, default=20"`
-	OrgProfileURL               string `env:"GITHUB_ORG_PROFILE"`
+	OrgProfile                  string `env:"GITHUB_ORG_PROFILE"`
 }
 
 type AuthorizationConfig struct {

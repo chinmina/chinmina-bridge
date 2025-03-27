@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -111,15 +110,14 @@ func launchServer() error {
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
 
-	orgProfileURL := cfg.Server.OrgProfileURL
+	orgProfileLocation := cfg.Server.OrgProfile
 
 	// Start Goroutine to refresh the organization profile every 5 minutes
-	if orgProfileURL != "" {
-		// Separate GH client for the profile refresh
-		orgProfileURL, err := url.Parse(cfg.Server.OrgProfileURL)
-		if err != nil {
-			log.Warn().Str("URL", cfg.Server.OrgProfileURL).Msg("Unable to parse url from string format")
-
+	if orgProfileLocation != "" {
+		// Check that the profile conforms to the expected format
+		location := strings.SplitN(orgProfileLocation, ":", 3)
+		if len(location) != 3 {
+			return fmt.Errorf("invalid organization profile location: %s", orgProfileLocation)
 		}
 
 		gh, err := github.New(ctx, cfg.Github, github.WithTokenTransport)
@@ -127,7 +125,7 @@ func launchServer() error {
 			return fmt.Errorf("github configuration failed: %w", err)
 		}
 
-		go refreshOrgProfile(ctx, orgProfile, gh, *orgProfileURL)
+		go refreshOrgProfile(ctx, orgProfile, gh, orgProfileLocation)
 	}
 
 	// start the server
@@ -195,7 +193,7 @@ func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
 	return transport
 }
 
-func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, gh github.Client, orgProfileURL url.URL) {
+func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, gh github.Client, orgProfileLocation string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Info().Interface("recover", r).Msg("background profile refresh failed; will attempt to continue.")
@@ -203,7 +201,7 @@ func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, g
 	}()
 
 	for {
-		profileConfig, err := github.FetchOrganizationProfile(ctx, orgProfileURL, gh)
+		profileConfig, err := github.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
 		if err != nil {
 			// log the failure to fetch, then continue. This may be transient, so we
 			// need to keep trying.

@@ -20,6 +20,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.30.0
 	go.opentelemetry.io/otel/sdk v1.30.0
 	go.opentelemetry.io/otel/sdk/metric v1.30.0
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -49,10 +50,8 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	golang.org/x/net v0.29.0 // indirect
-	golang.org/x/oauth2 v0.26.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
 require (
