@@ -223,11 +223,12 @@ func TestScopesToPermissions_Succeed(t *testing.T) {
 		Packages: api.String("write"),
 	}
 
-	actualPermissions := github.ScopesToPermissions(scopes)
+	actualPermissions, err := github.ScopesToPermissions(scopes)
 	assert.Equal(t, expectedPermissions, actualPermissions)
+	assert.NoError(t, err)
 }
 
-func TestScopesToPermissions_Skips_Invalid_Permissions(t *testing.T) {
+func TestScopesToPermissions_Fail_On_Invalid_Permissions(t *testing.T) {
 	scopes := []string{
 		"nonsense",
 		"contents:",
@@ -236,8 +237,26 @@ func TestScopesToPermissions_Skips_Invalid_Permissions(t *testing.T) {
 	}
 	expectedPermissions := &api.InstallationPermissions{}
 
-	actualPermissions := github.ScopesToPermissions(scopes)
+	actualPermissions, err := github.ScopesToPermissions(scopes)
 	assert.Equal(t, expectedPermissions, actualPermissions)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "no valid permissions found")
+}
+
+func TestScopesToPermissions_Succeed_If_Some_Valid(t *testing.T) {
+	scopes := []string{
+		"blah",
+		"pull_requests:write",
+		"invalid:read",
+		"actions:admin",
+	}
+	expectedPermissions := &api.InstallationPermissions{
+		PullRequests: api.String("write"),
+	}
+
+	actualPermissions, err := github.ScopesToPermissions(scopes)
+	assert.Equal(t, expectedPermissions, actualPermissions)
+	assert.NoError(t, err)
 }
 
 func JSON(w http.ResponseWriter, payload any) {

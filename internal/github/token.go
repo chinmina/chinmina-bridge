@@ -119,7 +119,10 @@ func (c Client) CreateAccessToken(ctx context.Context, repositoryURLs []string, 
 		repoNames = append(repoNames, repoName)
 	}
 
-	tokenPermissions := ScopesToPermissions(scopes)
+	tokenPermissions, err := ScopesToPermissions(scopes)
+	if err != nil {
+		return "", time.Time{}, err
+	}
 
 	tok, r, err := c.client.Apps.CreateInstallationToken(ctx, c.installationID,
 		&github.InstallationTokenOptions{
@@ -213,10 +216,15 @@ func ScopesToPermissions(scopes []string) *github.InstallationPermissions {
 		// If both are valid the scope is valid, so set this permission
 		if isValidAspect && isValidAction {
 			field.Set(reflect.ValueOf(github.String(value)))
+			validScopes++
 		}
 	}
 
-	return permissions
+	if validScopes == 0 {
+		return permissions, errors.New("no valid permissions found")
+	}
+
+	return permissions, nil
 }
 
 func contains(slice []string, item string) bool {
