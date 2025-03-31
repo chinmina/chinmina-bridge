@@ -213,9 +213,7 @@ func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, erro
 			continue
 		}
 
-		// Capitalise the key so it matches the field name in the struct
-		c := cases.Title(language.English)
-		key := c.String(parts[0])
+		key := snakeToPascalCase(parts[0])
 		value := parts[1]
 		field := permissionsValue.FieldByName(key)
 
@@ -249,6 +247,20 @@ func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, erro
 	}
 
 	return permissions, nil
+}
+
+func snakeToPascalCase(input string) string {
+	c := cases.Title(language.English)
+
+	parts := strings.Split(input, "_")
+	var result string
+
+	// Capitalises the first letter of each substring and append to the result
+	for _, part := range parts {
+		result += c.String(part)
+	}
+
+	return result
 }
 
 func contains(slice []string, item string) bool {
