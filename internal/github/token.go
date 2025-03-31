@@ -107,16 +107,9 @@ func createAppTransport(ctx context.Context, cfg config.GithubConfig, wrapped ht
 }
 
 func (c Client) CreateAccessToken(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
-	repoNames := []string{}
-
-	for _, repoURL := range repositoryURLs {
-		u, err := url.Parse(repoURL)
-		if err != nil {
-			return "", time.Time{}, err
-		}
-
-		_, repoName := RepoForURL(*u)
-		repoNames = append(repoNames, repoName)
+	repoNames, err := GetRepoNames(repositoryURLs)
+	if err != nil {
+		return "", time.Time{}, err
 	}
 
 	tokenPermissions, err := ScopesToPermissions(scopes)
@@ -174,7 +167,38 @@ func RepoForPath(path string) (string, string) {
 	return org, repo
 }
 
-func ScopesToPermissions(scopes []string) *github.InstallationPermissions {
+func GetRepoNames(repositoryURLs []string) ([]string, error) {
+	repoNames := []string{}
+
+	for _, repoURL := range repositoryURLs {
+		u, err := url.Parse(repoURL)
+		if err != nil {
+			log.Warn().
+				Str("repoURL", repoURL).
+				Msg("failed to parse repository URL, skipping this repository")
+			continue
+		}
+
+		_, repoName := RepoForURL(*u)
+		if repoName == "" {
+			log.Warn().
+				Str("repoURL", repoURL).
+				Msg("failed to extract repo name from URL, skipping this repository. Ensure that this repository URL is of the format: 'https://github.com/<org-name>/<repo-name>'")
+			continue
+		}
+
+		repoNames = append(repoNames, repoName)
+	}
+
+	if len(repoNames) == 0 {
+		return repoNames, errors.New("no valid repository URLs found")
+	}
+
+	return repoNames, nil
+}
+
+func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, error) {
+	validScopes := 0
 	validPermissionActions := []string{"read", "write"}
 
 	permissions := &github.InstallationPermissions{}

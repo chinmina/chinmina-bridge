@@ -76,7 +76,47 @@ func TestCreateAccessToken_Succeeds(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	token, expiry, err := gh.CreateAccessToken(context.Background(), []string{"https://github.com/organization/repository"}, []string{"contents:read"})
+	token, expiry, err := gh.CreateAccessToken(context.Background(), []string{"https://github.com/organization/repository", "https://github.com/organization/another-repo"}, []string{"contents:read"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "expected-token", token)
+	assert.Equal(t, expectedExpiry, expiry)
+	assert.Equal(t, "20", actualInstallation)
+}
+
+func TestCreateAccessToken_Succeeds_If_Some_URLs_Valid(t *testing.T) {
+	router := http.NewServeMux()
+
+	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
+	actualInstallation := "unknown"
+
+	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+		actualInstallation = r.PathValue("installationID")
+
+		JSON(w, &api.InstallationToken{
+			Token:     api.String("expected-token"),
+			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
+		})
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	// generate valid key for testing
+	key := generateKey(t)
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{
+			ApiURL:         svr.URL,
+			PrivateKey:     key,
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+	)
+	require.NoError(t, err)
+
+	token, expiry, err := gh.CreateAccessToken(context.Background(), []string{"https://github.com/organization/repository", "google"}, []string{"contents:read"})
 
 	require.NoError(t, err)
 	assert.Equal(t, "expected-token", token)
@@ -111,7 +151,7 @@ func TestCreateAccessToken_Fails_On_Invalid_URL(t *testing.T) {
 	_, _, err = gh.CreateAccessToken(context.Background(), []string{"sch_eme://invalid_url/"}, []string{"contents:read"})
 
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "first path segment in URL")
+	assert.ErrorContains(t, err, "no valid repository URLs found")
 }
 
 func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
@@ -138,7 +178,7 @@ func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, _, err = gh.CreateAccessToken(context.Background(), []string{"https://dodgey"}, []string{"contents:read"})
+	_, _, err = gh.CreateAccessToken(context.Background(), []string{"https://github.com/org/repo"}, []string{"contents:read"})
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, ": 418")
@@ -211,6 +251,36 @@ func TestTransportOptions(t *testing.T) {
 		github.WithTokenTransport,
 	)
 	require.Error(t, err)
+}
+
+func TestGetRepoNames_Succeed(t *testing.T) {
+	repositoryURLs := []string{"https://github.com/organization/valid-repository", "https://github.com/organization/another-valid-repository"}
+
+	expectedRepoNames := []string{"valid-repository", "another-valid-repository"}
+
+	actualRepoNames, err := github.GetRepoNames(repositoryURLs)
+	assert.Equal(t, expectedRepoNames, actualRepoNames)
+	assert.NoError(t, err)
+}
+
+func TestGetRepoNames_Fail_On_Invalid_URLs(t *testing.T) {
+	repositoryURLs := []string{"sch_eme://invalid_url/", "https://totally-not-malware.com"}
+
+	_, err := github.GetRepoNames(repositoryURLs)
+
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "no valid repository URLs found")
+}
+
+func TestGetRepoNames_Succeed_If_Some_Valid(t *testing.T) {
+	repositoryURLs := []string{"https://github.com/only-org-mentioned", "https://dodgey.com", "https://github.com/super-cool-org/super-cool-repo"}
+
+	expectedRepoNames := []string{"super-cool-repo"}
+
+	actualRepoNames, err := github.GetRepoNames(repositoryURLs)
+
+	assert.Equal(t, expectedRepoNames, actualRepoNames)
+	assert.NoError(t, err)
 }
 
 func TestScopesToPermissions_Succeed(t *testing.T) {
