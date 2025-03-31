@@ -76,7 +76,7 @@ func TestCreateAccessToken_Succeeds(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	token, expiry, err := gh.CreateAccessToken(context.Background(), "https://github.com/organization/repository")
+	token, expiry, err := gh.CreateAccessToken(context.Background(), []string{"https://github.com/organization/repository"}, []string{"contents:read"})
 
 	require.NoError(t, err)
 	assert.Equal(t, "expected-token", token)
@@ -108,7 +108,7 @@ func TestCreateAccessToken_Fails_On_Invalid_URL(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, _, err = gh.CreateAccessToken(context.Background(), "sch_eme://invalid_url/")
+	_, _, err = gh.CreateAccessToken(context.Background(), []string{"sch_eme://invalid_url/"}, []string{"contents:read"})
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "first path segment in URL")
@@ -138,7 +138,7 @@ func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, _, err = gh.CreateAccessToken(context.Background(), "https://dodgey")
+	_, _, err = gh.CreateAccessToken(context.Background(), []string{"https://dodgey"}, []string{"contents:read"})
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, ": 418")
@@ -211,7 +211,33 @@ func TestTransportOptions(t *testing.T) {
 		github.WithTokenTransport,
 	)
 	require.Error(t, err)
+}
 
+func TestScopesToPermissions_Succeed(t *testing.T) {
+	scopes := []string{
+		"contents:read",
+		"packages:write",
+	}
+	expectedPermissions := &api.InstallationPermissions{
+		Contents: api.String("read"),
+		Packages: api.String("write"),
+	}
+
+	actualPermissions := github.ScopesToPermissions(scopes)
+	assert.Equal(t, expectedPermissions, actualPermissions)
+}
+
+func TestScopesToPermissions_Skips_Invalid_Permissions(t *testing.T) {
+	scopes := []string{
+		"nonsense",
+		"contents:",
+		"invalid:read",
+		"contents:invalid",
+	}
+	expectedPermissions := &api.InstallationPermissions{}
+
+	actualPermissions := github.ScopesToPermissions(scopes)
+	assert.Equal(t, expectedPermissions, actualPermissions)
 }
 
 func JSON(w http.ResponseWriter, payload any) {

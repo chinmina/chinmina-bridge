@@ -21,7 +21,7 @@ type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug s
 
 // Vend a token for the given repository URL. The URL must be a https URL to a
 // GitHub repository that the vendor has permissions to access.
-type TokenVendor func(ctx context.Context, repositoryURL string) (string, time.Time, error)
+type TokenVendor func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error)
 
 type PipelineRepositoryToken struct {
 	OrganizationSlug string    `json:"organizationSlug"`
@@ -77,7 +77,7 @@ func New(
 		}
 
 		// use the github api to vend a token for the repository
-		token, expiry, err := tokenVendor(ctx, pipelineRepoURL)
+		token, expiry, err := tokenVendor(ctx, []string{pipelineRepoURL}, []string{"contents:read"})
 		if err != nil {
 			return nil, fmt.Errorf("could not issue token for repository %s: %w", pipelineRepoURL, err)
 		}
