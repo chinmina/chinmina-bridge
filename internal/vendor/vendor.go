@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -53,8 +55,10 @@ func (t PipelineRepositoryToken) ExpiryUnix() string {
 func New(
 	repoLookup RepositoryLookup,
 	tokenVendor TokenVendor,
+	orgProfile *github.ProfileStore, // as yet unused parameter, provided to allow for org profile lookup
 ) PipelineTokenVendor {
 	return func(ctx context.Context, claims jwt.BuildkiteClaims, requestedRepoURL string) (*PipelineRepositoryToken, error) {
+
 		// use buildkite api to find the repository for the pipeline
 		pipelineRepoURL, err := repoLookup(ctx, claims.OrganizationSlug, claims.PipelineSlug)
 		if err != nil {

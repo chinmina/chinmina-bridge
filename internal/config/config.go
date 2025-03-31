@@ -18,8 +18,9 @@ type ServerConfig struct {
 	Port                   int `env:"SERVER_PORT, default=8080"`
 	ShutdownTimeoutSeconds int `env:"SERVER_SHUTDOWN_TIMEOUT_SECS, default=25"`
 
-	OutgoingHttpMaxIdleConns    int `env:"SERVER_OUTGOING_MAX_IDLE_CONNS, default=100"`
-	OutgoingHttpMaxConnsPerHost int `env:"SERVER_OUTGOING_MAX_CONNS_PER_HOST, default=20"`
+	OutgoingHttpMaxIdleConns    int    `env:"SERVER_OUTGOING_MAX_IDLE_CONNS, default=100"`
+	OutgoingHttpMaxConnsPerHost int    `env:"SERVER_OUTGOING_MAX_CONNS_PER_HOST, default=20"`
+	OrgProfile                  string `env:"GITHUB_ORG_PROFILE"`
 }
 
 type AuthorizationConfig struct {

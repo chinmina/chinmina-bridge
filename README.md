@@ -39,6 +39,10 @@ This project welcomes contributions! Take a look at the outstanding issues for
 something to dip your toes into, open an issue to get some input, or raise a PR
 if you're confident.
 
+### Testing
+
+For instructions on how to test this, see the [TESTING.md](docs/TESTING.md) file.
+
 ## License
 
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fchinmina%2Fchinmina-bridge.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fchinmina%2Fchinmina-bridge?ref=badge_large)

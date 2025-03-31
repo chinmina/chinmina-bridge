@@ -144,6 +144,76 @@ func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
 	assert.ErrorContains(t, err, ": 418")
 }
 
+func TestTransportOptions(t *testing.T) {
+
+	router := http.NewServeMux()
+
+	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
+
+	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+
+		JSON(w, &api.InstallationToken{
+			Token:     api.String("expected-token"),
+			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
+		})
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	// generate valid key for testing
+	key := generateKey(t)
+
+	_, err := github.New(
+		context.Background(),
+		config.GithubConfig{
+			ApiURL:         svr.URL,
+			PrivateKey:     key,
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+	)
+	require.NoError(t, err)
+
+	_, err = github.New(
+		context.Background(),
+		config.GithubConfig{
+			ApiURL:         svr.URL,
+			PrivateKey:     key,
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+		github.WithAppTransport,
+	)
+	require.NoError(t, err)
+
+	_, err = github.New(
+		context.Background(),
+		config.GithubConfig{
+			ApiURL:         svr.URL,
+			PrivateKey:     key,
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+		github.WithTokenTransport,
+	)
+	require.NoError(t, err)
+
+	// Fail on invalid config
+	_, err = github.New(
+		context.Background(),
+		config.GithubConfig{
+			ApiURL:         svr.URL,
+			PrivateKey:     "badkey",
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+		github.WithTokenTransport,
+	)
+	require.Error(t, err)
+
+}
+
 func JSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	res, _ := json.Marshal(payload)

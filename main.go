@@ -22,7 +22,7 @@ import (
 	"github.com/justinas/alice"
 )
 
-func configureServerRoutes(ctx context.Context, cfg config.Config) (http.Handler, error) {
+func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *github.ProfileStore) (http.Handler, error) {
 	// wrap a mux such that HTTP telemetry is configured by default
 	muxWithoutTelemetry := http.NewServeMux()
 	mux := observe.NewMux(muxWithoutTelemetry)
@@ -59,7 +59,7 @@ func configureServerRoutes(ctx context.Context, cfg config.Config) (http.Handler
 		return nil, fmt.Errorf("vendor cache configuration failed: %w", err)
 	}
 
-	tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken)))
+	tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken, orgProfile)))
 
 	mux.Handle("POST /token", authorizedRouteMiddleware.Then(handlePostToken(tokenVendor)))
 	mux.Handle("POST /git-credentials", authorizedRouteMiddleware.Then(handlePostGitCredentials(tokenVendor)))
@@ -82,6 +82,7 @@ func main() {
 }
 
 func launchServer() error {
+	orgProfile := github.NewProfileStore()
 	ctx := context.Background()
 
 	cfg, err := config.Load(context.Background())
@@ -104,9 +105,27 @@ func launchServer() error {
 	}
 
 	// setup routing and dependencies
-	handler, err := configureServerRoutes(ctx, cfg)
+	handler, err := configureServerRoutes(ctx, cfg, orgProfile)
 	if err != nil {
 		return fmt.Errorf("server routing configuration failed: %w", err)
+	}
+
+	orgProfileLocation := cfg.Server.OrgProfile
+
+	// Start Goroutine to refresh the organization profile every 5 minutes
+	if orgProfileLocation != "" {
+		// Check that the profile conforms to the expected format
+		location := strings.SplitN(orgProfileLocation, ":", 3)
+		if len(location) != 3 {
+			return fmt.Errorf("invalid organization profile location: %s", orgProfileLocation)
+		}
+
+		gh, err := github.New(ctx, cfg.Github, github.WithTokenTransport)
+		if err != nil {
+			return fmt.Errorf("github configuration failed: %w", err)
+		}
+
+		go refreshOrgProfile(ctx, orgProfile, gh, orgProfileLocation)
 	}
 
 	// start the server
@@ -172,4 +191,32 @@ func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
 	transport.MaxConnsPerHost = cfg.OutgoingHttpMaxConnsPerHost
 
 	return transport
+}
+
+func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, gh github.Client, orgProfileLocation string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Info().Interface("recover", r).Msg("background profile refresh failed; will attempt to continue.")
+		}
+	}()
+
+	for {
+		profileConfig, err := github.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
+		if err != nil {
+			// log the failure to fetch, then continue. This may be transient, so we
+			// need to keep trying.
+			log.Info().Err(err).Msg("organization profile refresh failed, continuing")
+		} else {
+			// only update the profile if retrieval succeeded
+			profileStore.Update(&profileConfig)
+		}
+
+		select {
+		case <-time.After(5 * time.Minute):
+			// continue
+		case <-ctx.Done():
+			log.Info().Msg("refresh goroutine shutting down gracefully")
+			return
+		}
+	}
 }
