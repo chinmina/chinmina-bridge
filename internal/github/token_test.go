@@ -148,8 +148,9 @@ func TestCreateAccessToken_Fails_On_Invalid_URL(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, _, err = gh.CreateAccessToken(context.Background(), []string{"sch_eme://invalid_url/"}, []string{"contents:read"})
+	tok, _, err := gh.CreateAccessToken(context.Background(), []string{"sch_eme://invalid_url/"}, []string{"contents:read"})
 
+	assert.Equal(t, "", tok)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "no valid repository URLs found")
 }
@@ -178,8 +179,9 @@ func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, _, err = gh.CreateAccessToken(context.Background(), []string{"https://github.com/org/repo"}, []string{"contents:read"})
+	tok, _, err := gh.CreateAccessToken(context.Background(), []string{"https://github.com/org/repo"}, []string{"contents:read"})
 
+	assert.Equal(t, "", tok)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, ": 418")
 }
