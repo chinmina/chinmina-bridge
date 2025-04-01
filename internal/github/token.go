@@ -213,6 +213,7 @@ func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, erro
 			continue
 		}
 
+		// Snake case is how fields are represented in the struct, so this ensures the first part of the scope matches
 		key := snakeToPascalCase(parts[0])
 		value := parts[1]
 		field := permissionsValue.FieldByName(key)
@@ -224,7 +225,7 @@ func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, erro
 			isValidAspect = false
 			log.Warn().
 				Str("field", field.String()).
-				Msg("invalid permission aspect detected, skipping permission. Ensure that you use aspects as defined here: https://pkg.go.dev/github.com/google/go-github/v61@v61.0.0/github#InstallationPermissions")
+				Msg("invalid permission aspect detected, skipping permission. Ensure that your permission aspect is a valid InstallationPermissions field and is snake-cased (an valid example is 'pull_request:write')")
 		}
 
 		// Check if the scope includes one of the valid permission actions
