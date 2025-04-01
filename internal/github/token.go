@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -215,7 +216,7 @@ func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, erro
 
 		// Snake case is how fields are represented in the struct, so this ensures the first part of the scope matches
 		key := snakeToPascalCase(parts[0])
-		value := parts[1]
+		action := parts[1]
 		field := permissionsValue.FieldByName(key)
 
 		isValidAspect := true
@@ -228,17 +229,17 @@ func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, erro
 				Msg("invalid permission aspect detected, skipping permission")
 		}
 
-		// Check if the scope includes one of the valid permission actions
-		if !contains(validPermissionActions, value) {
+		// Check if the scope's action includes one of the valid permission actions
+		if !slices.Contains(validPermissionActions, action) {
 			isValidAction = false
 			log.Warn().
-				Str("permission", value).
+				Str("permission", action).
 				Msg("invalid permission action detected, skipping permission")
 		}
 
 		// If both are valid the scope is valid, so set this permission
 		if isValidAspect && isValidAction {
-			field.Set(reflect.ValueOf(github.String(value)))
+			field.Set(reflect.ValueOf(github.String(action)))
 			validScopes++
 		}
 	}
@@ -262,13 +263,4 @@ func snakeToPascalCase(input string) string {
 	}
 
 	return result
-}
-
-func contains(slice []string, item string) bool {
-	for _, element := range slice {
-		if element == item {
-			return true
-		}
-	}
-	return false
 }
