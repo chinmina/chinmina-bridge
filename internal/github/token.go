@@ -183,7 +183,7 @@ func GetRepoNames(repositoryURLs []string) ([]string, error) {
 		if repoName == "" {
 			log.Warn().
 				Str("repoURL", repoURL).
-				Msg("failed to extract repo name from URL, skipping this repository. Ensure that this repository URL is of the format: 'https://github.com/<org-name>/<repo-name>'")
+				Msg("failed to extract repo name from URL, skipping this repository")
 			continue
 		}
 
@@ -209,7 +209,7 @@ func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, erro
 		if len(parts) != 2 {
 			log.Warn().
 				Str("scope", scope).
-				Msg("malformed scope detected, skipping permission. Ensure that the permissions follows the convention of <aspect>:<action>")
+				Msg("malformed scope detected, skipping permission")
 			continue
 		}
 
@@ -225,7 +225,7 @@ func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, erro
 			isValidAspect = false
 			log.Warn().
 				Str("field", field.String()).
-				Msg("invalid permission aspect detected, skipping permission. Ensure that your permission aspect is a valid InstallationPermissions field and is snake-cased (an valid example is 'pull_request:write')")
+				Msg("invalid permission aspect detected, skipping permission")
 		}
 
 		// Check if the scope includes one of the valid permission actions
@@ -233,7 +233,7 @@ func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, erro
 			isValidAction = false
 			log.Warn().
 				Str("permission", value).
-				Msg("invalid permission action detected, skipping permission. Ensure that your action is one of the following: [read, write]")
+				Msg("invalid permission action detected, skipping permission")
 		}
 
 		// If both are valid the scope is valid, so set this permission
