@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v61/github"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type Client struct {
@@ -103,20 +107,21 @@ func createAppTransport(ctx context.Context, cfg config.GithubConfig, wrapped ht
 	return appInstallationTransport, nil
 }
 
-func (c Client) CreateAccessToken(ctx context.Context, repositoryURL string) (string, time.Time, error) {
-	u, err := url.Parse(repositoryURL)
+func (c Client) CreateAccessToken(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
+	repoNames, err := GetRepoNames(repositoryURLs)
 	if err != nil {
 		return "", time.Time{}, err
 	}
 
-	_, repoName := RepoForURL(*u)
+	tokenPermissions, err := ScopesToPermissions(scopes)
+	if err != nil {
+		return "", time.Time{}, err
+	}
 
 	tok, r, err := c.client.Apps.CreateInstallationToken(ctx, c.installationID,
 		&github.InstallationTokenOptions{
-			Repositories: []string{repoName},
-			Permissions: &github.InstallationPermissions{
-				Contents: github.String("read"),
-			},
+			Repositories: repoNames,
+			Permissions:  tokenPermissions,
 		},
 	)
 	if err != nil {
@@ -161,4 +166,101 @@ func RepoForPath(path string) (string, string) {
 	}
 
 	return org, repo
+}
+
+func GetRepoNames(repositoryURLs []string) ([]string, error) {
+	repoNames := []string{}
+
+	for _, repoURL := range repositoryURLs {
+		u, err := url.Parse(repoURL)
+		if err != nil {
+			log.Warn().
+				Str("repoURL", repoURL).
+				Msg("failed to parse repository URL, skipping this repository")
+			continue
+		}
+
+		_, repoName := RepoForURL(*u)
+		if repoName == "" {
+			log.Warn().
+				Str("repoURL", repoURL).
+				Msg("failed to extract repo name from URL, skipping this repository")
+			continue
+		}
+
+		repoNames = append(repoNames, repoName)
+	}
+
+	if len(repoNames) == 0 {
+		return repoNames, errors.New("no valid repository URLs found")
+	}
+
+	return repoNames, nil
+}
+
+func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, error) {
+	validScopes := 0
+	validPermissionActions := []string{"read", "write"}
+
+	permissions := &github.InstallationPermissions{}
+	permissionsValue := reflect.ValueOf(permissions).Elem()
+
+	for _, scope := range scopes {
+		parts := strings.Split(scope, ":")
+		if len(parts) != 2 {
+			log.Warn().
+				Str("scope", scope).
+				Msg("malformed scope detected, skipping permission")
+			continue
+		}
+
+		// Snake case is how fields are represented in the struct, so this ensures the first part of the scope matches
+		key := snakeToPascalCase(parts[0])
+		action := parts[1]
+		field := permissionsValue.FieldByName(key)
+
+		isValidAspect := true
+		isValidAction := true
+		// Check if the scope includes a field in the InstallationPermissions struct
+		if !field.IsValid() {
+			isValidAspect = false
+			log.Warn().
+				Str("field", field.String()).
+				Msg("invalid permission aspect detected, skipping permission")
+		}
+
+		// Check if the scope's action includes one of the valid permission actions
+		if !slices.Contains(validPermissionActions, action) {
+			isValidAction = false
+			log.Warn().
+				Str("permission", action).
+				Msg("invalid permission action detected, skipping permission")
+		}
+
+		// If both are valid the scope is valid, so set this permission
+		if isValidAspect && isValidAction {
+			field.Set(reflect.ValueOf(github.String(action)))
+			validScopes++
+		}
+	}
+
+	if validScopes == 0 {
+		return permissions, errors.New("no valid permissions found")
+	}
+
+	return permissions, nil
+}
+
+func snakeToPascalCase(input string) string {
+	c := cases.Title(language.English)
+
+	parts := strings.Split(input, "_")
+	var result string
+
+	// Capitalises the first letter of each substring and append to the result
+	for _, part := range parts {
+		result += c.String(part)
+	}
+
+	return result
 }

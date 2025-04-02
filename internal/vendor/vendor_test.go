@@ -45,7 +45,7 @@ func TestVendor_FailsWhenTokenVendorFails(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
 		return "repo-url", nil
 	})
-	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURL string) (string, time.Time, error) {
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
 		return "", time.Time{}, errors.New("token vendor failed")
 	})
 	v := vendor.New(repoLookup, tokenVendor, nil)
@@ -61,7 +61,7 @@ func TestVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
 		return "repo-url", nil
 	})
-	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURL string) (string, time.Time, error) {
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
 		return "vended-token-value", vendedDate, nil
 	})
 	v := vendor.New(repoLookup, tokenVendor, nil)
