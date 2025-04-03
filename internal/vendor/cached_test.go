@@ -53,6 +53,33 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 	assert.Nil(t, token)
 }
 
+func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
+	wrapped := sequenceVendor("first-call", "second-call")
+
+	c, err := vendor.Cached(defaultTTL)
+	require.NoError(t, err)
+
+	v := c(wrapped)
+
+	// first call misses cache
+	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "read-plugins")
+	require.NoError(t, err)
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:                  "first-call",
+		RequestedRepositoryURL: "any-repo",
+		Profile:                "read-plugins",
+	}, token)
+
+	// second call hits (even though it's for a different pipeline), return first value
+	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "second-pipeline-id"}, "any-repo", "read-plugins")
+	require.NoError(t, err)
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:                  "first-call",
+		RequestedRepositoryURL: "any-repo",
+		Profile:                "read-plugins",
+	}, token)
+}
+
 func TestCacheHitOnSecondRequest(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
