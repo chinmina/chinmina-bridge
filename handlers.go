@@ -12,14 +12,14 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func handlePostToken(tokenVendor vendor.PipelineTokenVendor) http.Handler {
+func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
 		// claims must be present from the middleware
 		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
 
-		tokenResponse, err := tokenVendor(r.Context(), claims, "")
+		tokenResponse, err := tokenVendor(r.Context(), claims, "", "")
 		if err != nil {
 			log.Info().Msgf("token creation failed %v\n", err)
 			requestError(w, http.StatusInternalServerError)
@@ -45,9 +45,11 @@ func handlePostToken(tokenVendor vendor.PipelineTokenVendor) http.Handler {
 	})
 }
 
-func handlePostGitCredentials(tokenVendor vendor.PipelineTokenVendor) http.Handler {
+func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
+
+		profile := r.PathValue("profile")
 
 		// claims must be present from the middleware
 		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
@@ -66,7 +68,79 @@ func handlePostGitCredentials(tokenVendor vendor.PipelineTokenVendor) http.Handl
 			return
 		}
 
-		tokenResponse, err := tokenVendor(r.Context(), claims, requestedRepoURL)
+		tokenResponse, err := tokenVendor(r.Context(), claims, requestedRepoURL, profile)
+		if err != nil {
+			log.Info().Msgf("token creation failed %v\n", err)
+			requestError(w, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain")
+
+		// Given repository doesn't match the pipeline: empty return this means
+		// that we understand the request but cannot fulfil it: this is a
+		// successful case for a credential helper, so we successfully return
+		// but don't offer credentials.
+		if tokenResponse == nil {
+			w.Header().Add("Content-Length", "0")
+			w.WriteHeader(http.StatusOK)
+
+			return
+		}
+
+		// write the reponse to the client in git credentials property format
+		tokenURL, err := tokenResponse.URL()
+		if err != nil {
+			log.Info().Msgf("invalid repo URL: %v\n", err)
+			requestError(w, http.StatusInternalServerError)
+			return
+		}
+
+		props := credentialhandler.NewMap(6)
+		props.Set("protocol", tokenURL.Scheme)
+		props.Set("host", tokenURL.Host)
+		props.Set("path", strings.TrimPrefix(tokenURL.Path, "/"))
+		props.Set("username", "x-access-token")
+		props.Set("password", tokenResponse.Token)
+		props.Set("password_expiry_utc", tokenResponse.ExpiryUnix())
+
+		err = credentialhandler.WriteProperties(props, w)
+		if err != nil {
+			log.Info().Msgf("failed to write response: %v\n", err)
+			requestError(w, http.StatusInternalServerError)
+			return
+		}
+	})
+}
+
+// Similar handler, but adapted specifically to accommodate org profiles.
+// This is partially done due to the fact that the returned props format is
+// already in use by the plugin, and it would be good to continue supporting
+// it during the transition to allow for the use of profiles.
+func handlePostOrgGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer drainRequestBody(r)
+
+		r.PathValue("profile")
+
+		// claims must be present from the middleware
+		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
+
+		requestedRepo, err := credentialhandler.ReadProperties(r.Body)
+		if err != nil {
+			log.Info().Msgf("read repository properties from client failed %v\n", err)
+			requestError(w, http.StatusInternalServerError)
+			return
+		}
+
+		requestedRepoURL, err := credentialhandler.ConstructRepositoryURL(requestedRepo)
+		if err != nil {
+			log.Info().Msgf("invalid request parameters %v\n", err)
+			requestError(w, http.StatusBadRequest)
+			return
+		}
+
+		tokenResponse, err := tokenVendor(r.Context(), claims, requestedRepoURL, "")
 		if err != nil {
 			log.Info().Msgf("token creation failed %v\n", err)
 			requestError(w, http.StatusInternalServerError)
