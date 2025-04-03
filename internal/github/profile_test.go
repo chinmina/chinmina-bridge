@@ -314,9 +314,9 @@ func TestProfile(t *testing.T) {
 			profileConfig, err := github.ValidateProfile(context.Background(), profile)
 			require.NoError(t, err)
 
-			_, ok := profileConfig.LookupProfile(tc.profileName)
+			p, ok := profileConfig.LookupProfile(tc.profileName)
 			assert.Equal(t, ok, tc.expectedHasProfile)
-			assert.Equal(t, profileConfig.HasRepository(tc.profileName, tc.repositoryName), tc.expectedHasRepository)
+			assert.Equal(t, p.HasRepository(tc.repositoryName), tc.expectedHasRepository)
 		})
 	}
 }
