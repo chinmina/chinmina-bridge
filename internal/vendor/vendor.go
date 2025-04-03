@@ -21,7 +21,7 @@ type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug s
 
 // Vend a token for the given repository URL. The URL must be a https URL to a
 // GitHub repository that the vendor has permissions to access.
-type TokenVendor func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error)
+type TokenVendor func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error)
 
 type ProfileToken struct {
 	OrganizationSlug       string    `json:"organizationSlug"`
@@ -73,18 +73,21 @@ func New(
 				log.Warn().Str("pipeline", claims.PipelineSlug).Str("profile", profile).Msg("requested profile was not found")
 				return nil, fmt.Errorf("could not find profile %s: %w", profile, err)
 			}
-			// Check that the requested repository is in the profile
 			repo, err := url.Parse(requestedRepoURL)
 			if err != nil {
 				return nil, fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err)
 			}
+			// If the requested repository isn't in the profile, return nil.
+			// This indicates that the handler should return a successful (but empty) response.
 			_, repository := github.RepoForURL(*repo)
-			if profileConf.HasRepository(repository) {
-				// use the github api to vend a token for the repository
-				token, expiry, err = tokenVendor(ctx, profileConf.Repositories, profileConf.Repositories)
-				if err != nil {
-					return nil, fmt.Errorf("could not issue token for repository %s: %w", requestedRepoURL, err)
-				}
+			if !profileConf.HasRepository(repository) {
+				log.Warn().Str("repository", repository).Str("profile", profile).Msg("requested repository was not found in profile")
+				return nil, nil
+			}
+			// use the github api to vend a token for the repository
+			token, expiry, err = tokenVendor(ctx, profileConf.Repositories, profileConf.Permissions)
+			if err != nil {
+				return nil, fmt.Errorf("could not issue token for repository %s: %w", requestedRepoURL, err)
 			}
 			log.Info().
 				Str("organization", claims.OrganizationSlug).
@@ -123,8 +126,13 @@ func New(
 				log.Info().Msgf("no token issued: repo mismatch. pipeline(%s) != requested(%s)\n", pipelineRepoURL, requestedRepoURL)
 				return nil, nil
 			}
+			requestedRepo, err := github.GetRepoNames([]string{requestedRepoURL})
+			if err != nil {
+				return nil, fmt.Errorf("error getting repo names: %w", err)
+			}
+
 			// use the github api to vend a token for the repository
-			token, expiry, err = tokenVendor(ctx, []string{pipelineRepoURL}, []string{"contents:read"})
+			token, expiry, err = tokenVendor(ctx, requestedRepo, []string{"contents:read"})
 			if err != nil {
 				return nil, fmt.Errorf("could not issue token for repository %s: %w", pipelineRepoURL, err)
 			}
@@ -137,7 +145,7 @@ func New(
 			return &ProfileToken{
 				OrganizationSlug:       claims.OrganizationSlug,
 				RequestedRepositoryURL: pipelineRepoURL,
-				Repositories:           []string{pipelineRepoURL},
+				Repositories:           requestedRepo,
 				Permissions:            []string{"contents:read"},
 				Profile:                profile,
 				Token:                  token,
