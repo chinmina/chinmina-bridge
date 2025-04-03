@@ -71,14 +71,14 @@ func TestHandlePostToken_ReturnsTokenOnSuccess(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 
-	respBody := vendor.PipelineRepositoryToken{}
+	respBody := vendor.ProfileToken{}
 	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
 	require.NoError(t, err)
-	assert.Equal(t, &vendor.PipelineRepositoryToken{
+	assert.Equal(t, &vendor.ProfileToken{
 		Token:            "expected-token-value",
 		Expiry:           defaultExpiry,
 		OrganizationSlug: "organization-slug",
-		PipelineSlug:     "pipeline-slug",
+		Profile:          "default",
 	}, &respBody)
 }
 
@@ -134,7 +134,7 @@ func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 }
 
 func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
-	tokenVendor := vendor.PipelineTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string) (*vendor.PipelineRepositoryToken, error) {
+	tokenVendor := vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
 		return nil, nil
 	})
 
@@ -270,20 +270,23 @@ func TestHandleHealthCheck_Success(t *testing.T) {
 	assert.Equal(t, "OK", respBody)
 }
 
-func tv(token string) vendor.PipelineTokenVendor {
-	return vendor.PipelineTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string) (*vendor.PipelineRepositoryToken, error) {
-		return &vendor.PipelineRepositoryToken{
-			Token:            token,
-			Expiry:           defaultExpiry,
-			PipelineSlug:     claims.PipelineSlug,
-			OrganizationSlug: claims.OrganizationSlug,
-			RepositoryURL:    repoUrl,
+func tv(token string) vendor.ProfileTokenVendor {
+	return vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
+		if profile == "" {
+			profile = "default"
+		}
+		return &vendor.ProfileToken{
+			Token:                  token,
+			Expiry:                 defaultExpiry,
+			Profile:                profile,
+			OrganizationSlug:       claims.OrganizationSlug,
+			RequestedRepositoryURL: repoUrl,
 		}, nil
 	})
 }
 
-func tvFails(err error) vendor.PipelineTokenVendor {
-	return vendor.PipelineTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string) (*vendor.PipelineRepositoryToken, error) {
+func tvFails(err error) vendor.ProfileTokenVendor {
+	return vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
 		return nil, err
 	})
 }
