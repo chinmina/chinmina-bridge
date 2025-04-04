@@ -11,6 +11,7 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
+	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	api "github.com/google/go-github/v61/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -322,33 +323,31 @@ func TestProfile(t *testing.T) {
 	}
 }
 func TestGetProfileFromStore(t *testing.T) {
-	store := github.NewProfileStore()
 
-	// Prepare a profile for testing
-	profileName := "test-profile"
-	profile := github.Profile{
-		Name:         profileName,
-		Repositories: []string{"repo1", "repo2"},
-		Permissions:  []string{"read"},
+	store := testhelpers.CreateTestProfileStore()
+	validProfileName := "simple-profile"
+	invalidProfileName := "glizzy"
+
+	expectedProfile := github.Profile{
+		Name:         "simple-profile",
+		Repositories: []string{"repo-1", "repo-2"},
+		Permissions:  []string{"read", "write"},
 	}
 
-	// Update the store with the profile
-	store.Update(&github.ProfileConfig{
-		Organization: struct {
-			Profiles []github.Profile `yaml:"profiles"`
-		}{
-			Profiles: []github.Profile{profile},
-		},
+	t.Run("Successful retrieval of an existing profile", func(t *testing.T) {
+		retrievedProfile, err := store.GetProfileFromStore(validProfileName)
+		require.NoError(t, err)
+		assert.Equal(t, expectedProfile, retrievedProfile)
 	})
 
 	t.Run("Successful retrieval of an existing profile", func(t *testing.T) {
-		retrievedProfile, err := store.GetProfileFromStore(profileName)
+		retrievedProfile, err := store.GetProfileFromStore(validProfileName)
 		require.NoError(t, err)
-		assert.Equal(t, profile, retrievedProfile)
+		assert.Equal(t, expectedProfile, retrievedProfile)
 	})
 
 	t.Run("Error handling when a profile is not found", func(t *testing.T) {
-		_, err := store.GetProfileFromStore("non-existent-profile")
+		_, err := store.GetProfileFromStore(invalidProfileName)
 		require.Error(t, err)
 		assert.EqualError(t, err, "profile not found")
 	})
@@ -361,7 +360,7 @@ func TestGetProfileFromStore(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, err := store.GetProfileFromStore(profileName)
+				_, err := store.GetProfileFromStore(validProfileName)
 				assert.NoError(t, err)
 			}()
 		}
