@@ -340,12 +340,6 @@ func TestGetProfileFromStore(t *testing.T) {
 		assert.Equal(t, expectedProfile, retrievedProfile)
 	})
 
-	t.Run("Successful retrieval of an existing profile", func(t *testing.T) {
-		retrievedProfile, err := store.GetProfileFromStore(validProfileName)
-		require.NoError(t, err)
-		assert.Equal(t, expectedProfile, retrievedProfile)
-	})
-
 	t.Run("Error handling when a profile is not found", func(t *testing.T) {
 		_, err := store.GetProfileFromStore(invalidProfileName)
 		require.Error(t, err)
