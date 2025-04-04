@@ -349,16 +349,25 @@ func TestGetProfileFromStore(t *testing.T) {
 	t.Run("Profile lookup is limited to one goroutine at a time", func(t *testing.T) {
 		const numGoroutines = 10
 		var wg sync.WaitGroup
+		var mu sync.Mutex
+		accessCount := 0
 
 		for i := 0; i < numGoroutines; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+
 				_, err := store.GetProfileFromStore(validProfileName)
 				assert.NoError(t, err)
+
+				mu.Lock()
+				accessCount++
+				mu.Unlock()
 			}()
 		}
 
 		wg.Wait()
+
+		assert.Equal(t, numGoroutines, accessCount, "All goroutines should have executed")
 	})
 }
