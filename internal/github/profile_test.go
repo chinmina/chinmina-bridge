@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -319,4 +320,52 @@ func TestProfile(t *testing.T) {
 			assert.Equal(t, p.HasRepository(tc.repositoryName), tc.expectedHasRepository)
 		})
 	}
+}
+func TestGetProfileFromStore(t *testing.T) {
+	store := github.NewProfileStore()
+
+	// Prepare a profile for testing
+	profileName := "test-profile"
+	profile := github.Profile{
+		Name:         profileName,
+		Repositories: []string{"repo1", "repo2"},
+		Permissions:  []string{"read"},
+	}
+
+	// Update the store with the profile
+	store.Update(&github.ProfileConfig{
+		Organization: struct {
+			Profiles []github.Profile `yaml:"profiles"`
+		}{
+			Profiles: []github.Profile{profile},
+		},
+	})
+
+	t.Run("Successful retrieval of an existing profile", func(t *testing.T) {
+		retrievedProfile, err := store.GetProfileFromStore(profileName)
+		require.NoError(t, err)
+		assert.Equal(t, profile, retrievedProfile)
+	})
+
+	t.Run("Error handling when a profile is not found", func(t *testing.T) {
+		_, err := store.GetProfileFromStore("non-existent-profile")
+		require.Error(t, err)
+		assert.EqualError(t, err, "profile not found")
+	})
+
+	t.Run("Profile lookup is limited to one goroutine at a time", func(t *testing.T) {
+		const numGoroutines = 10
+		var wg sync.WaitGroup
+
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, err := store.GetProfileFromStore(profileName)
+				assert.NoError(t, err)
+			}()
+		}
+
+		wg.Wait()
+	})
 }
