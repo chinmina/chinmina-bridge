@@ -5,11 +5,13 @@ import (
 	_ "embed"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
+	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	api "github.com/google/go-github/v61/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -314,9 +316,58 @@ func TestProfile(t *testing.T) {
 			profileConfig, err := github.ValidateProfile(context.Background(), profile)
 			require.NoError(t, err)
 
-			_, ok := profileConfig.LookupProfile(tc.profileName)
+			p, ok := profileConfig.LookupProfile(tc.profileName)
 			assert.Equal(t, ok, tc.expectedHasProfile)
-			assert.Equal(t, profileConfig.HasRepository(tc.profileName, tc.repositoryName), tc.expectedHasRepository)
+			assert.Equal(t, p.HasRepository(tc.repositoryName), tc.expectedHasRepository)
 		})
 	}
+}
+func TestGetProfileFromStore(t *testing.T) {
+
+	store := testhelpers.CreateTestProfileStore()
+	validProfileName := "simple-profile"
+	invalidProfileName := "glizzy"
+
+	expectedProfile := github.Profile{
+		Name:         "simple-profile",
+		Repositories: []string{"repo-1", "repo-2"},
+		Permissions:  []string{"read", "write"},
+	}
+
+	t.Run("Successful retrieval of an existing profile", func(t *testing.T) {
+		retrievedProfile, err := store.GetProfileFromStore(validProfileName)
+		require.NoError(t, err)
+		assert.Equal(t, expectedProfile, retrievedProfile)
+	})
+
+	t.Run("Error handling when a profile is not found", func(t *testing.T) {
+		_, err := store.GetProfileFromStore(invalidProfileName)
+		require.Error(t, err)
+		assert.EqualError(t, err, "profile not found")
+	})
+
+	t.Run("Profile lookup is limited to one goroutine at a time", func(t *testing.T) {
+		const numGoroutines = 10
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		accessCount := 0
+
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				_, err := store.GetProfileFromStore(validProfileName)
+				assert.NoError(t, err)
+
+				mu.Lock()
+				accessCount++
+				mu.Unlock()
+			}()
+		}
+
+		wg.Wait()
+
+		assert.Equal(t, numGoroutines, accessCount, "All goroutines should have executed")
+	})
 }
