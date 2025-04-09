@@ -3,6 +3,7 @@ package vendor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
@@ -45,10 +46,16 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 			// default profile.
 			// If the profile is not empty, we are vending a profile token.
 			if profile == "" {
-				profile = "default"
+				profile = "repo:default"
+			}
+			if strings.HasPrefix(profile, "repo:") {
 				key = fmt.Sprintf("profile://%s/pipeline/%s/%s", claims.OrganizationSlug, claims.PipelineID, profile)
-			} else {
+			} else if strings.HasPrefix(profile, "org:") {
 				key = fmt.Sprintf("profile://%s/organization/%s", claims.OrganizationSlug, profile)
+			} else {
+				log.Warn().Str("profile", profile).
+					Msg("unexpected profile format")
+				return nil, fmt.Errorf("unexpected profile format: %s", profile)
 			}
 
 			// cache hit: return the cached token

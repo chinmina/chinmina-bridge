@@ -2,7 +2,7 @@ x-buildkite-agent: &buildkite-agent
   image: buildkite/agent:3
   depends_on:
     - chinmina-bridge
-  command: [ "start" ]
+  command: ["start"]
   environment:
     - BUILDKITE_AGENT_TOKEN
     - BUILDKITE_AGENT_TAGS
@@ -10,9 +10,7 @@ x-buildkite-agent: &buildkite-agent
     - "../agent/startup:/docker-entrypoint.d:ro"
     - "../agent/hooks:/buildkite/hooks:ro"
 
-
 services:
-
   # spawn any number of buildkite agents by re-using the same definition
   buildkite-agent-1:
     <<: *buildkite-agent
@@ -28,7 +26,7 @@ services:
     depends_on:
       - jaeger
     working_dir: "/src"
-    command: [ "./dist/chinmina-bridge" ]
+    command: ["./dist/chinmina-bridge"]
     environment:
       - ENV=development
       - SERVER_PORT=80
