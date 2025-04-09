@@ -64,7 +64,7 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *g
 	mux.Handle("POST /token", authorizedRouteMiddleware.Then(handlePostToken(tokenVendor)))
 	mux.Handle("POST /git-credentials", authorizedRouteMiddleware.Then(handlePostGitCredentials(tokenVendor)))
 
-	mux.Handle("POST /organization/token", authorizedRouteMiddleware.Then(handlePostToken(tokenVendor)))
+	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(tokenVendor)))
 	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(tokenVendor)))
 
 	// healthchecks are not included in telemetry or authorization

@@ -2,9 +2,9 @@
 
 echo "installing Github credential plugin"
 
-plugin_repo="https://github.com/jamestelfer/github-app-auth-buildkite-plugin.git"
-plugin_version="v1.0.1"
-plugin_dir="/buildkite/plugins/github-app-auth-buildkite-plugin"
+plugin_repo="https://github.com/chinmina/chinmina-git-credentials-buildkite-plugin.git"
+plugin_version="feat/support-profiles" # TODO: use a release tag once plugin is finalised
+plugin_dir="/buildkite/plugins/chinmina-git-credentials-buildkite-plugin"
 
 [[ -d "${plugin_dir}" ]] && rm -rf "${plugin_dir}"
 

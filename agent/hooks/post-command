@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+
+# cleanup the cached OIDC token, as these are unique per-job
+rm -rf "/tmp/oidc_auth_token_${BUILDKITE_JOB_ID}.cache"

@@ -16,10 +16,12 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
+		profile := r.PathValue("profile")
+
 		// claims must be present from the middleware
 		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
 
-		tokenResponse, err := tokenVendor(r.Context(), claims, "", "")
+		tokenResponse, err := tokenVendor(r.Context(), claims, "", profile)
 		if err != nil {
 			log.Info().Msgf("token creation failed %v\n", err)
 			requestError(w, http.StatusInternalServerError)
