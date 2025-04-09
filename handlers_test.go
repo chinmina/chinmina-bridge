@@ -285,6 +285,36 @@ func tv(token string) vendor.ProfileTokenVendor {
 	})
 }
 
+func TestHandlePostGitCredentialsWithProfile_ReturnsTokenOnSuccess(t *testing.T) {
+	tokenVendor := tv("expected-token-value")
+
+	ctx := claimsContext()
+
+	m := credentialhandler.NewMap(10)
+	m.Set("protocol", "https")
+	m.Set("host", "github.com")
+	m.Set("path", "org/repo")
+
+	body := &bytes.Buffer{}
+	credentialhandler.WriteProperties(m, body)
+	req, err := http.NewRequest("POST", "/organization/git-credentials/test-profile", body)
+	require.NoError(t, err)
+
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// act
+	handler := handlePostGitCredentials(tokenVendor)
+	handler.ServeHTTP(rr, req)
+
+	// assert
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+
+	respBody := rr.Body.String()
+	assert.Equal(t, "protocol=https\nhost=github.com\npath=org/repo\nusername=x-access-token\npassword=expected-token-value\npassword_expiry_utc=1715104776\n\n", respBody)
+}
+
 func tvFails(err error) vendor.ProfileTokenVendor {
 	return vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
 		return nil, err
