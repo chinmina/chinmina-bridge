@@ -15,6 +15,14 @@ import (
 
 var store = testhelpers.CreateTestProfileStore()
 
+func TestVendor_FailWhenProfileMalformed(t *testing.T) {
+
+	v := vendor.New(nil, nil, store)
+
+	_, err := v(context.Background(), jwt.BuildkiteClaims{}, "repo-url", "default")
+	require.ErrorContains(t, err, "profile is not colon-separated")
+}
+
 func TestVendor_DefaultProfile_FailWhenPipelineLookupFails(t *testing.T) {
 
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
@@ -23,7 +31,7 @@ func TestVendor_DefaultProfile_FailWhenPipelineLookupFails(t *testing.T) {
 
 	v := vendor.New(repoLookup, nil, store)
 
-	_, err := v(context.Background(), jwt.BuildkiteClaims{}, "repo-url", "default")
+	_, err := v(context.Background(), jwt.BuildkiteClaims{}, "repo-url", "repo:default")
 	require.ErrorContains(t, err, "could not find repository for pipeline")
 }
 
@@ -42,7 +50,7 @@ func TestVendor_DefaultProfile_SuccessfulNilOnRepoMismatch(t *testing.T) {
 		context.Background(),
 		jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"},
 		"repo-url",
-		"default",
+		"repo:default",
 	)
 	assert.NoError(t, err)
 	assert.Nil(t, tok)
@@ -58,7 +66,7 @@ func TestVendor_DefaultProfile_FailsWhenTokenVendorFails(t *testing.T) {
 	})
 	v := vendor.New(repoLookup, tokenVendor, store)
 
-	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/repo-url", "default")
+	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/repo-url", "repo:default")
 	assert.ErrorContains(t, err, "token vendor failed")
 	assert.Nil(t, tok)
 }
@@ -75,7 +83,7 @@ func TestVendor_DefaultProfile_SucceedsWithTokenWhenPossible(t *testing.T) {
 	})
 	v := vendor.New(repoLookup, tokenVendor, store)
 
-	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/repo-url", "default")
+	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/repo-url", "repo:default")
 	assert.NoError(t, err)
 	assert.Equal(t, tok, &vendor.ProfileToken{
 		Token:                  "vended-token-value",
@@ -92,7 +100,7 @@ func TestVendor_NonDefaultProfile_FailWhenProfileLookupFails(t *testing.T) {
 
 	v := vendor.New(nil, nil, store)
 
-	_, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "repo-url", "non-existant-profile")
+	_, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "repo-url", "org:non-existant-profile")
 	require.ErrorContains(t, err, "could not find profile")
 }
 
@@ -100,7 +108,7 @@ func TestVendor_NonDefaultProfile_FailWhenURLInvalid(t *testing.T) {
 
 	v := vendor.New(nil, nil, store)
 
-	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, ":/invalid_", "non-default-profile")
+	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, ":/invalid_", "org:non-default-profile")
 
 	assert.ErrorContains(t, err, "could not parse requested repo URL")
 	assert.Nil(t, tok)
@@ -110,7 +118,7 @@ func TestVendor_NonDefaultProfile_SuccessfulNilOnRepoMismatch(t *testing.T) {
 
 	v := vendor.New(nil, nil, store)
 
-	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/i-dont-exist", "non-default-profile")
+	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/i-dont-exist", "org:non-default-profile")
 
 	assert.NoError(t, err)
 	assert.Nil(t, tok)
@@ -124,7 +132,7 @@ func TestVendor_NonDefaultProfile_FailWhenTokenVendorFails(t *testing.T) {
 
 	v := vendor.New(nil, tokenVendor, store)
 
-	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/secret-repo", "non-default-profile")
+	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/secret-repo", "org:non-default-profile")
 
 	assert.ErrorContains(t, err, "token vendor failed")
 	assert.Nil(t, tok)
@@ -139,7 +147,7 @@ func TestVendor_NonDefaultProfile_SucceedsWithTokenWhenPossible(t *testing.T) {
 	})
 	v := vendor.New(nil, tokenVendor, store)
 
-	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/secret-repo", "non-default-profile")
+	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "https://github.com/org/secret-repo", "org:non-default-profile")
 	assert.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "non-default-token-value",

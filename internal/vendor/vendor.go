@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
@@ -59,9 +60,17 @@ func New(
 	tokenVendor TokenVendor,
 	orgProfile *github.ProfileStore,
 ) ProfileTokenVendor {
-	return func(ctx context.Context, claims jwt.BuildkiteClaims, requestedRepoURL string, profile string) (*ProfileToken, error) {
+	return func(ctx context.Context, claims jwt.BuildkiteClaims, requestedRepoURL string, fullProfileName string) (*ProfileToken, error) {
 		var token string
 		var expiry time.Time
+
+		splitProfile := strings.Split(fullProfileName, ":")
+		if len(splitProfile) < 2 {
+			return nil, fmt.Errorf("profile is not colon-separated %s", splitProfile)
+		}
+		// get the profile name
+		// currently we don't differentiate between repo or org profiles, but we can in the future
+		profile := splitProfile[1]
 
 		// Vend a non-default profile.
 		// This is not the standard use case at the time of development, but
