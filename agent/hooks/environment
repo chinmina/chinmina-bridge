@@ -9,7 +9,8 @@
 #
 BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_CHINMINA_URL="http://chinmina-bridge" \
 BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_AUDIENCE="github-app-auth:chinmina" \
-BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_PROFILES="repo:default org:buildkite-plugin-testing" \
+BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_PROFILES_0="repo:default"
+BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_PROFILES_1="org:buildkite-plugin-testing" \
     source /buildkite/plugins/chinmina-git-credentials-buildkite-plugin/hooks/environment
 
 # optional: it is possible to change the git URL, converting it from SSH to
