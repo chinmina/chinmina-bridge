@@ -3,6 +3,7 @@ package vendor
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -64,21 +65,29 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 					Str("key", key).
 					Msg("hit: existing token found for pipeline")
 
-				// if this is a profile token, we may need to update the repo
-				// field for the in-flight value
-				if repo == "" {
-					cachedToken.RequestedRepositoryURL = repo
-				}
+				// There are a couple of cases where the repository may not match
+				// the requested repository:
+				// 1. The pipeline was created with a different repository, and
+				// was changed.
+				// 2. The token is a profile token, and was initially vended for
+				// a different repository.
 				if cachedToken.RequestedRepositoryURL != repo {
-					// Token invalid: remove from cache and fall through to reissue.
-					// Re-cache likely to happen if the pipeline's repository was changed.
-					log.Info().
-						Str("key", key).Str("expected", repo).
-						Str("actual", cachedToken.RequestedRepositoryURL).
-						Msg("invalid: cached token issued for different repository")
+					// The profile token case:
+					if slices.Contains(cachedToken.Repositories, repo) {
+						cachedToken.RequestedRepositoryURL = repo
+						return &cachedToken, nil
+					} else {
+						// The pipeline token case:
+						// Token invalid: remove from cache and fall through to reissue.
+						// Re-cache likely to happen if the pipeline's repository was changed.
+						log.Info().
+							Str("key", key).Str("expected", repo).
+							Str("actual", cachedToken.RequestedRepositoryURL).
+							Msg("invalid: cached token issued for different repository")
 
-					// the delete is required as "set" is not guaranteed to write to the cache
-					cache.Delete(key)
+						// the delete is required as "set" is not guaranteed to write to the cache
+						cache.Delete(key)
+					}
 				} else {
 					return &cachedToken, nil
 				}

@@ -229,6 +229,21 @@ func TestReturnsErrorForWrapperError(t *testing.T) {
 	assert.Nil(t, token)
 }
 
+func TestBadProfileFormat(t *testing.T) {
+	wrapped := sequenceVendor(nil)
+
+	c, err := vendor.Cached(defaultTTL)
+	require.NoError(t, err)
+
+	v := c(wrapped)
+
+	// call with bad profile format does not hit cache
+	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "bad-profile-format")
+	assert.Error(t, err)
+	assert.EqualError(t, err, "unexpected profile format: bad-profile-format")
+	assert.Nil(t, token)
+}
+
 // E must be an error
 var _ error = E{}
 

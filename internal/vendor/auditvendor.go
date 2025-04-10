@@ -20,6 +20,7 @@ func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
 		} else if token == nil {
 			entry.Error = "repository mismatch, no token vended"
 		} else {
+			entry.RequestedRepository = token.RequestedRepositoryURL
 			entry.Repositories = token.Repositories
 			entry.Permissions = token.Permissions
 			entry.ExpirySecs = token.Expiry.Unix()
