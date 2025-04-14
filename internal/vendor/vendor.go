@@ -82,17 +82,31 @@ func New(
 				log.Warn().Str("pipeline", claims.PipelineSlug).Str("profile", profile).Msg("requested profile was not found")
 				return nil, fmt.Errorf("could not find profile %s: %w", profile, err)
 			}
-			repo, err := url.Parse(requestedRepoURL)
-			if err != nil {
-				return nil, fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err)
+
+			// If we receive an empty requested repository URL, this is a
+			// naked token request. We will vend a token; this should not
+			// be used as part of git-credential flows though.
+			if requestedRepoURL == "" {
+				log.Info().Str("organization", claims.OrganizationSlug).
+					Str("profile", profile).
+					Msg("raw token issued")
+
+			} else {
+				// Otherwise validate it against the profile.
+				repo, err := url.Parse(requestedRepoURL)
+				if err != nil {
+					return nil, fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err)
+				}
+
+				// If the requested repository isn't in the profile, return nil.
+				// This indicates that the handler should return a successful (but empty) response.
+				_, repository := github.RepoForURL(*repo)
+				if !profileConf.HasRepository(repository) {
+					log.Warn().Str("repository", repository).Str("profile", profile).Msg("requested repository was not found in profile")
+					return nil, nil
+				}
 			}
-			// If the requested repository isn't in the profile, return nil.
-			// This indicates that the handler should return a successful (but empty) response.
-			_, repository := github.RepoForURL(*repo)
-			if !profileConf.HasRepository(repository) {
-				log.Warn().Str("repository", repository).Str("profile", profile).Msg("requested repository was not found in profile")
-				return nil, nil
-			}
+
 			// use the github api to vend a token for the repository
 			token, expiry, err = tokenVendor(ctx, profileConf.Repositories, profileConf.Permissions)
 			if err != nil {
@@ -102,7 +116,7 @@ func New(
 				Str("organization", claims.OrganizationSlug).
 				Str("profile", profile).
 				Str("repo", requestedRepoURL).
-				Msg("token issued")
+				Msg("profile token issued")
 
 			return &ProfileToken{
 				OrganizationSlug:       claims.OrganizationSlug,
