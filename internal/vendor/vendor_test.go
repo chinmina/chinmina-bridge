@@ -205,6 +205,27 @@ func TestPipelineRepositoryToken_URL(t *testing.T) {
 	}
 }
 
+func TestVendor_NonDefaultProfile_SucceedsWithEmptyRequestedRepo(t *testing.T) {
+	vendedDate := time.Date(1970, 1, 1, 0, 0, 10, 0, time.UTC)
+
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
+		return "non-default-token-value", vendedDate, nil
+	})
+	v := vendor.New(nil, tokenVendor, store)
+
+	tok, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"}, "", "org:non-default-profile")
+	assert.NoError(t, err)
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:                  "non-default-token-value",
+		Repositories:           []string{"secret-repo", "another-secret-repo"},
+		Permissions:            []string{"contents:read", "packages:read"},
+		Profile:                "non-default-profile",
+		Expiry:                 vendedDate,
+		OrganizationSlug:       "organization-slug",
+		RequestedRepositoryURL: "",
+	}, tok)
+}
+
 func TestPipelineRepositoryToken_ExpiryUnix(t *testing.T) {
 	testCases := []struct {
 		name     string
