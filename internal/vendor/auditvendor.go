@@ -23,6 +23,7 @@ func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
 			entry.RequestedRepository = token.RequestedRepositoryURL
 			entry.Repositories = token.Repositories
 			entry.Permissions = token.Permissions
+			entry.RequestedProfile = token.Profile
 			entry.ExpirySecs = token.Expiry.Unix()
 		}
 
