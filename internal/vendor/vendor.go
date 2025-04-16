@@ -114,7 +114,7 @@ func New(
 			}
 			log.Info().
 				Str("organization", claims.OrganizationSlug).
-				Str("profile", profile).
+				Str("profile", fullProfileName).
 				Str("repo", requestedRepoURL).
 				Msg("profile token issued")
 
@@ -123,7 +123,7 @@ func New(
 				RequestedRepositoryURL: requestedRepoURL,
 				Repositories:           profileConf.Repositories,
 				Permissions:            profileConf.Permissions,
-				Profile:                profile,
+				Profile:                fullProfileName,
 				Token:                  token,
 				Expiry:                 expiry,
 			}, nil
@@ -161,7 +161,7 @@ func New(
 			}
 			log.Info().
 				Str("organization", claims.OrganizationSlug).
-				Str("profile", profile).
+				Str("profile", fullProfileName).
 				Str("repo", requestedRepoURL).
 				Msg("token issued")
 
@@ -170,7 +170,7 @@ func New(
 				RequestedRepositoryURL: pipelineRepoURL,
 				Repositories:           requestedRepo,
 				Permissions:            []string{"contents:read"},
-				Profile:                profile,
+				Profile:                fullProfileName,
 				Token:                  token,
 				Expiry:                 expiry,
 			}, nil
