@@ -54,6 +54,16 @@ func TestVendor_DefaultProfile_SuccessfulNilOnRepoMismatch(t *testing.T) {
 	)
 	assert.NoError(t, err)
 	assert.Nil(t, tok)
+
+	// test out the empty repository case ase well.
+	tok, err = v(
+		context.Background(),
+		jwt.BuildkiteClaims{PipelineID: "pipeline-id", PipelineSlug: "pipeline-slug", OrganizationSlug: "organization-slug"},
+		"",
+		"repo:default",
+	)
+	assert.ErrorContains(t, err, "error getting repo name")
+	assert.Nil(t, tok)
 }
 
 func TestVendor_DefaultProfile_FailsWhenTokenVendorFails(t *testing.T) {
