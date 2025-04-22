@@ -107,7 +107,8 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 			Expiry:                 time.Now().Add(1 * time.Hour),
 		}, nil
 	}
-
+	// Testing auditing over the cache layer as there
+	// are resultant changes to audit objects.
 	vendorCache, err := vendor.Cached(45 * time.Minute)
 	auditedVendor := vendor.Auditor(vendorCache(profileVendor))
 

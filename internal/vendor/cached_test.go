@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
@@ -68,6 +69,8 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 		Token:                  "first-call",
 		RequestedRepositoryURL: "any-repo",
 		Profile:                "org:read-plugins",
+		Repositories:           []string{"any-repo", "another-secret-repo"},
+		Permissions:            []string{"contents:read", "packages:read"},
 	}, token)
 
 	// second call hits (even though it's for a different pipeline), return first value
@@ -77,6 +80,8 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 		Token:                  "first-call",
 		RequestedRepositoryURL: "any-repo",
 		Profile:                "org:read-plugins",
+		Repositories:           []string{"any-repo", "another-secret-repo"},
+		Permissions:            []string{"contents:read", "packages:read"},
 	}, token)
 }
 
@@ -212,6 +217,36 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 	}, token)
 }
 
+func TestCacheProfileWithDifferentRepo(t *testing.T) {
+	wrapped := sequenceVendor("first-call")
+
+	c, err := vendor.Cached(defaultTTL)
+	require.NoError(t, err)
+
+	v := c(wrapped)
+
+	// first call misses cache
+	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "org:shared-profile")
+	require.NoError(t, err)
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:                  "first-call",
+		RequestedRepositoryURL: "any-repo",
+		Profile:                "org:shared-profile",
+		Repositories:           []string{"any-repo", "different-repo"},
+		Permissions:            []string{"read", "write"},
+	}, token)
+	// second call hits, but repo changes, so token content is the same but repo is different
+	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "different-repo", "org:shared-profile")
+	require.NoError(t, err)
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:                  "first-call",
+		RequestedRepositoryURL: "different-repo",
+		Profile:                "org:shared-profile",
+		Repositories:           []string{"any-repo", "different-repo"},
+		Permissions:            []string{"read", "write"},
+	}, token)
+}
+
 // calls wrapped when value expires
 // returns error from wrapped on miss
 func TestReturnsErrorForWrapperError(t *testing.T) {
@@ -259,6 +294,25 @@ func (e E) Error() string {
 func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 	callIndex := 0
 
+	var testProfile = github.ProfileConfig{
+		Organization: struct {
+			Profiles []github.Profile `yaml:"profiles"`
+		}{
+			Profiles: []github.Profile{
+				{
+					Name:         "org:shared-profile",
+					Repositories: []string{"any-repo", "different-repo"},
+					Permissions:  []string{"read", "write"},
+				},
+				{
+					Name:         "org:read-plugins",
+					Repositories: []string{"any-repo", "another-secret-repo"},
+					Permissions:  []string{"contents:read", "packages:read"},
+				},
+			},
+		},
+	}
+
 	return vendor.ProfileTokenVendor(func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*vendor.ProfileToken, error) {
 		if len(calls) <= callIndex {
 			return nil, errors.New("unregistered call")
@@ -273,11 +327,21 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		case nil:
 			// all nil return
 		case string:
-			token = &vendor.ProfileToken{
-				Token: v,
-
-				RequestedRepositoryURL: repo,
-				Profile:                profile,
+			if profile == "" {
+				token = &vendor.ProfileToken{
+					Token:                  v,
+					RequestedRepositoryURL: repo,
+					Profile:                profile,
+				}
+			} else {
+				orgProfile, _ := testProfile.LookupProfile(profile)
+				token = &vendor.ProfileToken{
+					Token:                  v,
+					Repositories:           orgProfile.Repositories,
+					Permissions:            orgProfile.Permissions,
+					RequestedRepositoryURL: repo,
+					Profile:                profile,
+				}
 			}
 		case error:
 			err = v
