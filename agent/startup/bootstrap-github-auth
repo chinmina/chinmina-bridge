@@ -14,3 +14,17 @@ GIT_CONFIG_VALUE_0=false \
   git clone --depth 1 --single-branch --no-tags \
     --branch "${plugin_version}" -- \
     "${plugin_repo}" "${plugin_dir}"
+
+echo "installing Chinmina token library plugin"
+
+plugin_repo="https://github.com/chinmina/chinmina-private-releases-buildkite-plugin.git"
+plugin_dir="/buildkite/plugins/chinmina-private-releases-buildkite-plugin"
+
+[[ -d "${plugin_dir}" ]] && rm -rf "${plugin_dir}"
+
+GIT_CONFIG_COUNT=1 \
+GIT_CONFIG_KEY_0=advice.detachedHead \
+GIT_CONFIG_VALUE_0=false \
+  git clone --depth 1 --single-branch --no-tags \
+    --branch "feat/add-downloader-script" -- \
+    "${plugin_repo}" "${plugin_dir}"
