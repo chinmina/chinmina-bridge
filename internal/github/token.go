@@ -107,12 +107,7 @@ func createAppTransport(ctx context.Context, cfg config.GithubConfig, wrapped ht
 	return appInstallationTransport, nil
 }
 
-func (c Client) CreateAccessToken(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
-	repoNames, err := GetRepoNames(repositoryURLs)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-
+func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
 	tokenPermissions, err := ScopesToPermissions(scopes)
 	if err != nil {
 		return "", time.Time{}, err

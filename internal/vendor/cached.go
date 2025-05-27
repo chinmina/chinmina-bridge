@@ -2,6 +2,9 @@ package vendor
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
@@ -14,9 +17,9 @@ import (
 // cause multiple token requests, In this case, the last one returned wins. In
 // this use case, given that concurrent calls are likely to be less common, the
 // additional tokens issued are worth gains made skipping locking.
-func Cached(ttl time.Duration) (func(PipelineTokenVendor) PipelineTokenVendor, error) {
+func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, error) {
 	cache, err := otter.
-		MustBuilder[string, PipelineRepositoryToken](10_000).
+		MustBuilder[string, ProfileToken](10_000).
 		CollectStats().
 		WithTTL(ttl).
 		Build()
@@ -24,40 +27,74 @@ func Cached(ttl time.Duration) (func(PipelineTokenVendor) PipelineTokenVendor, e
 		return nil, err
 	}
 
-	return func(v PipelineTokenVendor) PipelineTokenVendor {
-		return func(ctx context.Context, claims jwt.BuildkiteClaims, repo string) (*PipelineRepositoryToken, error) {
-			// Cache by pipeline: this allows token reuse across multiple
-			// builds. It's likely that this will change if rules allow for
-			// builds to be given different permissions based on the branch or
-			// tag.
-			key := claims.PipelineID
+	return func(v ProfileTokenVendor) ProfileTokenVendor {
+		return func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*ProfileToken, error) {
+			// Cache by profile. There are cases where profile is not used
+			// (e.g. when vending a pipeline token), but we are using a URN
+			// to solve this problem. This also allows us to support repo
+			// level profiles in the future.
+			// Structure:
+			// - profile://org-name/<profile-type>/<profile/repo-name>/<profile-name>
+			//
+			// Examples:
+			// - profile://org-name/organization/org-profile-name
+			// - profile://org-name/pipeline/pipeline-name/default
+			// - profile://org-name/pipeline/pipeline-name/write-packages
+			var key string
 
+			// Format the key based on the arguments passed.
+			// If the profile is empty, we are vending a repo token, using the
+			// default profile.
+			// If the profile is not empty, we are vending a profile token.
+			if profile == "" {
+				profile = "repo:default"
+			}
+			if strings.HasPrefix(profile, "repo:") {
+				key = fmt.Sprintf("profile://%s/pipeline/%s/%s", claims.OrganizationSlug, claims.PipelineID, profile)
+			} else if strings.HasPrefix(profile, "org:") {
+				key = fmt.Sprintf("profile://%s/organization/%s", claims.OrganizationSlug, profile)
+			} else {
+				log.Warn().Str("profile", profile).
+					Msg("unexpected profile format")
+				return nil, fmt.Errorf("unexpected profile format: %s", profile)
+			}
+
+			// cache hit: return the cached token
 			if cachedToken, ok := cache.Get(key); ok {
-				// The expected repo may be unknown, but if it's supplied it needs to
-				// match the cached repo. An "unknown" means "give me the token for the
-				// pipeline's repository"; when supplied, a token is request for a given
-				// repo (if possible).
-				if repo == "" || cachedToken.RepositoryURL == repo {
-					log.Info().Time("expiry", cachedToken.Expiry).
-						Str("key", key).
-						Msg("hit: existing token found for pipeline")
+				log.Info().Time("expiry", cachedToken.Expiry).
+					Str("key", key).
+					Msg("hit: existing token found for pipeline")
 
-					return &cachedToken, nil
+				// There are a couple of cases where the repository may not match
+				// the requested repository:
+				// 1. The pipeline was created with a different repository, and
+				// was changed.
+				// 2. The token is a profile token, and was initially vended for
+				// a different repository.
+				if cachedToken.RequestedRepositoryURL != repo {
+					// The profile token case:
+					if slices.Contains(cachedToken.Repositories, repo) {
+						cachedToken.RequestedRepositoryURL = repo
+						return &cachedToken, nil
+					} else {
+						// The pipeline token case:
+						// Token invalid: remove from cache and fall through to reissue.
+						// Re-cache likely to happen if the pipeline's repository was changed.
+						log.Info().
+							Str("key", key).Str("expected", repo).
+							Str("actual", cachedToken.RequestedRepositoryURL).
+							Msg("invalid: cached token issued for different repository")
+
+						// the delete is required as "set" is not guaranteed to write to the cache
+						cache.Delete(key)
+					}
 				} else {
-					// Token invalid: remove from cache and fall through to reissue.
-					// Re-cache likely to happen if the pipeline's repository was changed.
-					log.Info().
-						Str("key", key).Str("expected", repo).
-						Str("actual", cachedToken.RepositoryURL).
-						Msg("invalid: cached token issued for different repository")
-
-					// the delete is required as "set" is not guaranteed to write to the cache
-					cache.Delete(key)
+					return &cachedToken, nil
 				}
 			}
 
 			// cache miss: request and cache
-			token, err := v(ctx, claims, repo)
+			token, err := v(ctx, claims, repo, profile)
 			if err != nil {
 				return nil, err
 			}

@@ -12,14 +12,16 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func handlePostToken(tokenVendor vendor.PipelineTokenVendor) http.Handler {
+func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
+
+		profile := r.PathValue("profile")
 
 		// claims must be present from the middleware
 		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
 
-		tokenResponse, err := tokenVendor(r.Context(), claims, "")
+		tokenResponse, err := tokenVendor(r.Context(), claims, "", profile)
 		if err != nil {
 			log.Info().Msgf("token creation failed %v\n", err)
 			requestError(w, http.StatusInternalServerError)
@@ -45,9 +47,11 @@ func handlePostToken(tokenVendor vendor.PipelineTokenVendor) http.Handler {
 	})
 }
 
-func handlePostGitCredentials(tokenVendor vendor.PipelineTokenVendor) http.Handler {
+func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
+
+		profile := r.PathValue("profile")
 
 		// claims must be present from the middleware
 		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
@@ -66,7 +70,7 @@ func handlePostGitCredentials(tokenVendor vendor.PipelineTokenVendor) http.Handl
 			return
 		}
 
-		tokenResponse, err := tokenVendor(r.Context(), claims, requestedRepoURL)
+		tokenResponse, err := tokenVendor(r.Context(), claims, requestedRepoURL, profile)
 		if err != nil {
 			log.Info().Msgf("token creation failed %v\n", err)
 			requestError(w, http.StatusInternalServerError)

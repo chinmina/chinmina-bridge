@@ -71,14 +71,14 @@ func TestHandlePostToken_ReturnsTokenOnSuccess(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 
-	respBody := vendor.PipelineRepositoryToken{}
+	respBody := vendor.ProfileToken{}
 	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
 	require.NoError(t, err)
-	assert.Equal(t, &vendor.PipelineRepositoryToken{
+	assert.Equal(t, &vendor.ProfileToken{
 		Token:            "expected-token-value",
 		Expiry:           defaultExpiry,
 		OrganizationSlug: "organization-slug",
-		PipelineSlug:     "pipeline-slug",
+		Profile:          "default",
 	}, &respBody)
 }
 
@@ -134,7 +134,7 @@ func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 }
 
 func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
-	tokenVendor := vendor.PipelineTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string) (*vendor.PipelineRepositoryToken, error) {
+	tokenVendor := vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
 		return nil, nil
 	})
 
@@ -270,20 +270,53 @@ func TestHandleHealthCheck_Success(t *testing.T) {
 	assert.Equal(t, "OK", respBody)
 }
 
-func tv(token string) vendor.PipelineTokenVendor {
-	return vendor.PipelineTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string) (*vendor.PipelineRepositoryToken, error) {
-		return &vendor.PipelineRepositoryToken{
-			Token:            token,
-			Expiry:           defaultExpiry,
-			PipelineSlug:     claims.PipelineSlug,
-			OrganizationSlug: claims.OrganizationSlug,
-			RepositoryURL:    repoUrl,
+func tv(token string) vendor.ProfileTokenVendor {
+	return vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
+		if profile == "" {
+			profile = "default"
+		}
+		return &vendor.ProfileToken{
+			Token:                  token,
+			Expiry:                 defaultExpiry,
+			Profile:                profile,
+			OrganizationSlug:       claims.OrganizationSlug,
+			RequestedRepositoryURL: repoUrl,
 		}, nil
 	})
 }
 
-func tvFails(err error) vendor.PipelineTokenVendor {
-	return vendor.PipelineTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string) (*vendor.PipelineRepositoryToken, error) {
+func TestHandlePostGitCredentialsWithProfile_ReturnsTokenOnSuccess(t *testing.T) {
+	tokenVendor := tv("expected-token-value")
+
+	ctx := claimsContext()
+
+	m := credentialhandler.NewMap(10)
+	m.Set("protocol", "https")
+	m.Set("host", "github.com")
+	m.Set("path", "org/repo")
+
+	body := &bytes.Buffer{}
+	credentialhandler.WriteProperties(m, body)
+	req, err := http.NewRequest("POST", "/organization/git-credentials/test-profile", body)
+	require.NoError(t, err)
+
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// act
+	handler := handlePostGitCredentials(tokenVendor)
+	handler.ServeHTTP(rr, req)
+
+	// assert
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+
+	respBody := rr.Body.String()
+	assert.Equal(t, "protocol=https\nhost=github.com\npath=org/repo\nusername=x-access-token\npassword=expected-token-value\npassword_expiry_utc=1715104776\n\n", respBody)
+}
+
+func tvFails(err error) vendor.ProfileTokenVendor {
+	return vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
 		return nil, err
 	})
 }

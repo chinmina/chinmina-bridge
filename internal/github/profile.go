@@ -45,6 +45,18 @@ func NewProfileStore() *ProfileStore {
 	return &ProfileStore{}
 }
 
+func (p *ProfileStore) GetProfileFromStore(name string) (Profile, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	profile, ok := p.config.LookupProfile(name)
+	if !ok {
+		return Profile{}, errors.New("profile not found")
+	}
+
+	return profile, nil
+}
+
 func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -140,11 +152,6 @@ func (config *ProfileConfig) LookupProfile(name string) (Profile, bool) {
 	return Profile{}, false
 }
 
-func (config *ProfileConfig) HasRepository(profileName string, repo string) bool {
-	profile, ok := config.LookupProfile(profileName)
-	if !ok {
-		return false
-	}
-
-	return slices.Contains(profile.Repositories, repo)
+func (config Profile) HasRepository(repo string) bool {
+	return slices.Contains(config.Repositories, repo)
 }

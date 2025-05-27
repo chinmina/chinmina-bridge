@@ -7,9 +7,19 @@
 # Changing the parameters supplied will be necessary to ensure that agents can
 # connect to the service and include the correct audience.
 #
-BUILDKITE_PLUGIN_GITHUB_APP_AUTH_VENDOR_URL="http://chinmina-bridge" \
-BUILDKITE_PLUGIN_GITHUB_APP_AUTH_AUDIENCE="github-app-auth:chinmina" \
-    source /buildkite/plugins/github-app-auth-buildkite-plugin/hooks/environment
+BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_CHINMINA_URL="http://chinmina-bridge" \
+BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_AUDIENCE="github-app-auth:chinmina" \
+BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_PROFILES_0="repo:default" \
+BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_PROFILES_1="org:buildkite-plugin-testing" \
+    source /buildkite/plugins/chinmina-git-credentials-buildkite-plugin/hooks/environment 
+
+# References the local instance of chinmina service
+BUILDKITE_PLUGIN_CHINMINA_TOKEN_CHINMINA_URL="http://chinmina-bridge" \
+BUILDKITE_PLUGIN_CHINMINA_TOKEN_AUDIENCE="github-app-auth:chinmina" \
+    source /buildkite/plugins/chinmina-token-buildkite-plugin/hooks/environment 
+#Installing gh cli
+echo "@community http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+apk add github-cli@community
 
 # optional: it is possible to change the git URL, converting it from SSH to
 # HTTPS if that is desired.

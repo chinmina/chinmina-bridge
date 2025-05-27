@@ -27,21 +27,22 @@ var (
 
 // Entry is an audit log entry for the current request.
 type Entry struct {
-	Method           string
-	Path             string
-	Status           int
-	SourceIP         string
-	UserAgent        string
-	RequestedProfile string
-	Authorized       bool
-	AuthSubject      string
-	AuthIssuer       string
-	AuthAudience     []string
-	AuthExpirySecs   int64
-	Error            string
-	Repositories     []string
-	Permissions      []string
-	ExpirySecs       int64
+	Method              string
+	Path                string
+	Status              int
+	SourceIP            string
+	UserAgent           string
+	RequestedProfile    string
+	RequestedRepository string
+	Authorized          bool
+	AuthSubject         string
+	AuthIssuer          string
+	AuthAudience        []string
+	AuthExpirySecs      int64
+	Error               string
+	Repositories        []string
+	Permissions         []string
+	ExpirySecs          int64
 }
 
 // MarshalZerologObject implements zerolog.LogObjectMarshaler. This avoids the
@@ -54,6 +55,7 @@ func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 		Str("sourceIP", e.SourceIP).
 		Str("userAgent", e.UserAgent).
 		Str("requestedProfile", e.RequestedProfile).
+		Str("requestedRepository", e.RequestedRepository).
 		Bool("authorized", e.Authorized).
 		Str("authSubject", e.AuthSubject).
 		Str("authIssuer", e.AuthIssuer).

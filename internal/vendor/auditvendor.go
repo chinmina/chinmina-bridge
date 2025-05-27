@@ -10,9 +10,9 @@ import (
 
 // Auditor is a function that wraps a PipelineTokenVendor and records the result
 // of vending a token to the audit log.
-func Auditor(vendor PipelineTokenVendor) PipelineTokenVendor {
-	return func(ctx context.Context, claims jwt.BuildkiteClaims, repo string) (*PipelineRepositoryToken, error) {
-		token, err := vendor(ctx, claims, repo)
+func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
+	return func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*ProfileToken, error) {
+		token, err := vendor(ctx, claims, repo, profile)
 
 		entry := audit.Log(ctx)
 		if err != nil {
@@ -20,8 +20,10 @@ func Auditor(vendor PipelineTokenVendor) PipelineTokenVendor {
 		} else if token == nil {
 			entry.Error = "repository mismatch, no token vended"
 		} else {
-			entry.Repositories = []string{token.RepositoryURL}
-			entry.Permissions = []string{"contents:read"}
+			entry.RequestedRepository = token.RequestedRepositoryURL
+			entry.Repositories = token.Repositories
+			entry.Permissions = token.Permissions
+			entry.RequestedProfile = token.Profile
 			entry.ExpirySecs = token.Expiry.Unix()
 		}
 
