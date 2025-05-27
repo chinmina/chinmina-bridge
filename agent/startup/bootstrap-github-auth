@@ -3,7 +3,7 @@
 echo "installing Github credential plugin"
 
 plugin_repo="https://github.com/chinmina/chinmina-git-credentials-buildkite-plugin.git"
-plugin_version="v1.2.0-beta.1"
+plugin_version="v1.2.0"
 plugin_dir="/buildkite/plugins/chinmina-git-credentials-buildkite-plugin"
 
 [[ -d "${plugin_dir}" ]] && rm -rf "${plugin_dir}"
@@ -18,6 +18,7 @@ GIT_CONFIG_VALUE_0=false \
 echo "installing Chinmina token library plugin"
 
 plugin_repo="https://github.com/chinmina/chinmina-token-buildkite-plugin.git"
+plugin_version="v1.0.1"
 plugin_dir="/buildkite/plugins/chinmina-token-buildkite-plugin"
 
 [[ -d "${plugin_dir}" ]] && rm -rf "${plugin_dir}"
@@ -25,4 +26,6 @@ plugin_dir="/buildkite/plugins/chinmina-token-buildkite-plugin"
 GIT_CONFIG_COUNT=1 \
 GIT_CONFIG_KEY_0=advice.detachedHead \
 GIT_CONFIG_VALUE_0=false \
-  git clone --depth 1 --single-branch --no-tags "${plugin_repo}" "${plugin_dir}"
+  git clone --depth 1 --single-branch --no-tags \
+    --branch "${plugin_version}" -- \
+    "${plugin_repo}" "${plugin_dir}"
