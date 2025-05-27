@@ -7,6 +7,10 @@ env:
     - 'RELEASE_DISABLE={{ eq (envOrDefault "CI" "false") "false" }}'
     - 'KO_DOCKER_REPO={{ envOrDefault "KO_DOCKER_REPO" (printf "ttl.sh/chinmina-prerelease/%d" .Now.Unix) }}'
 
+git:
+  # sort tags by creation date to help disambiguate tags created against the same commit
+  tag_sort: "-version:creatordate"
+
 builds:
   - id: release
     binary: chinmina-bridge
