@@ -1,0 +1,59 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  description: "Golang config",
+  postUpdateOptions: [
+    // Tidy mod after updates: keeps compatibility with our go.mod checks.
+    "gomodTidy",
+    // Update import paths when updating dependencies: this is important when
+    // updating major versions of dependencies.
+    "gomodUpdateImportPaths",
+  ],
+  regexManagers: [
+    {
+      // Go version version references
+      fileMatch: ["^.github/workflows/.*\\.ya?ml$"],
+      matchStrings: [
+        // Match go-version and GO_VERSION, common idioms in workflow files.
+        //
+        // Matches with or without quotes on value, and is specific about the
+        // format so it skips values like "{{ $env.GO_VERSION }}" but matches
+        // 1.18 or "1.18.2-beta"
+        '(?mi)go[-_]version\\s*:\\s*\\"?(?<currentValue>\\d+\\.\\d+(\\.\\d+)?(-.*)?)\\"?\\s*?(?:#|$)',
+      ],
+      depNameTemplate: "go",
+      packageNameTemplate: "golang/go",
+      datasourceTemplate: "golang-version",
+      // this is the versioning that the gomod datasource uses: it ensures that
+      // versions like 1.16 are upgraded without a patch version (i.e. 1.19 not
+      // 1.19.2)
+      versioningTemplate: "npm",
+    },
+    {
+      // golangci-lint version references
+      //
+      // The action is handled by Renovate in the standard fashion: this updates
+      // the version of the underlying tool that will be run by the action.
+      fileMatch: ["^.github/workflows/.*\\.ya?ml$"],
+      // Match version for golangci-lint as used by the action. This won't
+      // update "latest" references, and will only work if the "version" is the
+      // first parameter after "with". Trying to deal with YAML more generically
+      // in RE isn't a path to go down.
+      matchStrings: [
+        '(?mi)uses:\\s*golangci/golangci-lint-action(?:@[^\\n]*)?\\s+with:\\s+version\\s*:\\s*\\"?(?<currentValue>v\\d+\\.\\d+(\\.\\d+)?(-.*)?)\\"?\\s*?(?:#|$)',
+      ],
+      depNameTemplate: "golangci-lint",
+      packageNameTemplate: "golangci/golangci-lint", // github project name
+      datasourceTemplate: "github-tags",
+      // the action specifies that it allows the patch part of the version to be
+      // optional
+      versioningTemplate: "npm",
+    },
+  ],
+  packageRules: [
+    {
+      groupName: "go",
+      groupSlug: "golang",
+      matchDepNames: ["go", "golang"],
+    },
+  ],
+}
