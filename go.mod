@@ -8,7 +8,7 @@ require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.11.0
 	github.com/buildkite/go-buildkite/v3 v3.13.0
 	github.com/go-jose/go-jose/v4 v4.0.4
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zerologr v1.2.3
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/google/go-github/v61 v61.0.0
