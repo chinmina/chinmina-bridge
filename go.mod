@@ -15,7 +15,7 @@ require (
 	github.com/justinas/alice v1.2.0
 	github.com/maypok86/otter v1.2.2
 	github.com/rs/zerolog v1.34.0
-	github.com/sethvargo/go-envconfig v1.1.0
+	github.com/sethvargo/go-envconfig v1.3.0
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.30.0
 	go.opentelemetry.io/otel/sdk v1.30.0
