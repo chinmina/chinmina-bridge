@@ -115,7 +115,11 @@ func GetProfile(ctx context.Context, gh Client, orgProfileLocation string) (stri
 
 func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error) {
 	profileConfig := ProfileConfig{}
-	err := yaml.UnmarshalStrict([]byte(profile), &profileConfig)
+
+	dec := yaml.NewDecoder(strings.NewReader(profile))
+	dec.KnownFields(true)
+
+	err := dec.Decode(&profileConfig)
 	if err != nil {
 		log.Info().Err(err).Msg("organization profile invalid")
 		return ProfileConfig{}, err
