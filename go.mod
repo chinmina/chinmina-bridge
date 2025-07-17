@@ -1,6 +1,6 @@
 module github.com/chinmina/chinmina-bridge
 
-go 1.23.1
+go 1.24
 
 require (
 	github.com/auth0/go-jwt-middleware/v2 v2.3.0
@@ -13,7 +13,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v73 v73.0.0
 	github.com/justinas/alice v1.2.0
-	github.com/maypok86/otter v1.2.2
+	github.com/maypok86/otter/v2 v2.2.0
 	github.com/rs/zerolog v1.34.0
 	github.com/sethvargo/go-envconfig v1.3.0
 	github.com/stretchr/testify v1.10.0
@@ -50,7 +50,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	golang.org/x/net v0.29.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 )
 

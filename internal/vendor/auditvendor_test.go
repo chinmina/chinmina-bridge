@@ -110,6 +110,8 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	// Testing auditing over the cache layer as there
 	// are resultant changes to audit objects.
 	vendorCache, err := vendor.Cached(45 * time.Minute)
+	assert.NoError(t, err)
+
 	auditedVendor := vendor.Auditor(vendorCache(profileVendor))
 
 	ctx, _ := audit.Context(context.Background())
