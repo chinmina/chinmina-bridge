@@ -10,7 +10,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.0.5
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zerologr v1.2.3
-	github.com/golang-jwt/jwt/v4 v4.5.0
+	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v61 v61.0.0
 	github.com/justinas/alice v1.2.0
 	github.com/maypok86/otter v1.2.2
