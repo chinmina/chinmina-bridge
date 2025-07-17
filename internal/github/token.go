@@ -14,7 +14,7 @@ import (
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/go-github/v61/github"
+	"github.com/google/go-github/v73/github"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
