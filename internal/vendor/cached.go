@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
-	"github.com/maypok86/otter"
+	"github.com/maypok86/otter/v2"
+	"github.com/maypok86/otter/v2/stats"
 	"github.com/rs/zerolog/log"
 )
 
@@ -18,14 +19,9 @@ import (
 // this use case, given that concurrent calls are likely to be less common, the
 // additional tokens issued are worth gains made skipping locking.
 func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, error) {
-	cache, err := otter.
-		MustBuilder[string, ProfileToken](10_000).
-		CollectStats().
-		WithTTL(ttl).
-		Build()
-	if err != nil {
-		return nil, err
-	}
+	counter := stats.NewCounter()
+	cache := otter.
+		Must(&otter.Options[string, ProfileToken]{MaximumSize: 10_000, StatsRecorder: counter, ExpiryCalculator: otter.ExpiryCreating[string, ProfileToken](ttl)})
 
 	return func(v ProfileTokenVendor) ProfileTokenVendor {
 		return func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*ProfileToken, error) {
@@ -60,8 +56,8 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 			}
 
 			// cache hit: return the cached token
-			if cachedToken, ok := cache.Get(key); ok {
-				log.Info().Time("expiry", cachedToken.Expiry).
+			if cachedToken, ok := cache.GetEntry(key); ok {
+				log.Info().Time("expiry", cachedToken.Value.Expiry).
 					Str("key", key).
 					Msg("hit: existing token found for pipeline")
 
@@ -71,25 +67,25 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 				// was changed.
 				// 2. The token is a profile token, and was initially vended for
 				// a different repository.
-				if cachedToken.RequestedRepositoryURL != repo {
+				if cachedToken.Value.RequestedRepositoryURL != repo {
 					// The profile token case:
-					if slices.Contains(cachedToken.Repositories, repo) {
-						cachedToken.RequestedRepositoryURL = repo
-						return &cachedToken, nil
+					if slices.Contains(cachedToken.Value.Repositories, repo) {
+						cachedToken.Value.RequestedRepositoryURL = repo
+						return &cachedToken.Value, nil
 					} else {
 						// The pipeline token case:
 						// Token invalid: remove from cache and fall through to reissue.
 						// Re-cache likely to happen if the pipeline's repository was changed.
 						log.Info().
 							Str("key", key).Str("expected", repo).
-							Str("actual", cachedToken.RequestedRepositoryURL).
+							Str("actual", cachedToken.Value.RequestedRepositoryURL).
 							Msg("invalid: cached token issued for different repository")
 
 						// the delete is required as "set" is not guaranteed to write to the cache
-						cache.Delete(key)
+						cache.Invalidate(key)
 					}
 				} else {
-					return &cachedToken, nil
+					return &cachedToken.Value, nil
 				}
 			}
 

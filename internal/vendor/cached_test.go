@@ -13,11 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCacheSetupFails(t *testing.T) {
-	_, err := vendor.Cached(-1)
-	require.Error(t, err)
-}
-
 func TestCacheMissOnFirstRequest(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
