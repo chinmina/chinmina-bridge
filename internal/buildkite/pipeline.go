@@ -36,10 +36,8 @@ func New(cfg config.BuildkiteConfig) (p PipelineLookup, err error) {
 }
 
 func (p PipelineLookup) RepositoryLookup(ctx context.Context, organizationSlug, pipelineSlug string) (string, error) {
-	client, err := p.createClient(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to create Buildkite client: %w", err)
-	}
+	client := p.createClient(ctx)
+
 	pipeline, _, err := client.Pipelines.Get(ctx, organizationSlug, pipelineSlug)
 	if err != nil {
 		return "", fmt.Errorf("failed to get pipeline called %s/%s: %w", organizationSlug, pipelineSlug, err)
@@ -57,7 +55,7 @@ func (p PipelineLookup) RepositoryLookup(ctx context.Context, organizationSlug, 
 // createClient creates a new Buildkite API client. A client is required for
 // every invocation, so the current context can be included in the request.
 // Without this, HTTP client traces are not attached to their parent request.
-func (p PipelineLookup) createClient(ctx context.Context) (*buildkite.Client, error) {
+func (p PipelineLookup) createClient(ctx context.Context) *buildkite.Client {
 	def := http.DefaultTransport
 
 	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -65,19 +63,16 @@ func (p PipelineLookup) createClient(ctx context.Context) (*buildkite.Client, er
 		return def.RoundTrip(req)
 	})
 
-	client, err := buildkite.NewClient(
+	client, _ := buildkite.NewClient(
 		buildkite.WithTokenAuth(p.token),
 		buildkite.WithHTTPClient(&http.Client{Transport: &rt}),
 	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Buildkite client: %w", err)
-	}
 
 	if p.apiURL != nil {
 		client.BaseURL = p.apiURL
 	}
 
-	return client, nil
+	return client
 }
 
 type roundTripperFunc func(req *http.Request) (*http.Response, error)
