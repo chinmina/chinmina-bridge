@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/buildkite/go-buildkite/v3/buildkite"
+	"github.com/buildkite/go-buildkite/v4"
 	"github.com/chinmina/chinmina-bridge/internal/config"
 )
 
@@ -37,18 +37,19 @@ func New(cfg config.BuildkiteConfig) (p PipelineLookup, err error) {
 
 func (p PipelineLookup) RepositoryLookup(ctx context.Context, organizationSlug, pipelineSlug string) (string, error) {
 	client := p.createClient(ctx)
-	pipeline, _, err := client.Pipelines.Get(organizationSlug, pipelineSlug)
+
+	pipeline, _, err := client.Pipelines.Get(ctx, organizationSlug, pipelineSlug)
 	if err != nil {
 		return "", fmt.Errorf("failed to get pipeline called %s/%s: %w", organizationSlug, pipelineSlug, err)
 
 	}
 
 	repo := pipeline.Repository
-	if repo == nil {
+	if repo == "" {
 		return "", fmt.Errorf("no configured repository for pipeline %s/%s", organizationSlug, pipelineSlug)
 	}
 
-	return *repo, nil
+	return repo, nil
 }
 
 // createClient creates a new Buildkite API client. A client is required for
@@ -62,17 +63,12 @@ func (p PipelineLookup) createClient(ctx context.Context) *buildkite.Client {
 		return def.RoundTrip(req)
 	})
 
-	transport := buildkite.TokenAuthTransport{
-		APIToken:  p.token,
-		Transport: rt,
-	}
-
-	client := buildkite.NewClient(
-		transport.Client(),
+	client, _ := buildkite.NewClient(
+		buildkite.WithTokenAuth(p.token),
+		buildkite.WithHTTPClient(&http.Client{Transport: &rt}),
 	)
 
 	if p.apiURL != nil {
-		transport.APIHost = p.apiURL.Host
 		client.BaseURL = p.apiURL
 	}
 

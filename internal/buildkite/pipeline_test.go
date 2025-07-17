@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	api "github.com/buildkite/go-buildkite/v3/buildkite"
+	api "github.com/buildkite/go-buildkite/v4"
 	"github.com/chinmina/chinmina-bridge/internal/buildkite"
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/stretchr/testify/assert"
@@ -43,10 +43,10 @@ func TestRepositoryLookup_Succeeds(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		pl := &api.Pipeline{
-			Name:        &pipeline,
-			Slug:        &pipeline,
-			Repository:  api.String("urn:expected-repository-url"),
-			Description: &org,
+			Name:        pipeline,
+			Slug:        pipeline,
+			Repository:  "urn:expected-repository-url",
+			Description: org,
 			Tags: []string{
 				"token:" + r.Header.Get("Authorization"),
 			},
@@ -84,10 +84,10 @@ func TestRepositoryLookup_SendsAuthToken(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		pl := &api.Pipeline{
-			Name:        &pipeline,
-			Slug:        &pipeline,
-			Repository:  api.String("urn:expected-repository-url"),
-			Description: &org,
+			Name:        pipeline,
+			Slug:        pipeline,
+			Repository:  "urn:expected-repository-url",
+			Description: org,
 			Tags: []string{
 				"token:" + r.Header.Get("Authorization"),
 			},
@@ -118,10 +118,10 @@ func TestRepositoryLookup_FailsWhenRepoNotConfigured(t *testing.T) {
 		pipeline := r.PathValue("pipeline")
 		w.Header().Set("Content-Type", "application/json")
 		pl := &api.Pipeline{
-			Name: &pipeline,
-			Slug: &pipeline,
+			Name: pipeline,
+			Slug: pipeline,
 			//Repository: // repository purposefully blank
-			Description: &org,
+			Description: org,
 		}
 		res, _ := json.Marshal(&pl)
 		_, _ = w.Write(res)
