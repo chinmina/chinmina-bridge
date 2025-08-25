@@ -57,3 +57,32 @@ git push
 - Update custom signing method implementations
 
 **Status:** Requires code changes - not a simple dependency fix
+
+## Resolving PR Conflicts During Renovate Updates
+
+**Symptoms:**
+- PR shows `mergeable: "CONFLICTING"` and `mergeStateStatus: "DIRTY"`
+- Conflicts typically in `go.sum` or `go.mod` due to overlapping dependency updates
+
+**Fix Pattern:**
+1. Check conflict status: `gh pr view <PR_NUMBER> --json mergeable,mergeStateStatus`
+2. Rebase with latest main:
+   ```bash
+   git checkout main && git pull origin main
+   gh pr checkout <PR_NUMBER>
+   git rebase origin/main
+   ```
+3. Resolve conflicts (typically go.sum):
+   ```bash
+   # For go.sum conflicts:
+   git checkout --theirs go.sum  # Use main's version
+   rm go.sum                     # Or remove entirely
+   go get ./...                  # Re-download all deps
+   go mod tidy                   # Regenerate go.sum
+   ```
+4. Complete rebase and push:
+   ```bash
+   git add .
+   git rebase --continue
+   git push --force-with-lease
+   ```
