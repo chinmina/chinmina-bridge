@@ -13,7 +13,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v74 v74.0.0
 	github.com/justinas/alice v1.2.0
-	github.com/maypok86/otter/v2 v2.2.0
+	github.com/maypok86/otter/v2 v2.2.1
 	github.com/rs/zerolog v1.34.0
 	github.com/sethvargo/go-envconfig v1.3.0
 	github.com/stretchr/testify v1.10.0
@@ -50,7 +50,7 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	golang.org/x/net v0.41.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 )
 
