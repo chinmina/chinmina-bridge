@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr review:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr checks:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh pr checkout:*)",
+      "Bash(go mod:*)",
+      "Bash(go build:*)",
+      "Bash(git checkout:*)",
+      "Bash(git rebase:*)",
+      "Bash(gh run view:*)",
+      "Bash(go test:*)"
+    ],
+    "deny": []
+  }
+}
