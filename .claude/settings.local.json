@@ -1,6 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "Bash(git pull:*)",
+      "Bash(git add:*)",
       "Bash(go get:*)"
     ],
     "deny": []
