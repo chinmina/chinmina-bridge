@@ -1,3 +1,6 @@
+.serena/
+.claude/settings.local.json
+
 .envrc.private
 
 .development/*/*
