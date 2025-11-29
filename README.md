@@ -35,13 +35,15 @@ repository associated with an executing pipeline.
 
 ## Contributing
 
-This project welcomes contributions! Take a look at the outstanding issues for
-something to dip your toes into, open an issue to get some input, or raise a PR
-if you're confident.
+This project welcomes contributions! For detailed guidance on contributing, including standards for pull requests, code quality, and AI-generated contributions, see the [contributing guide][docs-contributing].
 
-### Testing
+Quick start:
+- Browse [outstanding issues](https://github.com/chinmina/chinmina-bridge/issues) for something to work on
+- Follow the [local development setup][docs-dev] to get started
+- Review the [contributing guidelines][docs-contributing] before submitting your PR
 
-For instructions on how to test this, see the [TESTING.md](docs/TESTING.md) file.
+[docs-contributing]: https://chinmina.github.io/contributing/
+[docs-dev]: https://chinmina.github.io/contributing/development/
 
 ## License
 
