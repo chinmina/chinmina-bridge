@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
@@ -57,30 +56,4 @@ func TranslateSSHToHTTPS(url string) string {
 	}
 
 	return fmt.Sprintf("https://github.com/%s", groups[1])
-}
-
-// NewDispatcher creates a temporary dispatcher that routes to the appropriate vendor
-// based on the profile type. This will be replaced in cb-15n.7 with route-specific
-// vendor wiring.
-//
-// TODO: cb-15n.7 - Remove NewDispatcher and wire vendors directly in routes
-func NewDispatcher(
-	repoLookup RepositoryLookup,
-	tokenVendor TokenVendor,
-	orgProfile *github.ProfileStore,
-	cache func(ProfileTokenVendor) ProfileTokenVendor,
-) ProfileTokenVendor {
-	repoVendor := cache(NewRepoVendor(repoLookup, tokenVendor))
-	orgVendor := cache(NewOrgVendor(orgProfile, tokenVendor))
-
-	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) (*ProfileToken, error) {
-		switch ref.Type {
-		case profile.ProfileTypeRepo:
-			return repoVendor(ctx, ref, requestedRepoURL)
-		case profile.ProfileTypeOrg:
-			return orgVendor(ctx, ref, requestedRepoURL)
-		default:
-			return nil, fmt.Errorf("unknown profile type: %s", ref.Type.String())
-		}
-	}
 }
