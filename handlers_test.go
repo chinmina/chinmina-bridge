@@ -79,7 +79,7 @@ func TestHandlePostToken_ReturnsTokenOnSuccess(t *testing.T) {
 		Token:            "expected-token-value",
 		Expiry:           defaultExpiry,
 		OrganizationSlug: "organization-slug",
-		Profile:          "default",
+		Profile:          "repo:default",
 	}, &respBody)
 }
 

@@ -13,19 +13,30 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// buildProfileRef constructs a ProfileRef from the request context and path.
+// Returns an error if the profile parameter is invalid. Panics if Buildkite
+// claims are missing (via jwt.RequireBuildkiteClaimsFromContext), which should
+// only occur when used outside the JWT middleware chain.
+func buildProfileRef(r *http.Request) (profile.ProfileRef, error) {
+	// claims must be present from the middleware
+	claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
+
+	// Extract profile parameter from path (empty string for legacy routes)
+	profileStr := r.PathValue("profile")
+
+	// Construct ProfileRef from claims and profile parameter
+	return profile.NewProfileRef(claims, profileStr)
+}
+
 func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
-		// TODO: Use profile from r.PathValue("profile") in ProfileRef construction (task cb-15n.6)
-
-		// claims must be present from the middleware
-		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
-
-		// TODO: Construct ProfileRef from claims and profile (task cb-15n.6)
-		ref := profile.ProfileRef{
-			Organization: claims.OrganizationSlug,
-			PipelineID:   claims.PipelineID,
+		ref, err := buildProfileRef(r)
+		if err != nil {
+			log.Info().Msgf("invalid profile parameter: %v\n", err)
+			requestError(w, http.StatusBadRequest)
+			return
 		}
 
 		tokenResponse, err := tokenVendor(r.Context(), ref, "")
@@ -58,10 +69,12 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
-		// TODO: Use profile from r.PathValue("profile") in ProfileRef construction (task cb-15n.6)
-
-		// claims must be present from the middleware
-		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
+		ref, err := buildProfileRef(r)
+		if err != nil {
+			log.Info().Msgf("invalid profile parameter: %v\n", err)
+			requestError(w, http.StatusBadRequest)
+			return
+		}
 
 		requestedRepo, err := credentialhandler.ReadProperties(r.Body)
 		if err != nil {
@@ -75,12 +88,6 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 			log.Info().Msgf("invalid request parameters %v\n", err)
 			requestError(w, http.StatusBadRequest)
 			return
-		}
-
-		// TODO: Construct ProfileRef from claims and profile (task cb-15n.6)
-		ref := profile.ProfileRef{
-			Organization: claims.OrganizationSlug,
-			PipelineID:   claims.PipelineID,
 		}
 
 		tokenResponse, err := tokenVendor(r.Context(), ref, requestedRepoURL)
