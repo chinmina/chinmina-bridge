@@ -4,6 +4,10 @@
 mod:
 	go mod download
 
+.PHONY: format
+format:
+	go fmt ./...
+
 .PHONY: test
 test: mod
 	go test -cover ./...
@@ -30,6 +34,9 @@ build: dist mod
 .PHONY: run
 run: build
 	dist/chinmina-bridge-local
+
+.PHONY: agent
+agent: build format test
 
 .PHONY: docker
 docker: build
