@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
-	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestAuditor_Success(t *testing.T) {
-	successfulVendor := func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*vendor.ProfileToken, error) {
+	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
 		return &vendor.ProfileToken{
 			Repositories:           []string{"https://example.com/repo"},
 			Permissions:            []string{"contents:read"},
@@ -24,12 +24,15 @@ func TestAuditor_Success(t *testing.T) {
 	auditedVendor := vendor.Auditor(successfulVendor)
 
 	ctx, _ := audit.Context(context.Background())
-	claims := jwt.BuildkiteClaims{}
 	repo := "example-repo"
-	profile := "example-profile"
-	defaultProfile := ""
 
-	token, err := auditedVendor(ctx, claims, repo, defaultProfile)
+	ref1 := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+	token, err := auditedVendor(ctx, ref1, repo)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, token)
@@ -41,7 +44,12 @@ func TestAuditor_Success(t *testing.T) {
 	assert.Equal(t, []string{"contents:read"}, entry.Permissions)
 	assert.NotZero(t, entry.ExpirySecs)
 
-	token, err = auditedVendor(ctx, claims, repo, profile)
+	ref2 := profile.ProfileRef{
+		Organization: "org",
+		Name:         "test-profile",
+		Type:         profile.ProfileTypeOrg,
+	}
+	token, err = auditedVendor(ctx, ref2, repo)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, token)
@@ -56,16 +64,21 @@ func TestAuditor_Success(t *testing.T) {
 }
 
 func TestAuditor_Mismatch(t *testing.T) {
-	successfulVendor := func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*vendor.ProfileToken, error) {
+	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
 		return nil, nil
 	}
 	auditedVendor := vendor.Auditor(successfulVendor)
 
 	ctx, _ := audit.Context(context.Background())
-	claims := jwt.BuildkiteClaims{}
 	repo := "example-repo"
 
-	token, err := auditedVendor(ctx, claims, repo, "")
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+	token, err := auditedVendor(ctx, ref, repo)
 
 	assert.NoError(t, err)
 	assert.Nil(t, token)
@@ -78,16 +91,21 @@ func TestAuditor_Mismatch(t *testing.T) {
 }
 
 func TestAuditor_Failure(t *testing.T) {
-	failingVendor := func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*vendor.ProfileToken, error) {
+	failingVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
 		return nil, errors.New("vendor error")
 	}
 	auditedVendor := vendor.Auditor(failingVendor)
 
 	ctx, _ := audit.Context(context.Background())
-	claims := jwt.BuildkiteClaims{}
 	repo := "example-repo"
 
-	token, err := auditedVendor(ctx, claims, repo, "")
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+	token, err := auditedVendor(ctx, ref, repo)
 	assert.Error(t, err)
 	assert.Nil(t, token)
 
@@ -98,12 +116,12 @@ func TestAuditor_Failure(t *testing.T) {
 	assert.Zero(t, entry.ExpirySecs)
 }
 func TestAuditor_ProfileAuditing(t *testing.T) {
-	profileVendor := func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*vendor.ProfileToken, error) {
+	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
 		return &vendor.ProfileToken{
 			Repositories:           []string{"https://example.com/repo"},
 			Permissions:            []string{"contents:read"},
 			RequestedRepositoryURL: "https://example.com/repo",
-			Profile:                profile,
+			Profile:                ref.ShortString(),
 			Expiry:                 time.Now().Add(1 * time.Hour),
 		}, nil
 	}
@@ -115,26 +133,34 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	auditedVendor := vendor.Auditor(vendorCache(profileVendor))
 
 	ctx, _ := audit.Context(context.Background())
-	claims := jwt.BuildkiteClaims{}
 	repo := "example-repo"
-	profile := "org:test-profile"
-	emptyProfile := ""
 
-	// Case 1: Test with empty profile
-	_, err = auditedVendor(ctx, claims, repo, emptyProfile)
+	ref1 := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+	// Case 1: Test with default profile - audit log should contain full URN
+	_, err = auditedVendor(ctx, ref1, repo)
 
 	assert.NoError(t, err)
 
 	entry := audit.Log(ctx)
 	assert.Empty(t, entry.Error)
-	assert.Equal(t, entry.RequestedProfile, "repo:default")
+	assert.Equal(t, "profile://organization/org/pipeline/pipeline-id/default", entry.RequestedProfile)
 
-	// Case 2: Test with specified profile
-	_, err = auditedVendor(ctx, claims, repo, profile)
+	ref2 := profile.ProfileRef{
+		Organization: "org",
+		Name:         "test-profile",
+		Type:         profile.ProfileTypeOrg,
+	}
+	// Case 2: Test with specified profile - audit log should contain full URN
+	_, err = auditedVendor(ctx, ref2, repo)
 
 	assert.NoError(t, err)
 
 	entry = audit.Log(ctx)
 	assert.Empty(t, entry.Error)
-	assert.Equal(t, profile, entry.RequestedProfile)
+	assert.Equal(t, "profile://organization/org/profile/test-profile", entry.RequestedProfile)
 }

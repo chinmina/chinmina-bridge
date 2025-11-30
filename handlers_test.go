@@ -14,6 +14,7 @@ import (
 	"github.com/auth0/go-jwt-middleware/v2/validator"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -134,7 +135,7 @@ func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 }
 
 func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
-	tokenVendor := vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
+	tokenVendor := vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string) (*vendor.ProfileToken, error) {
 		return nil, nil
 	})
 
@@ -271,15 +272,12 @@ func TestHandleHealthCheck_Success(t *testing.T) {
 }
 
 func tv(token string) vendor.ProfileTokenVendor {
-	return vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
-		if profile == "" {
-			profile = "default"
-		}
+	return vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string) (*vendor.ProfileToken, error) {
 		return &vendor.ProfileToken{
 			Token:                  token,
 			Expiry:                 defaultExpiry,
-			Profile:                profile,
-			OrganizationSlug:       claims.OrganizationSlug,
+			Profile:                ref.ShortString(),
+			OrganizationSlug:       ref.Organization,
 			RequestedRepositoryURL: repoUrl,
 		}, nil
 	})
@@ -316,7 +314,7 @@ func TestHandlePostGitCredentialsWithProfile_ReturnsTokenOnSuccess(t *testing.T)
 }
 
 func tvFails(err error) vendor.ProfileTokenVendor {
-	return vendor.ProfileTokenVendor(func(_ context.Context, claims jwt.BuildkiteClaims, repoUrl string, profile string) (*vendor.ProfileToken, error) {
+	return vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string) (*vendor.ProfileToken, error) {
 		return nil, err
 	})
 }
@@ -331,6 +329,7 @@ func claimsContext() context.Context {
 		CustomClaims: &jwt.BuildkiteClaims{
 			OrganizationSlug: "organization-slug",
 			PipelineSlug:     "pipeline-slug",
+			PipelineID:       "pipeline-id",
 		},
 	})
 

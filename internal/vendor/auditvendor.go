@@ -5,14 +5,14 @@ import (
 	"fmt"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
-	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
 // Auditor is a function that wraps a PipelineTokenVendor and records the result
 // of vending a token to the audit log.
 func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
-	return func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*ProfileToken, error) {
-		token, err := vendor(ctx, claims, repo, profile)
+	return func(ctx context.Context, ref profile.ProfileRef, repo string) (*ProfileToken, error) {
+		token, err := vendor(ctx, ref, repo)
 
 		entry := audit.Log(ctx)
 		if err != nil {
@@ -23,7 +23,7 @@ func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
 			entry.RequestedRepository = token.RequestedRepositoryURL
 			entry.Repositories = token.Repositories
 			entry.Permissions = token.Permissions
-			entry.RequestedProfile = token.Profile
+			entry.RequestedProfile = ref.String()
 			entry.ExpirySecs = token.Expiry.Unix()
 		}
 

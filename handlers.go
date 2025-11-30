@@ -8,6 +8,7 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/rs/zerolog/log"
 )
@@ -16,12 +17,18 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
-		profile := r.PathValue("profile")
+		// TODO: Use profile from r.PathValue("profile") in ProfileRef construction (task cb-15n.6)
 
 		// claims must be present from the middleware
 		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
 
-		tokenResponse, err := tokenVendor(r.Context(), claims, "", profile)
+		// TODO: Construct ProfileRef from claims and profile (task cb-15n.6)
+		ref := profile.ProfileRef{
+			Organization: claims.OrganizationSlug,
+			PipelineID:   claims.PipelineID,
+		}
+
+		tokenResponse, err := tokenVendor(r.Context(), ref, "")
 		if err != nil {
 			log.Info().Msgf("token creation failed %v\n", err)
 			requestError(w, http.StatusInternalServerError)
@@ -51,7 +58,7 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
-		profile := r.PathValue("profile")
+		// TODO: Use profile from r.PathValue("profile") in ProfileRef construction (task cb-15n.6)
 
 		// claims must be present from the middleware
 		claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
@@ -70,7 +77,13 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 			return
 		}
 
-		tokenResponse, err := tokenVendor(r.Context(), claims, requestedRepoURL, profile)
+		// TODO: Construct ProfileRef from claims and profile (task cb-15n.6)
+		ref := profile.ProfileRef{
+			Organization: claims.OrganizationSlug,
+			PipelineID:   claims.PipelineID,
+		}
+
+		tokenResponse, err := tokenVendor(r.Context(), ref, requestedRepoURL)
 		if err != nil {
 			log.Info().Msgf("token creation failed %v\n", err)
 			requestError(w, http.StatusInternalServerError)
