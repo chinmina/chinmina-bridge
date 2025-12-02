@@ -20,7 +20,12 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 			return nil, fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeRepo.String(), ref.Type.String())
 		}
 
-		// Use buildkite api to find the repository for the pipeline
+		// non-default repository-scoped profiles are not yet supported
+		if ref.Name != profile.ProfileNameDefault {
+			return nil, fmt.Errorf("unsupported profile name for repo-scoped profile: %s", ref.Name)
+		}
+
+		// Use Buildkite API to find the repository for the pipeline
 		pipelineRepoURL, err := repoLookup(ctx, ref.Organization, ref.PipelineID)
 		if err != nil {
 			return nil, fmt.Errorf("could not find repository for pipeline %s: %w", ref.PipelineID, err)
@@ -36,13 +41,13 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 			return nil, nil
 		}
 
-		requestedRepo, err := github.GetRepoNames([]string{requestedRepoURL})
+		allowedRepoName, err := github.GetRepoNames([]string{pipelineRepoURL})
 		if err != nil {
 			return nil, fmt.Errorf("error getting repo names: %w", err)
 		}
 
-		// Use the github api to vend a token for the repository
-		token, expiry, err := tokenVendor(ctx, requestedRepo, []string{"contents:read"})
+		// Use the GitHub API to vend a token for the allowed repository
+		token, expiry, err := tokenVendor(ctx, allowedRepoName, []string{"contents:read"})
 		if err != nil {
 			return nil, fmt.Errorf("could not issue token for repository %s: %w", pipelineRepoURL, err)
 		}
@@ -56,7 +61,7 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 		return &ProfileToken{
 			OrganizationSlug:       ref.Organization,
 			RequestedRepositoryURL: pipelineRepoURL,
-			Repositories:           requestedRepo,
+			Repositories:           allowedRepoName,
 			Permissions:            []string{"contents:read"},
 			Profile:                ref.ShortString(),
 			Token:                  token,

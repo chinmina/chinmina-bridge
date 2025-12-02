@@ -15,6 +15,10 @@ const (
 	ProfileTypeOrg                     // Organization-scoped profiles
 )
 
+const (
+	ProfileNameDefault = "default" // Default profile name
+)
+
 // String returns the string representation of the ProfileType.
 func (pt ProfileType) String() string {
 	switch pt {

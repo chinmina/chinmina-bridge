@@ -26,6 +26,19 @@ func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
 	require.ErrorContains(t, err, "org")
 }
 
+func TestRepoVendor_FailsWithNonDefaultProfile(t *testing.T) {
+	v := vendor.NewRepoVendor(nil, nil)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "custom-profile",
+		Type:         profile.ProfileTypeRepo,
+	}
+	_, err := v(context.Background(), ref, "repo-url")
+	require.ErrorContains(t, err, "unsupported profile name")
+	require.ErrorContains(t, err, "custom-profile")
+}
+
 func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
 		return "", errors.New("pipeline not found")
@@ -45,12 +58,12 @@ func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
 
 func TestRepoVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
-		return "repo-url-mismatch", nil
+		return "https://github.com/org/repo-url-mismatch", nil
 	})
 
 	v := vendor.NewRepoVendor(repoLookup, nil)
 
-	// When there is a difference between the requested pipeline (by Git generally)
+	// When there is a difference between the requested repo (by Git generally)
 	// and the repo associated with the pipeline, return success but empty.
 	// This indicates that there are no credentials that can be issued.
 	ref := profile.ProfileRef{
@@ -59,13 +72,8 @@ func TestRepoVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
 	}
-	tok, err := v(context.Background(), ref, "repo-url")
+	tok, err := v(context.Background(), ref, "https://github.com/org/other-repo")
 	assert.NoError(t, err)
-	assert.Nil(t, tok)
-
-	// Test out the empty repository case as well.
-	tok, err = v(context.Background(), ref, "")
-	assert.ErrorContains(t, err, "error getting repo name")
 	assert.Nil(t, tok)
 }
 
@@ -120,6 +128,42 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 		Expiry:                 vendedDate,
 		OrganizationSlug:       "organization-slug",
 		RequestedRepositoryURL: "https://github.com/org/repo-url",
+	}, tok)
+}
+
+func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
+	vendedDate := time.Date(1970, 1, 1, 0, 0, 10, 0, time.UTC)
+
+	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
+		return "https://github.com/org/pipeline-repo", nil
+	})
+
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
+		// Verify that the token vendor receives the pipeline repo
+		assert.Equal(t, []string{"pipeline-repo"}, repositoryURLs)
+		return "vended-token-value", vendedDate, nil
+	})
+
+	v := vendor.NewRepoVendor(repoLookup, tokenVendor)
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+
+	// Empty requestedRepoURL should succeed by using pipeline repo
+	tok, err := v(context.Background(), ref, "")
+	assert.NoError(t, err)
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:                  "vended-token-value",
+		Repositories:           []string{"pipeline-repo"},
+		Permissions:            []string{"contents:read"},
+		Profile:                "repo:default",
+		Expiry:                 vendedDate,
+		OrganizationSlug:       "organization-slug",
+		RequestedRepositoryURL: "https://github.com/org/pipeline-repo",
 	}, tok)
 }
 
