@@ -59,6 +59,26 @@ func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
 	require.ErrorContains(t, err, "could not find repository for pipeline")
 }
 
+func TestRepoVendor_FailsWhenNoValidRepoNames(t *testing.T) {
+	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
+		// Return a URL that will fail repo name extraction
+		return "https://github.com/", nil
+	})
+
+	v := vendor.NewRepoVendor(repoLookup, nil)
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
+	}
+	_, err := v(context.Background(), ref, "")
+	require.ErrorContains(t, err, "error getting repo names")
+	require.ErrorContains(t, err, "no valid repository URLs found")
+}
+
 func TestRepoVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
 		return "https://github.com/org/repo-url-mismatch", nil

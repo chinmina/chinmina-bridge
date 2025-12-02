@@ -31,46 +31,50 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 			return nil, fmt.Errorf("could not find repository for pipeline %s: %w", ref.PipelineSlug, err)
 		}
 
+		logger := log.With().
+			Str("organization", ref.Organization).
+			Str("profile", ref.ShortString()).
+			Str("repo", pipelineRepoURL).
+			Logger()
+
 		// Allow HTTPS credentials if the pipeline is configured for an equivalent SSH URL
 		pipelineRepoURL = TranslateSSHToHTTPS(pipelineRepoURL)
 
 		if requestedRepoURL != "" && pipelineRepoURL != requestedRepoURL {
 			// git is asking for a different repo than we can handle: return nil
 			// to indicate that the handler should return a successful (but empty) response.
-			log.Info().Msgf("no token issued: repo mismatch. pipeline(%s) != requested(%s)", pipelineRepoURL, requestedRepoURL)
+			logger.Info().
+				Str("requestedRepo", requestedRepoURL).
+				Msg("no token issued: repo mismatch. pipeline != requested")
+
 			return nil, nil
 		}
 
-		allowedRepoName, err := github.GetRepoNames([]string{pipelineRepoURL})
+		allowedRepoNames, err := github.GetRepoNames([]string{pipelineRepoURL})
 		if err != nil {
 			return nil, fmt.Errorf("error getting repo names: %w", err)
 		}
+		if len(allowedRepoNames) == 0 {
+			return nil, fmt.Errorf("no valid repository names found for URL: %s", pipelineRepoURL)
+		}
 
 		// Use the GitHub API to vend a token for the allowed repository
-		token, expiry, err := tokenVendor(ctx, allowedRepoName, []string{"contents:read"})
+		token, expiry, err := tokenVendor(ctx, allowedRepoNames, []string{"contents:read"})
 		if err != nil {
 			return nil, fmt.Errorf("could not issue token for repository %s: %w", pipelineRepoURL, err)
 		}
 
 		// Log token issuance with appropriate context
 		if requestedRepoURL == "" {
-			log.Info().
-				Str("organization", ref.Organization).
-				Str("profile", ref.ShortString()).
-				Str("repo", pipelineRepoURL).
-				Msg("raw token issued")
+			logger.Info().Msg("raw token issued")
 		} else {
-			log.Info().
-				Str("organization", ref.Organization).
-				Str("profile", ref.ShortString()).
-				Str("repo", requestedRepoURL).
-				Msg("token issued")
+			logger.Info().Msg("token issued")
 		}
 
 		return &ProfileToken{
 			OrganizationSlug:       ref.Organization,
 			RequestedRepositoryURL: pipelineRepoURL,
-			Repositories:           allowedRepoName,
+			Repositories:           allowedRepoNames,
 			Permissions:            []string{"contents:read"},
 			Profile:                ref.ShortString(),
 			Token:                  token,
