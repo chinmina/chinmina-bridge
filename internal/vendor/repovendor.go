@@ -52,11 +52,20 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 			return nil, fmt.Errorf("could not issue token for repository %s: %w", pipelineRepoURL, err)
 		}
 
-		log.Info().
-			Str("organization", ref.Organization).
-			Str("profile", ref.ShortString()).
-			Str("repo", requestedRepoURL).
-			Msg("token issued")
+		// Log token issuance with appropriate context
+		if requestedRepoURL == "" {
+			log.Info().
+				Str("organization", ref.Organization).
+				Str("profile", ref.ShortString()).
+				Str("repo", pipelineRepoURL).
+				Msg("raw token issued")
+		} else {
+			log.Info().
+				Str("organization", ref.Organization).
+				Str("profile", ref.ShortString()).
+				Str("repo", requestedRepoURL).
+				Msg("token issued")
+		}
 
 		return &ProfileToken{
 			OrganizationSlug:       ref.Organization,
