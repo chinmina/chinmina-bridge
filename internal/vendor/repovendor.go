@@ -26,9 +26,9 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 		}
 
 		// Use Buildkite API to find the repository for the pipeline
-		pipelineRepoURL, err := repoLookup(ctx, ref.Organization, ref.PipelineID)
+		pipelineRepoURL, err := repoLookup(ctx, ref.Organization, ref.PipelineSlug)
 		if err != nil {
-			return nil, fmt.Errorf("could not find repository for pipeline %s: %w", ref.PipelineID, err)
+			return nil, fmt.Errorf("could not find repository for pipeline %s: %w", ref.PipelineSlug, err)
 		}
 
 		// Allow HTTPS credentials if the pipeline is configured for an equivalent SSH URL
