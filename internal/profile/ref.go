@@ -37,6 +37,7 @@ type ProfileRef struct {
 	Type         ProfileType // repo or org
 	Name         string      // Profile name (e.g., "default", "write-packages")
 	PipelineID   string      // Only set for ProfileTypeRepo
+	PipelineSlug string      // Only set for ProfileTypeRepo
 }
 
 // NewProfileRef constructs a ProfileRef from Buildkite claims and a profile string.
@@ -72,21 +73,22 @@ func NewProfileRef(claims jwt.BuildkiteClaims, profileStr string) (ProfileRef, e
 		Name:         profileName,
 	}
 
-	// Only set PipelineID for repo profiles
+	// Only set PipelineID and PipelineSlug for repo profiles
 	if profileType == ProfileTypeRepo {
 		ref.PipelineID = claims.PipelineID
+		ref.PipelineSlug = claims.PipelineSlug
 	}
 
 	return ref, nil
 }
 
 // String returns the canonical URN format for this ProfileRef.
-// Format for repo profiles: profile://organization/org-name/pipeline/pipeline-id/profile-name
+// Format for repo profiles: profile://organization/org-name/pipeline/pipeline-id/pipeline-slug/profile/profile-name
 // Format for org profiles: profile://organization/org-name/profile/profile-name
 func (pr ProfileRef) String() string {
 	switch pr.Type {
 	case ProfileTypeRepo:
-		return fmt.Sprintf("profile://organization/%s/pipeline/%s/%s", pr.Organization, pr.PipelineID, pr.Name)
+		return fmt.Sprintf("profile://organization/%s/pipeline/%s/%s/profile/%s", pr.Organization, pr.PipelineID, pr.PipelineSlug, pr.Name)
 	case ProfileTypeOrg:
 		return fmt.Sprintf("profile://organization/%s/profile/%s", pr.Organization, pr.Name)
 	default:
@@ -102,6 +104,7 @@ func (pr ProfileRef) ShortString() string {
 
 // ParseProfileRef parses a URN format string back to a ProfileRef.
 // This is primarily useful for testing roundtrips.
+// Supports both new format (with pipeline-slug and /profile/ segment) and old format (backward compatibility).
 func ParseProfileRef(s string) (ProfileRef, error) {
 	// Both repo and org formats use the same prefix
 	rest, found := strings.CutPrefix(s, "profile://organization/")
@@ -118,17 +121,34 @@ func ParseProfileRef(s string) (ProfileRef, error) {
 	org := parts[0]
 
 	// Check if it's a repo or org profile
-	if len(parts) >= 4 && parts[1] == "pipeline" {
-		// Repo profile: organization/org-name/pipeline/pipeline-id/profile-name
-		pipelineID := parts[2]
-		profileName := parts[3]
+	if parts[1] == "pipeline" {
+		// Repo profile - detect format based on structure
+		if len(parts) >= 6 && parts[4] == "profile" {
+			// New format: organization/org-name/pipeline/pipeline-id/pipeline-slug/profile/profile-name
+			pipelineID := parts[2]
+			pipelineSlug := parts[3]
+			profileName := parts[5]
 
-		return ProfileRef{
-			Organization: org,
-			Type:         ProfileTypeRepo,
-			Name:         profileName,
-			PipelineID:   pipelineID,
-		}, nil
+			return ProfileRef{
+				Organization: org,
+				Type:         ProfileTypeRepo,
+				Name:         profileName,
+				PipelineID:   pipelineID,
+				PipelineSlug: pipelineSlug,
+			}, nil
+		} else if len(parts) >= 4 {
+			// Old format (backward compatibility): organization/org-name/pipeline/pipeline-id/profile-name
+			pipelineID := parts[2]
+			profileName := parts[3]
+
+			return ProfileRef{
+				Organization: org,
+				Type:         ProfileTypeRepo,
+				Name:         profileName,
+				PipelineID:   pipelineID,
+				PipelineSlug: "", // Not available in old format
+			}, nil
+		}
 	} else if parts[1] == "profile" {
 		// Org profile: organization/org-name/profile/profile-name
 		profileName := parts[2]
@@ -138,6 +158,7 @@ func ParseProfileRef(s string) (ProfileRef, error) {
 			Type:         ProfileTypeOrg,
 			Name:         profileName,
 			PipelineID:   "",
+			PipelineSlug: "",
 		}, nil
 	}
 

@@ -29,6 +29,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 				Type:         profile.ProfileTypeRepo,
 				Name:         "default",
 				PipelineID:   "abc123",
+				PipelineSlug: "my-pipeline",
 			},
 		},
 		{
@@ -44,6 +45,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 				Type:         profile.ProfileTypeOrg,
 				Name:         "write-packages",
 				PipelineID:   "",
+				PipelineSlug: "",
 			},
 		},
 		{
@@ -59,6 +61,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 				Type:         profile.ProfileTypeRepo,
 				Name:         "default",
 				PipelineID:   "abc123",
+				PipelineSlug: "my-pipeline",
 			},
 		},
 		{
@@ -74,6 +77,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 				Type:         profile.ProfileTypeOrg,
 				Name:         "write-packages-v2",
 				PipelineID:   "",
+				PipelineSlug: "",
 			},
 		},
 		{
@@ -81,6 +85,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 			claims: jwt.BuildkiteClaims{
 				OrganizationSlug: "",
 				PipelineID:       "abc123",
+				PipelineSlug:     "my-pipeline",
 			},
 			profileString: "repo:default",
 			expected: profile.ProfileRef{
@@ -88,6 +93,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 				Type:         profile.ProfileTypeRepo,
 				Name:         "default",
 				PipelineID:   "abc123",
+				PipelineSlug: "my-pipeline",
 			},
 		},
 	}
@@ -158,8 +164,9 @@ func TestProfileRef_String(t *testing.T) {
 				Type:         profile.ProfileTypeRepo,
 				Name:         "default",
 				PipelineID:   "abc123",
+				PipelineSlug: "my-pipeline",
 			},
-			expected: "profile://organization/acme-corp/pipeline/abc123/default",
+			expected: "profile://organization/acme-corp/pipeline/abc123/my-pipeline/profile/default",
 		},
 		{
 			name: "OrgFormat",
@@ -168,6 +175,7 @@ func TestProfileRef_String(t *testing.T) {
 				Type:         profile.ProfileTypeOrg,
 				Name:         "write-packages",
 				PipelineID:   "",
+				PipelineSlug: "",
 			},
 			expected: "profile://organization/acme-corp/profile/write-packages",
 		},
@@ -194,6 +202,7 @@ func TestProfileRef_ShortString(t *testing.T) {
 				Type:         profile.ProfileTypeRepo,
 				Name:         "default",
 				PipelineID:   "abc123",
+				PipelineSlug: "my-pipeline",
 			},
 			expected: "repo:default",
 		},
@@ -204,6 +213,7 @@ func TestProfileRef_ShortString(t *testing.T) {
 				Type:         profile.ProfileTypeOrg,
 				Name:         "write-packages",
 				PipelineID:   "",
+				PipelineSlug: "",
 			},
 			expected: "org:write-packages",
 		},
@@ -229,6 +239,7 @@ func TestParseProfileRef_Roundtrip(t *testing.T) {
 				Type:         profile.ProfileTypeRepo,
 				Name:         "default",
 				PipelineID:   "abc123",
+				PipelineSlug: "my-pipeline",
 			},
 		},
 		{
@@ -238,6 +249,7 @@ func TestParseProfileRef_Roundtrip(t *testing.T) {
 				Type:         profile.ProfileTypeOrg,
 				Name:         "write-packages",
 				PipelineID:   "",
+				PipelineSlug: "",
 			},
 		},
 	}
@@ -264,12 +276,13 @@ func TestParseProfileRef_ComplexNames(t *testing.T) {
 	}{
 		{
 			name:   "RepoProfileComplexNames",
-			refStr: "profile://organization/my-org-123/pipeline/pipe-id-456/profile-name-v2",
+			refStr: "profile://organization/my-org-123/pipeline/pipe-id-456/my-slug-789/profile/profile-name-v2",
 			expected: profile.ProfileRef{
 				Organization: "my-org-123",
 				Type:         profile.ProfileTypeRepo,
 				Name:         "profile-name-v2",
 				PipelineID:   "pipe-id-456",
+				PipelineSlug: "my-slug-789",
 			},
 		},
 		{
@@ -280,16 +293,18 @@ func TestParseProfileRef_ComplexNames(t *testing.T) {
 				Type:         profile.ProfileTypeOrg,
 				Name:         "profile-name-v2",
 				PipelineID:   "",
+				PipelineSlug: "",
 			},
 		},
 		{
 			name:   "ExtraSlashesInPath",
-			refStr: "profile://organization/acme-corp/pipeline/abc123/default/extra/path",
+			refStr: "profile://organization/acme-corp/pipeline/abc123/my-pipeline/profile/default/extra/path",
 			expected: profile.ProfileRef{
 				Organization: "acme-corp",
 				Type:         profile.ProfileTypeRepo,
 				Name:         "default",
 				PipelineID:   "abc123",
+				PipelineSlug: "my-pipeline",
 			},
 		},
 	}
@@ -358,6 +373,46 @@ func TestProfileType_String(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.profileType.String())
+		})
+	}
+}
+
+func TestParseProfileRef_OldFormat_BackwardCompatibility(t *testing.T) {
+	tests := []struct {
+		name     string
+		refStr   string
+		expected profile.ProfileRef
+	}{
+		{
+			name:   "OldRepoFormat",
+			refStr: "profile://organization/acme-corp/pipeline/abc123/default",
+			expected: profile.ProfileRef{
+				Organization: "acme-corp",
+				Type:         profile.ProfileTypeRepo,
+				Name:         "default",
+				PipelineID:   "abc123",
+				PipelineSlug: "", // Empty in old format
+			},
+		},
+		{
+			name:   "OldRepoFormatComplexNames",
+			refStr: "profile://organization/my-org-123/pipeline/pipe-id-456/profile-name-v2",
+			expected: profile.ProfileRef{
+				Organization: "my-org-123",
+				Type:         profile.ProfileTypeRepo,
+				Name:         "profile-name-v2",
+				PipelineID:   "pipe-id-456",
+				PipelineSlug: "", // Empty in old format
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := profile.ParseProfileRef(tt.refStr)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, parsed)
 		})
 	}
 }

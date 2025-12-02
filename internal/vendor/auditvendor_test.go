@@ -31,6 +31,7 @@ func TestAuditor_Success(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 	token, err := auditedVendor(ctx, ref1, repo)
 
@@ -48,6 +49,7 @@ func TestAuditor_Success(t *testing.T) {
 		Organization: "org",
 		Name:         "test-profile",
 		Type:         profile.ProfileTypeOrg,
+		PipelineSlug: "",
 	}
 	token, err = auditedVendor(ctx, ref2, repo)
 
@@ -77,6 +79,7 @@ func TestAuditor_Mismatch(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 	token, err := auditedVendor(ctx, ref, repo)
 
@@ -104,6 +107,7 @@ func TestAuditor_Failure(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 	token, err := auditedVendor(ctx, ref, repo)
 	assert.Error(t, err)
@@ -140,6 +144,7 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 	// Case 1: Test with default profile - audit log should contain full URN
 	_, err = auditedVendor(ctx, ref1, repo)
@@ -148,12 +153,13 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 
 	entry := audit.Log(ctx)
 	assert.Empty(t, entry.Error)
-	assert.Equal(t, "profile://organization/org/pipeline/pipeline-id/default", entry.RequestedProfile)
+	assert.Equal(t, "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default", entry.RequestedProfile)
 
 	ref2 := profile.ProfileRef{
 		Organization: "org",
 		Name:         "test-profile",
 		Type:         profile.ProfileTypeOrg,
+		PipelineSlug: "",
 	}
 	// Case 2: Test with specified profile - audit log should contain full URN
 	_, err = auditedVendor(ctx, ref2, repo)

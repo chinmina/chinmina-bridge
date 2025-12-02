@@ -19,6 +19,7 @@ func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
 		Organization: "org",
 		Name:         "default",
 		Type:         profile.ProfileTypeOrg, // Wrong type!
+		PipelineSlug: "",
 	}
 	_, err := v(context.Background(), ref, "repo-url")
 	require.ErrorContains(t, err, "profile type mismatch")
@@ -33,6 +34,7 @@ func TestRepoVendor_FailsWithNonDefaultProfile(t *testing.T) {
 		Organization: "org",
 		Name:         "custom-profile",
 		Type:         profile.ProfileTypeRepo,
+		PipelineSlug: "my-pipeline",
 	}
 	_, err := v(context.Background(), ref, "repo-url")
 	require.ErrorContains(t, err, "unsupported profile name")
@@ -51,6 +53,7 @@ func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 	_, err := v(context.Background(), ref, "repo-url")
 	require.ErrorContains(t, err, "could not find repository for pipeline")
@@ -71,6 +74,7 @@ func TestRepoVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 	tok, err := v(context.Background(), ref, "https://github.com/org/other-repo")
 	assert.NoError(t, err)
@@ -93,6 +97,7 @@ func TestRepoVendor_FailsWhenTokenVendorFails(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url")
 	assert.ErrorContains(t, err, "token vendor failed")
@@ -117,6 +122,7 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url")
 	assert.NoError(t, err)
@@ -151,6 +157,7 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 
 	// Empty requestedRepoURL should succeed by using pipeline repo
@@ -186,6 +193,7 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 		Name:         "default",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
 	}
 	// Request with HTTPS URL should match after translation
 	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url.git")
