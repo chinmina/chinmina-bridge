@@ -472,11 +472,18 @@ func TestValidateProfileWithDefaults(t *testing.T) {
 func TestValidateProfileWithoutDefaults(t *testing.T) {
 	ctx := context.Background()
 
-	profileConfig, err := github.ValidateProfile(ctx, profile)
+	// Test backward compatibility: profile without defaults section
+	profileWithoutDefaults := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["repo1"]
+      permissions: ["contents:read"]`
+
+	profileConfig, err := github.ValidateProfile(ctx, profileWithoutDefaults)
 	require.NoError(t, err)
 
-	// Backward compatibility: profile without defaults should still load
+	// Backward compatibility: profile without defaults should still load and use fallback
 	assert.Empty(t, profileConfig.Organization.Defaults.Permissions)
 	assert.Equal(t, []string{"contents:read"}, profileConfig.GetDefaultPermissions())
-	assert.Len(t, profileConfig.Organization.Profiles, 2)
+	assert.Len(t, profileConfig.Organization.Profiles, 1)
 }
