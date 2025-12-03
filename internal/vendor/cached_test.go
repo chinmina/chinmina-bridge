@@ -372,8 +372,16 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 
 	var testProfile = github.ProfileConfig{
 		Organization: struct {
+			Defaults struct {
+				Permissions []string `yaml:"permissions"`
+			} `yaml:"defaults"`
 			Profiles []github.Profile `yaml:"profiles"`
 		}{
+			Defaults: struct {
+				Permissions []string `yaml:"permissions"`
+			}{
+				Permissions: []string{},
+			},
 			Profiles: []github.Profile{
 				{
 					Name:         "org:shared-profile",

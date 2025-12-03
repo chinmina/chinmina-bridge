@@ -1,0 +1,17 @@
+organization:
+  defaults:
+    permissions: ["contents:read", "pull_requests:write"]
+  profiles:
+    # allow read access to a set of buildkite-plugins
+    - name: "buildkite-plugin"
+      # array of repos accessible to the profile
+      repositories:
+        - somewhat-private-buildkite-plugin
+        - very-private-buildkite-plugin
+      permissions: ["contents:read"]
+
+    # allow package access to any repository
+    - name: "package-registry"
+    # '*' indicates all, when specified must be only value. No other wildcards supported.
+      repositories: ["*"]
+      permissions: ["packages:read"]
