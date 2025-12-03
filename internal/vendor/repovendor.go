@@ -13,7 +13,7 @@ import (
 // Used by /token and /git-credentials routes.
 // It uses the Buildkite API to find the pipeline's repository and vends
 // tokens for that specific repository.
-func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) ProfileTokenVendor {
+func NewRepoVendor(profileStore *github.ProfileStore, repoLookup RepositoryLookup, tokenVendor TokenVendor) ProfileTokenVendor {
 	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) (*ProfileToken, error) {
 		// Validate that this is a repo-scoped profile
 		if ref.Type != profile.ProfileTypeRepo {
@@ -58,8 +58,17 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 			return nil, fmt.Errorf("no valid repository names found for URL: %s", pipelineRepoURL)
 		}
 
+		// Get default permissions from organization config
+		permissions := []string{"contents:read"} // fallback default
+		orgConfig, err := profileStore.GetOrganization()
+		if err != nil {
+			logger.Warn().Err(err).Msg("could not load organization config, using fallback permissions")
+		} else {
+			permissions = orgConfig.GetDefaultPermissions()
+		}
+
 		// Use the GitHub API to vend a token for the allowed repository
-		token, expiry, err := tokenVendor(ctx, allowedRepoNames, []string{"contents:read"})
+		token, expiry, err := tokenVendor(ctx, allowedRepoNames, permissions)
 		if err != nil {
 			return nil, fmt.Errorf("could not issue token for repository %s: %w", pipelineRepoURL, err)
 		}
@@ -68,7 +77,7 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 			OrganizationSlug:       ref.Organization,
 			RequestedRepositoryURL: pipelineRepoURL,
 			Repositories:           allowedRepoNames,
-			Permissions:            []string{"contents:read"},
+			Permissions:            permissions,
 			Profile:                ref.ShortString(),
 			Token:                  token,
 			Expiry:                 expiry,
