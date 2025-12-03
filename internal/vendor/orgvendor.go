@@ -20,33 +20,34 @@ func NewOrgVendor(profileStore *github.ProfileStore, tokenVendor TokenVendor) Pr
 			return nil, fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeOrg.String(), ref.Type.String())
 		}
 
+		logger := log.With().
+			Str("organization", ref.Organization).
+			Str("profile", ref.ShortString()).
+			Str("requestedRepo", requestedRepoURL).
+			Logger()
+
 		// Use the ProfileStore to get the requested profile and validate it
 		profileConf, err := profileStore.GetProfileFromStore(ref.Name)
 		if err != nil {
-			log.Warn().Str("profile", ref.Name).Msg("requested profile was not found")
 			return nil, fmt.Errorf("could not find profile %s: %w", ref.Name, err)
 		}
 
-		// If we receive an empty requested repository URL, this is a
-		// naked token request. We will vend a token; this should not
-		// be used as part of git-credential flows though.
-		if requestedRepoURL == "" {
-			log.Info().Str("organization", ref.Organization).
-				Str("profile", ref.Name).
-				Msg("raw token issued")
-
-		} else {
+		// The repository is only supplied for the git-credentials endpoint:
+		// checking it allows Git to respond properly: it's not a security measure.
+		if requestedRepoURL != "" {
 			// Otherwise validate it against the profile.
 			repo, err := url.Parse(requestedRepoURL)
 			if err != nil {
 				return nil, fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err)
 			}
 
-			// If the requested repository isn't in the profile, return nil.
-			// This indicates that the handler should return a successful (but empty) response.
+			// If the requested repository isn't in the profile, return nil. This
+			// indicates that the handler should return a successful (but empty)
+			// response. This allows Git (for example) to try a different provider in
+			// its credentials chain.
 			_, repository := github.RepoForURL(*repo)
 			if !profileConf.HasRepository(repository) {
-				log.Warn().Str("repository", repository).Str("profile", ref.Name).Msg("requested repository was not found in profile")
+				logger.Debug().Msg("profile doesn't support requested repository: no token vended.")
 				return nil, nil
 			}
 		}
@@ -54,14 +55,10 @@ func NewOrgVendor(profileStore *github.ProfileStore, tokenVendor TokenVendor) Pr
 		// Use the github api to vend a token for the repository
 		token, expiry, err := tokenVendor(ctx, profileConf.Repositories, profileConf.Permissions)
 		if err != nil {
-			return nil, fmt.Errorf("could not issue token for repository %s: %w", requestedRepoURL, err)
+			return nil, fmt.Errorf("could not issue token for profile %s: %w", ref, err)
 		}
 
-		log.Info().
-			Str("organization", ref.Organization).
-			Str("profile", ref.ShortString()).
-			Str("repo", requestedRepoURL).
-			Msg("profile token issued")
+		logger.Info().Msg("profile token issued")
 
 		return &ProfileToken{
 			OrganizationSlug:       ref.Organization,

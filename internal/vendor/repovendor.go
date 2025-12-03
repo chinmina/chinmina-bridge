@@ -41,11 +41,11 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 		pipelineRepoURL = TranslateSSHToHTTPS(pipelineRepoURL)
 
 		if requestedRepoURL != "" && pipelineRepoURL != requestedRepoURL {
-			// git is asking for a different repo than we can handle: return nil
-			// to indicate that the handler should return a successful (but empty) response.
-			logger.Info().
+			// A repository mismatch means we should not return a token or an error:
+			// Git uses this to determine that it should try the next provider.
+			logger.Debug().
 				Str("requestedRepo", requestedRepoURL).
-				Msg("no token issued: repo mismatch. pipeline != requested")
+				Msg("profile doesn't support requested repository: no token vended.")
 
 			return nil, nil
 		}
@@ -62,13 +62,6 @@ func NewRepoVendor(repoLookup RepositoryLookup, tokenVendor TokenVendor) Profile
 		token, expiry, err := tokenVendor(ctx, allowedRepoNames, []string{"contents:read"})
 		if err != nil {
 			return nil, fmt.Errorf("could not issue token for repository %s: %w", pipelineRepoURL, err)
-		}
-
-		// Log token issuance with appropriate context
-		if requestedRepoURL == "" {
-			logger.Info().Msg("raw token issued")
-		} else {
-			logger.Info().Msg("token issued")
 		}
 
 		return &ProfileToken{
