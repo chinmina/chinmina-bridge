@@ -116,14 +116,37 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 ### Error Handling
 
 - Wrap errors with `fmt.Errorf` and `%w` for error chains
-- Log errors at Info level before returning error responses
+- Only log errors if they are being handled by the current code context. Do not log when returning an error: include context in the wrapped error instead.
 - Handlers return appropriate HTTP status codes via `requestError(w, statusCode)`
-- Panics are only used for programmer errors (e.g., missing required context values)
+- Panics are only used when absolutely necessary for issues that can only occur
+  when well outside standard operating parameters: i.e. the environment is
+  unrecoverable or a programming error is detected.
 
 ### Testing
 
+**Assertion Style:**
 - Use `testify/assert` for assertions, `testify/require` for fatal checks
-- Table-driven tests with named cases
+- **Prefer struct-level equality**: Use `assert.Equal(t, expected, actual)` for struct comparisons instead of field-by-field assertions
+  - Good: `assert.Equal(t, expected, ref)` where `expected` is a complete struct
+  - Avoid: Multiple `assert.Equal(t, expected.Field, actual.Field)` calls
+  - Exception: HTTP response testing (status codes, headers) appropriately uses individual field checks
+- Struct equality provides complete diff output on failure, making debugging easier
+
+**Test Organization:**
+- **Use table-driven tests** when multiple tests follow the same pattern with different parameters
+  - Consolidate tests that differ only in input/output values
+  - Use descriptive test case names with `t.Run(tt.name, ...)`
+  - Keep success and failure test cases in separate table-driven tests
+  - Example: See `internal/profile/ref_test.go` for well-structured table-driven tests
+- **Individual test functions** are appropriate when:
+  - Each test has unique setup or teardown requirements
+  - Tests include timing operations or complex state management
+  - Test logic differs significantly between cases
+
+**Test Structure:**
+- Table-driven tests should use `expected` struct fields, not individual expected values
+  - Good: `expected: ProfileRef{Organization: "acme", Type: TypeRepo, ...}`
+  - Avoid: `expectedOrg: "acme", expectedType: TypeRepo, ...`
 - Some packages use `package xxx_test` for black-box testing (see `internal/github/token_test.go`)
 - Helper functions for common test setup (see `handlers_test.go` for context creation)
 

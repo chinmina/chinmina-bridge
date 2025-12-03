@@ -6,16 +6,12 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/github"
-	"github.com/chinmina/chinmina-bridge/internal/jwt"
-
-	"github.com/rs/zerolog/log"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
-type ProfileTokenVendor func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*ProfileToken, error)
+type ProfileTokenVendor func(ctx context.Context, ref profile.ProfileRef, repo string) (*ProfileToken, error)
 
 // Given a pipeline, return the https version of the repository URL
 type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug string) (string, error)
@@ -49,134 +45,6 @@ func (t ProfileToken) URL() (*url.URL, error) {
 
 func (t ProfileToken) ExpiryUnix() string {
 	return strconv.FormatInt(t.Expiry.UTC().Unix(), 10)
-}
-
-// New creates a vendor that will supply a token for the pipeline. The
-// (optional) requestedRepoURL is the URL of the repository that the token is
-// being asked for. If supplied, it must match the repository URL of the
-// pipeline.
-func New(
-	repoLookup RepositoryLookup,
-	tokenVendor TokenVendor,
-	orgProfile *github.ProfileStore,
-) ProfileTokenVendor {
-	return func(ctx context.Context, claims jwt.BuildkiteClaims, requestedRepoURL string, fullProfileName string) (*ProfileToken, error) {
-		var token string
-		var expiry time.Time
-
-		splitProfile := strings.Split(fullProfileName, ":")
-		if len(splitProfile) < 2 {
-			return nil, fmt.Errorf("profile is not colon-separated %s", splitProfile)
-		}
-		// get the profile name
-		// currently we don't differentiate between repo or org profiles, but we can in the future
-		profile := splitProfile[1]
-
-		// Vend a non-default profile.
-		// This is not the standard use case at the time of development, but
-		// should be moving forward.
-		if profile != "default" {
-			// use the ProfileStore to get the requested provile and validate it
-			profileConf, err := orgProfile.GetProfileFromStore(profile)
-			if err != nil {
-				log.Warn().Str("pipeline", claims.PipelineSlug).Str("profile", profile).Msg("requested profile was not found")
-				return nil, fmt.Errorf("could not find profile %s: %w", profile, err)
-			}
-
-			// If we receive an empty requested repository URL, this is a
-			// naked token request. We will vend a token; this should not
-			// be used as part of git-credential flows though.
-			if requestedRepoURL == "" {
-				log.Info().Str("organization", claims.OrganizationSlug).
-					Str("profile", profile).
-					Msg("raw token issued")
-
-			} else {
-				// Otherwise validate it against the profile.
-				repo, err := url.Parse(requestedRepoURL)
-				if err != nil {
-					return nil, fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err)
-				}
-
-				// If the requested repository isn't in the profile, return nil.
-				// This indicates that the handler should return a successful (but empty) response.
-				_, repository := github.RepoForURL(*repo)
-				if !profileConf.HasRepository(repository) {
-					log.Warn().Str("repository", repository).Str("profile", profile).Msg("requested repository was not found in profile")
-					return nil, nil
-				}
-			}
-
-			// use the github api to vend a token for the repository
-			token, expiry, err = tokenVendor(ctx, profileConf.Repositories, profileConf.Permissions)
-			if err != nil {
-				return nil, fmt.Errorf("could not issue token for repository %s: %w", requestedRepoURL, err)
-			}
-			log.Info().
-				Str("organization", claims.OrganizationSlug).
-				Str("profile", fullProfileName).
-				Str("repo", requestedRepoURL).
-				Msg("profile token issued")
-
-			return &ProfileToken{
-				OrganizationSlug:       claims.OrganizationSlug,
-				RequestedRepositoryURL: requestedRepoURL,
-				Repositories:           profileConf.Repositories,
-				Permissions:            profileConf.Permissions,
-				Profile:                fullProfileName,
-				Token:                  token,
-				Expiry:                 expiry,
-			}, nil
-		} else {
-			// Vend the default profile. This is the behaviour that we expect
-			// due to the current state of the buildkite plugin. This will
-			// eventually change, but we need to perform the song and dance
-			// around determining the repository in this case.
-
-			// use buildkite api to find the repository for the pipeline
-			pipelineRepoURL, err := repoLookup(ctx, claims.OrganizationSlug, claims.PipelineSlug)
-			if err != nil {
-				return nil, fmt.Errorf("could not find repository for pipeline %s: %w", claims.PipelineSlug, err)
-			}
-
-			// allow HTTPS credentials if the pipeline is configured for an equivalent SSH URL
-			pipelineRepoURL = TranslateSSHToHTTPS(pipelineRepoURL)
-
-			if requestedRepoURL != "" && pipelineRepoURL != requestedRepoURL {
-				// git is asking for a different repo than we can handle: return nil
-				// to indicate that the handler should return a successful (but
-				// empty) response.
-				log.Info().Msgf("no token issued: repo mismatch. pipeline(%s) != requested(%s)\n", pipelineRepoURL, requestedRepoURL)
-				return nil, nil
-			}
-			requestedRepo, err := github.GetRepoNames([]string{requestedRepoURL})
-			if err != nil {
-				return nil, fmt.Errorf("error getting repo names: %w", err)
-			}
-
-			// use the github api to vend a token for the repository
-			token, expiry, err = tokenVendor(ctx, requestedRepo, []string{"contents:read"})
-			if err != nil {
-				return nil, fmt.Errorf("could not issue token for repository %s: %w", pipelineRepoURL, err)
-			}
-			log.Info().
-				Str("organization", claims.OrganizationSlug).
-				Str("profile", fullProfileName).
-				Str("repo", requestedRepoURL).
-				Msg("token issued")
-
-			return &ProfileToken{
-				OrganizationSlug:       claims.OrganizationSlug,
-				RequestedRepositoryURL: pipelineRepoURL,
-				Repositories:           requestedRepo,
-				Permissions:            []string{"contents:read"},
-				Profile:                fullProfileName,
-				Token:                  token,
-				Expiry:                 expiry,
-			}, nil
-		}
-
-	}
 }
 
 var sshUrl = regexp.MustCompile(`^git@github\.com:([^/].+)$`)

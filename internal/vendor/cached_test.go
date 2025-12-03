@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
-	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +21,13 @@ func TestCacheMissOnFirstRequest(t *testing.T) {
 
 	v := c(wrapped)
 
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "")
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, "first-call", token.Token)
 }
@@ -34,8 +40,14 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 
 	v := c(wrapped)
 
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
 	// first call misses cache
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "")
+	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -44,7 +56,13 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 	}, token)
 
 	// second call misses and returns nil
-	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id-not-recognized"}, "any-repo", "")
+	ref2 := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id-not-recognized",
+	}
+	token, err = v(context.Background(), ref2, "any-repo")
 	require.NoError(t, err)
 	assert.Nil(t, token)
 }
@@ -57,8 +75,13 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 
 	v := c(wrapped)
 
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "read-plugins",
+		Type:         profile.ProfileTypeOrg,
+	}
 	// first call misses cache
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "org:read-plugins")
+	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -69,7 +92,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 	}, token)
 
 	// second call hits (even though it's for a different pipeline), return first value
-	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "second-pipeline-id"}, "any-repo", "org:read-plugins")
+	token, err = v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -88,8 +111,14 @@ func TestCacheHitOnSecondRequest(t *testing.T) {
 
 	v := c(wrapped)
 
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
 	// first call misses cache
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "")
+	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -98,7 +127,7 @@ func TestCacheHitOnSecondRequest(t *testing.T) {
 	}, token)
 
 	// second call hits, return first value
-	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "")
+	token, err = v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -117,8 +146,14 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 
 	v := c(wrapped)
 
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
 	// first call misses cache
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "")
+	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -127,7 +162,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	}, token)
 
 	// second call hits, but repo changes so causes a miss
-	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "different-repo", "")
+	token, err = v(context.Background(), ref, "different-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "second-call",
@@ -136,7 +171,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	}, token)
 
 	// third call hits, returns second result after cache reset
-	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "different-repo", "")
+	token, err = v(context.Background(), ref, "different-repo")
 	require.NoError(t, err)
 
 	assert.Equal(t, &vendor.ProfileToken{
@@ -154,8 +189,14 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 
 	v := c(wrapped)
 
+	ref1 := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
 	// first call misses cache
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "")
+	token, err := v(context.Background(), ref1, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -163,8 +204,14 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 		Profile:                "repo:default",
 	}, token)
 
+	ref2 := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "second-pipeline-id",
+	}
 	// second call misses as it's for a different pipeline (cache key)
-	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "second-pipeline-id"}, "any-repo", "")
+	token, err = v(context.Background(), ref2, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "second-call",
@@ -173,7 +220,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	}, token)
 
 	// third call hits, returns second result after cache reset
-	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "second-pipeline-id"}, "any-repo", "")
+	token, err = v(context.Background(), ref2, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "second-call",
@@ -190,8 +237,14 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 
 	v := c(wrapped)
 
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
 	// first call misses cache
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "")
+	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -203,7 +256,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 
 	// second call misses as it's expired
-	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "")
+	token, err = v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "second-call",
@@ -220,8 +273,13 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 
 	v := c(wrapped)
 
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "shared-profile",
+		Type:         profile.ProfileTypeOrg,
+	}
 	// first call misses cache
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "org:shared-profile")
+	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -231,7 +289,7 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 		Permissions:            []string{"read", "write"},
 	}, token)
 	// second call hits, but repo changes, so token content is the same but repo is different
-	token, err = v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "different-repo", "org:shared-profile")
+	token, err = v(context.Background(), ref, "different-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
 		Token:                  "first-call",
@@ -252,26 +310,49 @@ func TestReturnsErrorForWrapperError(t *testing.T) {
 
 	v := c(wrapped)
 
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
 	// first call misses cache and returns error from wrapped
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "")
+	token, err := v(context.Background(), ref, "any-repo")
 	assert.Error(t, err)
 	assert.EqualError(t, err, "failed")
 	assert.Nil(t, token)
 }
 
-func TestBadProfileFormat(t *testing.T) {
-	wrapped := sequenceVendor(nil)
+func TestCacheMissWithNilVendorResponse(t *testing.T) {
+	wrapped := sequenceVendor(nil, "second-call")
 
 	c, err := vendor.Cached(defaultTTL)
 	require.NoError(t, err)
 
 	v := c(wrapped)
 
-	// call with bad profile format does not hit cache
-	token, err := v(context.Background(), jwt.BuildkiteClaims{PipelineID: "pipeline-id"}, "any-repo", "bad-profile-format")
-	assert.Error(t, err)
-	assert.EqualError(t, err, "unexpected profile format: bad-profile-format")
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
+	}
+
+	// First call returns nil from the wrapped vendor
+	token, err := v(context.Background(), ref, "any-repo")
+	require.NoError(t, err)
 	assert.Nil(t, token)
+
+	// Second call should not be served from cache; it should invoke the wrapped vendor again
+	// and return the second token value. This verifies that nil results are not cached.
+	token, err = v(context.Background(), ref, "any-repo")
+	require.NoError(t, err)
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:                  "second-call",
+		RequestedRepositoryURL: "any-repo",
+		Profile:                "repo:default",
+	}, token)
 }
 
 // E must be an error
@@ -308,7 +389,7 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		},
 	}
 
-	return vendor.ProfileTokenVendor(func(ctx context.Context, claims jwt.BuildkiteClaims, repo string, profile string) (*vendor.ProfileToken, error) {
+	return vendor.ProfileTokenVendor(func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
 		if len(calls) <= callIndex {
 			return nil, errors.New("unregistered call")
 		}
@@ -322,20 +403,20 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		case nil:
 			// all nil return
 		case string:
-			if profile == "" {
+			if ref.Name == "default" {
 				token = &vendor.ProfileToken{
 					Token:                  v,
 					RequestedRepositoryURL: repo,
-					Profile:                profile,
+					Profile:                ref.ShortString(),
 				}
 			} else {
-				orgProfile, _ := testProfile.LookupProfile(profile)
+				orgProfile, _ := testProfile.LookupProfile(ref.ShortString())
 				token = &vendor.ProfileToken{
 					Token:                  v,
 					Repositories:           orgProfile.Repositories,
 					Permissions:            orgProfile.Permissions,
 					RequestedRepositoryURL: repo,
-					Profile:                profile,
+					Profile:                ref.ShortString(),
 				}
 			}
 		case error:

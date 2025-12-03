@@ -59,13 +59,17 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *g
 		return nil, fmt.Errorf("vendor cache configuration failed: %w", err)
 	}
 
-	tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken, orgProfile)))
+	// Build separate vendor chains for pipeline and organization profiles
+	repoVendor := vendor.Auditor(vendorCache(vendor.NewRepoVendor(bk.RepositoryLookup, gh.CreateAccessToken)))
+	orgVendor := vendor.Auditor(vendorCache(vendor.NewOrgVendor(orgProfile, gh.CreateAccessToken)))
 
-	mux.Handle("POST /token", authorizedRouteMiddleware.Then(handlePostToken(tokenVendor)))
-	mux.Handle("POST /git-credentials", authorizedRouteMiddleware.Then(handlePostGitCredentials(tokenVendor)))
+	// Pipeline routes use repoVendor (defaults to repo:default profile)
+	mux.Handle("POST /token", authorizedRouteMiddleware.Then(handlePostToken(repoVendor)))
+	mux.Handle("POST /git-credentials", authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor)))
 
-	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(tokenVendor)))
-	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(tokenVendor)))
+	// Organization routes use orgVendor (profile specified in path)
+	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor)))
+	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor)))
 
 	// healthchecks are not included in telemetry or authorization
 	muxWithoutTelemetry.Handle("GET /healthcheck", standardRouteMiddleware.Then(handleHealthCheck()))
