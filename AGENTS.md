@@ -116,9 +116,11 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 ### Error Handling
 
 - Wrap errors with `fmt.Errorf` and `%w` for error chains
-- Log errors at Info level before returning error responses
+- Only log errors if they are being handled by the current code context. Do not log when returning an error: include context in the wrapped error instead.
 - Handlers return appropriate HTTP status codes via `requestError(w, statusCode)`
-- Panics are only used for programmer errors (e.g., missing required context values)
+- Panics are only used when absolutely necessary for issues that can only occur
+  when well outside standard operating parameters: i.e. the environment is
+  unrecoverable or a programming error is detected.
 
 ### Testing
 
