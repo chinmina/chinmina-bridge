@@ -491,6 +491,116 @@ func TestValidateProfileWithoutDefaults(t *testing.T) {
 	assert.Len(t, profileConfig.Organization.Profiles, 1)
 }
 
+func TestValidateMatchRule(t *testing.T) {
+	testCases := []struct {
+		name          string
+		rule          github.MatchRule
+		expectedError string
+	}{
+		{
+			name: "valid rule with value",
+			rule: github.MatchRule{
+				Claim: "pipeline_slug",
+				Value: "silk-prod",
+			},
+			expectedError: "",
+		},
+		{
+			name: "valid rule with valuePattern",
+			rule: github.MatchRule{
+				Claim:        "pipeline_slug",
+				ValuePattern: "silk-.*",
+			},
+			expectedError: "",
+		},
+		{
+			name: "valid rule with agent_tag prefix",
+			rule: github.MatchRule{
+				Claim: "agent_tag:environment",
+				Value: "production",
+			},
+			expectedError: "",
+		},
+		{
+			name: "error when both value and valuePattern specified",
+			rule: github.MatchRule{
+				Claim:        "pipeline_slug",
+				Value:        "silk-prod",
+				ValuePattern: "silk-.*",
+			},
+			expectedError: "exactly one of 'value' or 'valuePattern' must be specified",
+		},
+		{
+			name: "error when neither value nor valuePattern specified",
+			rule: github.MatchRule{
+				Claim: "pipeline_slug",
+			},
+			expectedError: "one of 'value' or 'valuePattern' is required",
+		},
+		{
+			name: "error when claim is not allowed",
+			rule: github.MatchRule{
+				Claim: "invalid_claim",
+				Value: "test",
+			},
+			expectedError: "claim \"invalid_claim\" is not allowed for matching",
+		},
+		{
+			name: "error when claim is step_key (not allowed)",
+			rule: github.MatchRule{
+				Claim: "step_key",
+				Value: "test",
+			},
+			expectedError: "claim \"step_key\" is not allowed for matching",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := github.ValidateMatchRule(tc.rule)
+			if tc.expectedError == "" {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Equal(t, tc.expectedError, err.Error())
+			}
+		})
+	}
+}
+
+func TestIsAllowedClaim(t *testing.T) {
+	testCases := []struct {
+		name     string
+		claim    string
+		expected bool
+	}{
+		{"pipeline_slug is allowed", "pipeline_slug", true},
+		{"pipeline_id is allowed", "pipeline_id", true},
+		{"build_number is allowed", "build_number", true},
+		{"build_branch is allowed", "build_branch", true},
+		{"build_tag is allowed", "build_tag", true},
+		{"build_commit is allowed", "build_commit", true},
+		{"cluster_id is allowed", "cluster_id", true},
+		{"cluster_name is allowed", "cluster_name", true},
+		{"queue_id is allowed", "queue_id", true},
+		{"queue_key is allowed", "queue_key", true},
+		{"agent_tag:environment is allowed", "agent_tag:environment", true},
+		{"agent_tag:role is allowed", "agent_tag:role", true},
+		{"step_key is not allowed", "step_key", false},
+		{"job_id is not allowed", "job_id", false},
+		{"agent_id is not allowed", "agent_id", false},
+		{"organization_slug is not allowed", "organization_slug", false},
+		{"unknown_claim is not allowed", "unknown_claim", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := github.IsAllowedClaim(tc.claim)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func TestValidateProfileWithMatchRules(t *testing.T) {
 	ctx := context.Background()
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -39,6 +40,54 @@ type Profile struct {
 	Match        []MatchRule `yaml:"match"`
 	Repositories []string    `yaml:"repositories"`
 	Permissions  []string    `yaml:"permissions"`
+}
+
+// ValidateMatchRule validates that a match rule is well-formed:
+// - Exactly one of value or valuePattern must be specified
+// - The claim must be in the allowed list
+func ValidateMatchRule(rule MatchRule) error {
+	// Exactly one of value or valuePattern
+	if rule.Value != "" && rule.ValuePattern != "" {
+		return errors.New("exactly one of 'value' or 'valuePattern' must be specified")
+	}
+	if rule.Value == "" && rule.ValuePattern == "" {
+		return errors.New("one of 'value' or 'valuePattern' is required")
+	}
+
+	// Validate claim is allowed
+	if !IsAllowedClaim(rule.Claim) {
+		return fmt.Errorf("claim %q is not allowed for matching", rule.Claim)
+	}
+
+	return nil
+}
+
+// IsAllowedClaim checks if a claim is allowed for matching.
+// Allowed claims are standard Buildkite JWT claims or agent_tag: prefixed claims.
+func IsAllowedClaim(claim string) bool {
+	allowedClaims := map[string]bool{
+		"pipeline_slug": true,
+		"pipeline_id":   true,
+		"build_number":  true,
+		"build_branch":  true,
+		"build_tag":     true,
+		"build_commit":  true,
+		"cluster_id":    true,
+		"cluster_name":  true,
+		"queue_id":      true,
+		"queue_key":     true,
+	}
+
+	if allowedClaims[claim] {
+		return true
+	}
+
+	// Allow agent_tag: prefix
+	if strings.HasPrefix(claim, "agent_tag:") {
+		return true
+	}
+
+	return false
 }
 
 func (p ProfileConfig) MarshalZerologObject(e *zerolog.Event) {
