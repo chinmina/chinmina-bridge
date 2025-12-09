@@ -28,10 +28,17 @@ type ProfileConfig struct {
 	} `yaml:"organization"`
 }
 
+type MatchRule struct {
+	Claim        string `yaml:"claim"`
+	Value        string `yaml:"value"`
+	ValuePattern string `yaml:"valuePattern"`
+}
+
 type Profile struct {
-	Name         string   `yaml:"name"`
-	Repositories []string `yaml:"repositories"`
-	Permissions  []string `yaml:"permissions"`
+	Name         string      `yaml:"name"`
+	Match        []MatchRule `yaml:"match"`
+	Repositories []string    `yaml:"repositories"`
+	Permissions  []string    `yaml:"permissions"`
 }
 
 func (p ProfileConfig) MarshalZerologObject(e *zerolog.Event) {

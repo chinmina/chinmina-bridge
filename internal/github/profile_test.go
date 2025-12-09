@@ -26,6 +26,9 @@ var invalidProfile string
 //go:embed profile/profile_with_defaults.yaml
 var profileWithDefaults string
 
+//go:embed profile/profile_with_match_rules.yaml
+var profileWithMatchRules string
+
 // Test that the triplet logic works as expected
 func TestTripletDecomposition(t *testing.T) {
 	// Example of a valid profile URL
@@ -486,4 +489,73 @@ func TestValidateProfileWithoutDefaults(t *testing.T) {
 	assert.Empty(t, profileConfig.Organization.Defaults.Permissions)
 	assert.Equal(t, []string{"contents:read"}, profileConfig.GetDefaultPermissions())
 	assert.Len(t, profileConfig.Organization.Profiles, 1)
+}
+
+func TestValidateProfileWithMatchRules(t *testing.T) {
+	ctx := context.Background()
+
+	profileConfig, err := github.ValidateProfile(ctx, profileWithMatchRules)
+	require.NoError(t, err)
+
+	// Verify we have all expected profiles
+	assert.Len(t, profileConfig.Organization.Profiles, 4)
+
+	// Test profile with exact match rule
+	productionDeploy, ok := profileConfig.LookupProfile("production-deploy")
+	require.True(t, ok)
+	assert.Equal(t, github.Profile{
+		Name: "production-deploy",
+		Match: []github.MatchRule{
+			{
+				Claim: "pipeline_slug",
+				Value: "silk-prod",
+			},
+		},
+		Repositories: []string{"acme/silk"},
+		Permissions:  []string{"contents:write"},
+	}, productionDeploy)
+
+	// Test profile with regex pattern match
+	stagingDeploy, ok := profileConfig.LookupProfile("staging-deploy")
+	require.True(t, ok)
+	assert.Equal(t, github.Profile{
+		Name: "staging-deploy",
+		Match: []github.MatchRule{
+			{
+				Claim:        "pipeline_slug",
+				ValuePattern: "(silk|cotton)-(staging|stg)",
+			},
+		},
+		Repositories: []string{"acme/silk", "acme/cotton"},
+		Permissions:  []string{"contents:write"},
+	}, stagingDeploy)
+
+	// Test profile with multiple match rules (AND logic)
+	productionSilkOnly, ok := profileConfig.LookupProfile("production-silk-only")
+	require.True(t, ok)
+	assert.Equal(t, github.Profile{
+		Name: "production-silk-only",
+		Match: []github.MatchRule{
+			{
+				Claim:        "pipeline_slug",
+				ValuePattern: "silk-.*",
+			},
+			{
+				Claim: "build_branch",
+				Value: "main",
+			},
+		},
+		Repositories: []string{"acme/silk"},
+		Permissions:  []string{"contents:write"},
+	}, productionSilkOnly)
+
+	// Test profile with no match rules (empty array)
+	sharedUtilities, ok := profileConfig.LookupProfile("shared-utilities-read")
+	require.True(t, ok)
+	assert.Equal(t, github.Profile{
+		Name:         "shared-utilities-read",
+		Match:        []github.MatchRule{},
+		Repositories: []string{"acme/shared-utilities"},
+		Permissions:  []string{"contents:read"},
+	}, sharedUtilities)
 }
