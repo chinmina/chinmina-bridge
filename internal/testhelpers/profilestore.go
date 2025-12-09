@@ -4,8 +4,16 @@ import "github.com/chinmina/chinmina-bridge/internal/github"
 
 var testProfile = github.ProfileConfig{
 	Organization: struct {
+		Defaults struct {
+			Permissions []string `yaml:"permissions"`
+		} `yaml:"defaults"`
 		Profiles []github.Profile `yaml:"profiles"`
 	}{
+		Defaults: struct {
+			Permissions []string `yaml:"permissions"`
+		}{
+			Permissions: []string{"contents:read"},
+		},
 		Profiles: []github.Profile{
 			{
 				Name:         "simple-profile",

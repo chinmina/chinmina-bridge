@@ -21,6 +21,9 @@ type ProfileStore struct {
 
 type ProfileConfig struct {
 	Organization struct {
+		Defaults struct {
+			Permissions []string `yaml:"permissions"`
+		} `yaml:"defaults"`
 		Profiles []Profile `yaml:"profiles"`
 	} `yaml:"organization"`
 }
@@ -154,6 +157,15 @@ func (config *ProfileConfig) LookupProfile(name string) (Profile, bool) {
 	}
 
 	return Profile{}, false
+}
+
+// GetDefaultPermissions returns the configured default permissions for repo:default.
+// Falls back to ["contents:read"] if not configured.
+func (config *ProfileConfig) GetDefaultPermissions() []string {
+	if len(config.Organization.Defaults.Permissions) == 0 {
+		return []string{"contents:read"}
+	}
+	return config.Organization.Defaults.Permissions
 }
 
 func (config Profile) HasRepository(repo string) bool {

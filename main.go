@@ -60,7 +60,7 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *g
 	}
 
 	// Build separate vendor chains for pipeline and organization profiles
-	repoVendor := vendor.Auditor(vendorCache(vendor.NewRepoVendor(bk.RepositoryLookup, gh.CreateAccessToken)))
+	repoVendor := vendor.Auditor(vendorCache(vendor.NewRepoVendor(orgProfile, bk.RepositoryLookup, gh.CreateAccessToken)))
 	orgVendor := vendor.Auditor(vendorCache(vendor.NewOrgVendor(orgProfile, gh.CreateAccessToken)))
 
 	// Pipeline routes use repoVendor (defaults to repo:default profile)

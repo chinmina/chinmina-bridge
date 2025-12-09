@@ -23,6 +23,9 @@ var profile string
 //go:embed profile/invalid_profile.yaml
 var invalidProfile string
 
+//go:embed profile/profile_with_defaults.yaml
+var profileWithDefaults string
+
 // Test that the triplet logic works as expected
 func TestTripletDecomposition(t *testing.T) {
 	// Example of a valid profile URL
@@ -370,4 +373,117 @@ func TestGetProfileFromStore(t *testing.T) {
 
 		assert.Equal(t, numGoroutines, accessCount, "All goroutines should have executed")
 	})
+}
+
+func TestGetDefaultPermissions(t *testing.T) {
+	testCases := []struct {
+		name     string
+		config   github.ProfileConfig
+		expected []string
+	}{
+		{
+			name: "returns configured permissions when present",
+			config: github.ProfileConfig{
+				Organization: struct {
+					Defaults struct {
+						Permissions []string `yaml:"permissions"`
+					} `yaml:"defaults"`
+					Profiles []github.Profile `yaml:"profiles"`
+				}{
+					Defaults: struct {
+						Permissions []string `yaml:"permissions"`
+					}{
+						Permissions: []string{"contents:read", "pull_requests:write"},
+					},
+				},
+			},
+			expected: []string{"contents:read", "pull_requests:write"},
+		},
+		{
+			name: "returns fallback when defaults section not configured",
+			config: github.ProfileConfig{
+				Organization: struct {
+					Defaults struct {
+						Permissions []string `yaml:"permissions"`
+					} `yaml:"defaults"`
+					Profiles []github.Profile `yaml:"profiles"`
+				}{},
+			},
+			expected: []string{"contents:read"},
+		},
+		{
+			name: "returns fallback when permissions array is empty",
+			config: github.ProfileConfig{
+				Organization: struct {
+					Defaults struct {
+						Permissions []string `yaml:"permissions"`
+					} `yaml:"defaults"`
+					Profiles []github.Profile `yaml:"profiles"`
+				}{
+					Defaults: struct {
+						Permissions []string `yaml:"permissions"`
+					}{
+						Permissions: []string{},
+					},
+				},
+			},
+			expected: []string{"contents:read"},
+		},
+		{
+			name: "returns single custom permission",
+			config: github.ProfileConfig{
+				Organization: struct {
+					Defaults struct {
+						Permissions []string `yaml:"permissions"`
+					} `yaml:"defaults"`
+					Profiles []github.Profile `yaml:"profiles"`
+				}{
+					Defaults: struct {
+						Permissions []string `yaml:"permissions"`
+					}{
+						Permissions: []string{"packages:read"},
+					},
+				},
+			},
+			expected: []string{"packages:read"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := tc.config.GetDefaultPermissions()
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestValidateProfileWithDefaults(t *testing.T) {
+	ctx := context.Background()
+
+	profileConfig, err := github.ValidateProfile(ctx, profileWithDefaults)
+	require.NoError(t, err)
+
+	expectedDefaults := []string{"contents:read", "pull_requests:write"}
+	assert.Equal(t, expectedDefaults, profileConfig.Organization.Defaults.Permissions)
+	assert.Equal(t, expectedDefaults, profileConfig.GetDefaultPermissions())
+	assert.Len(t, profileConfig.Organization.Profiles, 2)
+}
+
+func TestValidateProfileWithoutDefaults(t *testing.T) {
+	ctx := context.Background()
+
+	// Test backward compatibility: profile without defaults section
+	profileWithoutDefaults := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["repo1"]
+      permissions: ["contents:read"]`
+
+	profileConfig, err := github.ValidateProfile(ctx, profileWithoutDefaults)
+	require.NoError(t, err)
+
+	// Backward compatibility: profile without defaults should still load and use fallback
+	assert.Empty(t, profileConfig.Organization.Defaults.Permissions)
+	assert.Equal(t, []string{"contents:read"}, profileConfig.GetDefaultPermissions())
+	assert.Len(t, profileConfig.Organization.Profiles, 1)
 }
