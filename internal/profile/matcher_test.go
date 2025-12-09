@@ -190,6 +190,86 @@ func TestRegexMatcher_AnchoringPreventsSubstring(t *testing.T) {
 	assert.Nil(t, matches)
 }
 
+// TestCompositeMatcher_Empty tests that empty matcher list always matches.
+func TestCompositeMatcher_Empty(t *testing.T) {
+	matcher := profile.CompositeMatcher()
+	lookup := mockClaimLookup{
+		claims: map[string]string{
+			"pipeline_slug": "my-pipeline",
+		},
+	}
+
+	matches, ok := matcher(lookup)
+
+	assert.True(t, ok)
+	assert.Equal(t, []profile.ClaimMatch{}, matches)
+}
+
+// TestCompositeMatcher_Single tests single matcher optimization.
+func TestCompositeMatcher_Single(t *testing.T) {
+	exactMatcher := profile.ExactMatcher("pipeline_slug", "my-pipeline")
+	composite := profile.CompositeMatcher(exactMatcher)
+
+	lookup := mockClaimLookup{
+		claims: map[string]string{
+			"pipeline_slug": "my-pipeline",
+		},
+	}
+
+	matches, ok := composite(lookup)
+
+	expected := []profile.ClaimMatch{
+		{Claim: "pipeline_slug", Value: "my-pipeline"},
+	}
+	assert.True(t, ok)
+	assert.Equal(t, expected, matches)
+}
+
+// TestCompositeMatcher_Multiple tests AND logic with all matchers succeeding.
+func TestCompositeMatcher_Multiple(t *testing.T) {
+	matcher1 := profile.ExactMatcher("pipeline_slug", "my-pipeline")
+	matcher2 := profile.ExactMatcher("build_branch", "main")
+
+	composite := profile.CompositeMatcher(matcher1, matcher2)
+
+	lookup := mockClaimLookup{
+		claims: map[string]string{
+			"pipeline_slug": "my-pipeline",
+			"build_branch":  "main",
+		},
+	}
+
+	matches, ok := composite(lookup)
+
+	expected := []profile.ClaimMatch{
+		{Claim: "pipeline_slug", Value: "my-pipeline"},
+		{Claim: "build_branch", Value: "main"},
+	}
+	assert.True(t, ok)
+	assert.Equal(t, expected, matches)
+}
+
+// TestCompositeMatcher_ShortCircuit tests that evaluation stops on first failure.
+func TestCompositeMatcher_ShortCircuit(t *testing.T) {
+	matcher1 := profile.ExactMatcher("pipeline_slug", "my-pipeline")
+	matcher2 := profile.ExactMatcher("build_branch", "develop") // This will fail
+
+	composite := profile.CompositeMatcher(matcher1, matcher2)
+
+	lookup := mockClaimLookup{
+		claims: map[string]string{
+			"pipeline_slug": "my-pipeline",
+			"build_branch":  "main", // doesn't match "develop"
+		},
+	}
+
+	matches, ok := composite(lookup)
+
+	// Should fail because second matcher doesn't match
+	assert.False(t, ok)
+	assert.Nil(t, matches)
+}
+
 // mockClaimLookup implements ClaimValueLookup for testing.
 type mockClaimLookup struct {
 	claims map[string]string

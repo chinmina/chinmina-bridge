@@ -84,3 +84,38 @@ func RegexMatcher(matchClaim string, matchPattern string) (Matcher, error) {
 		}}, true
 	}, nil
 }
+
+// CompositeMatcher combines multiple matchers with AND logic.
+// All matchers must succeed for the composite to succeed.
+// Empty matcher list always succeeds (no conditions = always authorized).
+// Single matcher optimization returns the matcher directly.
+// Short-circuits on first failure.
+func CompositeMatcher(matchers ...Matcher) Matcher {
+	// Handle empty case: no match rules = always match
+	if len(matchers) == 0 {
+		return func(claims ClaimValueLookup) ([]ClaimMatch, bool) {
+			return []ClaimMatch{}, true
+		}
+	}
+
+	// Single matcher optimization
+	if len(matchers) == 1 {
+		return matchers[0]
+	}
+
+	// Multiple matchers: AND logic with short-circuit
+	return func(claims ClaimValueLookup) ([]ClaimMatch, bool) {
+		matches := make([]ClaimMatch, 0, len(matchers))
+
+		for _, m := range matchers {
+			mMatches, ok := m(claims)
+			if !ok {
+				// Short-circuit on first failure
+				return nil, false
+			}
+			matches = append(matches, mMatches...)
+		}
+
+		return matches, true
+	}
+}
