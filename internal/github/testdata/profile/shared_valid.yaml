@@ -1,0 +1,15 @@
+organization:
+  defaults:
+    permissions: ["contents:read"]
+  profiles:
+    - name: "simple-profile"
+      repositories:
+        - repo-1
+        - repo-2
+      permissions: ["read", "write"]
+
+    - name: "non-default-profile"
+      repositories:
+        - secret-repo
+        - another-secret-repo
+      permissions: ["contents:read", "packages:read"]

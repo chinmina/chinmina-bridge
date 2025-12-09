@@ -10,14 +10,16 @@ import (
 
 	"slices"
 
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
 type ProfileStore struct {
-	mu     sync.Mutex
-	config ProfileConfig
+	mu             sync.Mutex
+	config         ProfileConfig
+	failedProfiles map[string]error // Tracks profiles that failed validation
 }
 
 type ProfileConfig struct {
@@ -40,6 +42,10 @@ type Profile struct {
 	Match        []MatchRule `yaml:"match"`
 	Repositories []string    `yaml:"repositories"`
 	Permissions  []string    `yaml:"permissions"`
+
+	// CompiledMatcher is the compiled matcher from Match rules.
+	// Populated during profile loading, not from YAML.
+	CompiledMatcher profile.Matcher `yaml:"-"`
 }
 
 // ValidateMatchRule validates that a match rule is well-formed:
@@ -60,6 +66,39 @@ func ValidateMatchRule(rule MatchRule) error {
 	}
 
 	return nil
+}
+
+// CompileMatchRules compiles a list of MatchRules into a single Matcher.
+// Returns an error if any rule is invalid or fails to compile.
+func CompileMatchRules(rules []MatchRule) (profile.Matcher, error) {
+	matchers := make([]profile.Matcher, 0, len(rules))
+
+	for _, rule := range rules {
+		// Validate the rule
+		if err := ValidateMatchRule(rule); err != nil {
+			return nil, fmt.Errorf("invalid match rule for claim %q: %w", rule.Claim, err)
+		}
+
+		// Create appropriate matcher based on rule type
+		var matcher profile.Matcher
+		var err error
+
+		if rule.Value != "" {
+			// Exact match
+			matcher = profile.ExactMatcher(rule.Claim, rule.Value)
+		} else {
+			// Regex match
+			matcher, err = profile.RegexMatcher(rule.Claim, rule.ValuePattern)
+			if err != nil {
+				return nil, fmt.Errorf("failed to compile regex pattern for claim %q: %w", rule.Claim, err)
+			}
+		}
+
+		matchers = append(matchers, matcher)
+	}
+
+	// Return composite matcher (handles empty list case)
+	return profile.CompositeMatcher(matchers...), nil
 }
 
 // IsAllowedClaim checks if a claim is allowed for matching.
@@ -104,9 +143,31 @@ func NewProfileStore() *ProfileStore {
 	return &ProfileStore{}
 }
 
+// ProfileUnavailableError indicates a profile failed validation
+type ProfileUnavailableError struct {
+	Name  string
+	Cause error
+}
+
+func (e *ProfileUnavailableError) Error() string {
+	return fmt.Sprintf("profile %q unavailable: validation failed", e.Name)
+}
+
+func (e *ProfileUnavailableError) Unwrap() error {
+	return e.Cause
+}
+
 func (p *ProfileStore) GetProfileFromStore(name string) (Profile, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// Check if profile failed validation
+	if err, failed := p.failedProfiles[name]; failed {
+		return Profile{}, &ProfileUnavailableError{
+			Name:  name,
+			Cause: err,
+		}
+	}
 
 	profile, ok := p.config.LookupProfile(name)
 	if !ok {
@@ -127,21 +188,22 @@ func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
 	return p.config, nil
 }
 
-// Update the currently stored organization profile
-func (p *ProfileStore) Update(profile *ProfileConfig) {
+// Update the currently stored organization profile with failed profiles tracking
+func (p *ProfileStore) Update(profile *ProfileConfig, failedProfiles map[string]error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	p.config.Organization = profile.Organization
+	p.failedProfiles = failedProfiles
 }
 
-func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh Client) (ProfileConfig, error) {
-	profile, err := LoadProfile(ctx, gh, orgProfileLocation)
+func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh Client) (ProfileConfig, map[string]error, error) {
+	profile, failedProfiles, err := LoadProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
-		return ProfileConfig{}, err
+		return ProfileConfig{}, failedProfiles, err
 	}
 
-	return profile, nil
+	return profile, failedProfiles, nil
 }
 
 // DecomposePath into the owner, repo, and path (no http prefix), assuming the
@@ -172,7 +234,7 @@ func GetProfile(ctx context.Context, gh Client, orgProfileLocation string) (stri
 	return profile.GetContent()
 }
 
-func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error) {
+func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, map[string]error, error) {
 	profileConfig := ProfileConfig{}
 
 	dec := yaml.NewDecoder(strings.NewReader(profile))
@@ -185,28 +247,66 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 	err := dec.Decode(&profileConfig)
 	if err != nil {
 		log.Info().Err(err).Msg("organization profile invalid")
-		return ProfileConfig{}, err
+		return ProfileConfig{}, nil, err
 	}
 
-	return profileConfig, nil
+	// Compile matchers for each profile (graceful degradation)
+	validProfiles := make([]Profile, 0, len(profileConfig.Organization.Profiles))
+	failedProfiles := make(map[string]error)
+
+	for _, prof := range profileConfig.Organization.Profiles {
+		matcher, err := CompileMatchRules(prof.Match)
+		if err != nil {
+			failedProfiles[prof.Name] = err
+
+			log.Warn().
+				Err(err).
+				Str("profile", prof.Name).
+				Msg("profile validation failed, profile unavailable")
+			continue
+		}
+
+		// Set compiled matcher
+		prof.CompiledMatcher = matcher
+		validProfiles = append(validProfiles, prof)
+	}
+
+	// Update config with only valid profiles
+	profileConfig.Organization.Profiles = validProfiles
+
+	return profileConfig, failedProfiles, nil
 }
 
-func LoadProfile(ctx context.Context, gh Client, orgProfileLocation string) (ProfileConfig, error) {
+func LoadProfile(ctx context.Context, gh Client, orgProfileLocation string) (ProfileConfig, map[string]error, error) {
 	// get the profile
 	profile, err := GetProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
-		return ProfileConfig{}, err
+		return ProfileConfig{}, nil, err
 	}
 
-	// validate the profile
-	profileConfig, err := ValidateProfile(ctx, profile)
+	// validate the profile and compile matchers
+	profileConfig, failedProfiles, err := ValidateProfile(ctx, profile)
 	if err != nil {
-		return ProfileConfig{}, err
+		return ProfileConfig{}, failedProfiles, err
 	}
 
-	log.Info().Str("url", orgProfileLocation).Msg("organization profile configuration loaded")
+	validCount := len(profileConfig.Organization.Profiles)
+	failedCount := len(failedProfiles)
 
-	return profileConfig, nil
+	if failedCount > 0 {
+		log.Warn().
+			Str("url", orgProfileLocation).
+			Int("valid_profiles", validCount).
+			Int("failed_profiles", failedCount).
+			Msg("organization profile configuration loaded with validation warnings")
+	} else {
+		log.Info().
+			Str("url", orgProfileLocation).
+			Int("profiles", validCount).
+			Msg("organization profile configuration loaded")
+	}
+
+	return profileConfig, failedProfiles, nil
 }
 
 func (config *ProfileConfig) LookupProfile(name string) (Profile, bool) {
@@ -230,4 +330,14 @@ func (config *ProfileConfig) GetDefaultPermissions() []string {
 
 func (config Profile) HasRepository(repo string) bool {
 	return slices.Contains(config.Repositories, repo)
+}
+
+// Matches evaluates the profile's match conditions against the provided claims.
+// Returns the matched claims for audit logging and a boolean indicating success.
+// Panics if CompiledMatcher is nil (indicates profile wasn't properly loaded).
+func (p Profile) Matches(claims profile.ClaimValueLookup) (matches []profile.ClaimMatch, ok bool) {
+	if p.CompiledMatcher == nil {
+		panic("profile matcher not compiled - profile must be loaded via LoadProfile")
+	}
+	return p.CompiledMatcher(claims)
 }
