@@ -120,6 +120,10 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 	profileConfig := ProfileConfig{}
 
 	dec := yaml.NewDecoder(strings.NewReader(profile))
+
+	// Loading the profiles MUST fail in the presence of unknown fields otherwise
+	// a misconfiguration (like a typo) could lead to unauthorized access through
+	// privilege escalation.
 	dec.KnownFields(true)
 
 	err := dec.Decode(&profileConfig)
