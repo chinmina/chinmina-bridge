@@ -55,6 +55,54 @@ func TestClaimValueLookup_Interface(t *testing.T) {
 	assert.Equal(t, "", value)
 }
 
+// TestExactMatcher_Success tests exact match when claim exists with correct value.
+func TestExactMatcher_Success(t *testing.T) {
+	matcher := profile.ExactMatcher("pipeline_slug", "my-pipeline")
+	lookup := mockClaimLookup{
+		claims: map[string]string{
+			"pipeline_slug": "my-pipeline",
+		},
+	}
+
+	matches, ok := matcher(lookup)
+
+	expected := []profile.ClaimMatch{
+		{Claim: "pipeline_slug", Value: "my-pipeline"},
+	}
+	assert.True(t, ok)
+	assert.Equal(t, expected, matches)
+}
+
+// TestExactMatcher_ClaimMissing tests no match when claim is absent.
+func TestExactMatcher_ClaimMissing(t *testing.T) {
+	matcher := profile.ExactMatcher("pipeline_slug", "my-pipeline")
+	lookup := mockClaimLookup{
+		claims: map[string]string{
+			"build_branch": "main",
+		},
+	}
+
+	matches, ok := matcher(lookup)
+
+	assert.False(t, ok)
+	assert.Nil(t, matches)
+}
+
+// TestExactMatcher_ValueMismatch tests no match when claim exists with different value.
+func TestExactMatcher_ValueMismatch(t *testing.T) {
+	matcher := profile.ExactMatcher("pipeline_slug", "my-pipeline")
+	lookup := mockClaimLookup{
+		claims: map[string]string{
+			"pipeline_slug": "other-pipeline",
+		},
+	}
+
+	matches, ok := matcher(lookup)
+
+	assert.False(t, ok)
+	assert.Nil(t, matches)
+}
+
 // mockClaimLookup implements ClaimValueLookup for testing.
 type mockClaimLookup struct {
 	claims map[string]string
