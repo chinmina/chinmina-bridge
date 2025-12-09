@@ -2,6 +2,7 @@ package jwt
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -110,6 +111,128 @@ func (c *BuildkiteClaims) Validate(ctx context.Context) error {
 		return fmt.Errorf("expecting token issued for organization %s", c.expectedOrganizationSlug)
 	}
 
+	return nil
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling to handle agent_tag: prefixed fields.
+func (c *BuildkiteClaims) UnmarshalJSON(data []byte) error {
+	// Parse into map to access all fields
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	// Process each field
+	c.AgentTags = make(map[string]string)
+	for key, value := range raw {
+		if err := c.setField(key, value); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// setField maps a JWT field name to the appropriate struct field.
+// Returns an error if a known field has the wrong type.
+// Unknown fields are silently ignored.
+func (c *BuildkiteClaims) setField(key string, value interface{}) error {
+	switch key {
+	case "organization_slug":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("organization_slug: expected string, got %T", value)
+		}
+		c.OrganizationSlug = v
+	case "pipeline_slug":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("pipeline_slug: expected string, got %T", value)
+		}
+		c.PipelineSlug = v
+	case "pipeline_id":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("pipeline_id: expected string, got %T", value)
+		}
+		c.PipelineID = v
+	case "build_number":
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("build_number: expected number, got %T", value)
+		}
+		c.BuildNumber = int(v)
+	case "build_branch":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("build_branch: expected string, got %T", value)
+		}
+		c.BuildBranch = v
+	case "build_tag":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("build_tag: expected string, got %T", value)
+		}
+		c.BuildTag = v
+	case "build_commit":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("build_commit: expected string, got %T", value)
+		}
+		c.BuildCommit = v
+	case "step_key":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("step_key: expected string, got %T", value)
+		}
+		c.StepKey = v
+	case "job_id":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("job_id: expected string, got %T", value)
+		}
+		c.JobId = v
+	case "agent_id":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("agent_id: expected string, got %T", value)
+		}
+		c.AgentId = v
+	case "cluster_id":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("cluster_id: expected string, got %T", value)
+		}
+		c.ClusterID = v
+	case "cluster_name":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("cluster_name: expected string, got %T", value)
+		}
+		c.ClusterName = v
+	case "queue_id":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("queue_id: expected string, got %T", value)
+		}
+		c.QueueID = v
+	case "queue_key":
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("queue_key: expected string, got %T", value)
+		}
+		c.QueueKey = v
+	default:
+		// Handle agent_tag: prefix
+		if tagName, found := strings.CutPrefix(key, "agent_tag:"); found {
+			strVal, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("agent_tag:%s: expected string, got %T", tagName, value)
+			}
+			c.AgentTags[tagName] = strVal
+		}
+		// Unknown fields silently ignored
+	}
 	return nil
 }
 
