@@ -327,3 +327,129 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildkiteClaims_Lookup(t *testing.T) {
+	claims := BuildkiteClaims{
+		OrganizationSlug: "acme",
+		PipelineSlug:     "pipeline",
+		PipelineID:       "pipeline-123",
+		BuildNumber:      456,
+		BuildBranch:      "main",
+		BuildTag:         "v1.0.0",
+		BuildCommit:      "abc123",
+		ClusterID:        "cluster-xyz",
+		ClusterName:      "prod-cluster",
+		QueueID:          "queue-789",
+		QueueKey:         "default",
+		AgentTags: map[string]string{
+			"queue":  "runners",
+			"os":     "linux",
+			"region": "us-west-2",
+		},
+	}
+
+	t.Run("success cases", func(t *testing.T) {
+		tests := []struct {
+			name          string
+			claim         string
+			expectedValue string
+			expectedFound bool
+		}{
+			{"organization_slug", "organization_slug", "acme", true},
+			{"pipeline_slug", "pipeline_slug", "pipeline", true},
+			{"pipeline_id", "pipeline_id", "pipeline-123", true},
+			{"build_number", "build_number", "456", true},
+			{"build_branch", "build_branch", "main", true},
+			{"build_tag", "build_tag", "v1.0.0", true},
+			{"build_commit", "build_commit", "abc123", true},
+			{"cluster_id", "cluster_id", "cluster-xyz", true},
+			{"cluster_name", "cluster_name", "prod-cluster", true},
+			{"queue_id", "queue_id", "queue-789", true},
+			{"queue_key", "queue_key", "default", true},
+			{"agent_tag:queue", "agent_tag:queue", "runners", true},
+			{"agent_tag:os", "agent_tag:os", "linux", true},
+			{"agent_tag:region", "agent_tag:region", "us-west-2", true},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				value, found := claims.Lookup(tt.claim)
+				assert.Equal(t, tt.expectedValue, value)
+				assert.Equal(t, tt.expectedFound, found)
+			})
+		}
+	})
+
+	t.Run("optional claims when empty", func(t *testing.T) {
+		emptyClaims := BuildkiteClaims{
+			OrganizationSlug: "acme",
+			PipelineSlug:     "pipeline",
+			PipelineID:       "pipeline-123",
+			BuildNumber:      456,
+			BuildBranch:      "main",
+			BuildCommit:      "abc123",
+			// Optional fields left empty
+		}
+
+		tests := []struct {
+			name  string
+			claim string
+		}{
+			{"build_tag empty", "build_tag"},
+			{"cluster_id empty", "cluster_id"},
+			{"cluster_name empty", "cluster_name"},
+			{"queue_id empty", "queue_id"},
+			{"queue_key empty", "queue_key"},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				value, found := emptyClaims.Lookup(tt.claim)
+				assert.Equal(t, "", value)
+				assert.False(t, found, "optional claim should return false when empty")
+			})
+		}
+	})
+
+	t.Run("unknown claims", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			claim string
+		}{
+			{"unknown claim", "unknown_claim"},
+			{"step_key not exposed", "step_key"},
+			{"job_id not exposed", "job_id"},
+			{"agent_id not exposed", "agent_id"},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				value, found := claims.Lookup(tt.claim)
+				assert.Equal(t, "", value)
+				assert.False(t, found)
+			})
+		}
+	})
+
+	t.Run("agent tag not present", func(t *testing.T) {
+		value, found := claims.Lookup("agent_tag:nonexistent")
+		assert.Equal(t, "", value)
+		assert.False(t, found)
+	})
+
+	t.Run("empty agent tags map", func(t *testing.T) {
+		emptyClaims := BuildkiteClaims{
+			OrganizationSlug: "acme",
+			PipelineSlug:     "pipeline",
+			PipelineID:       "pipeline-123",
+			BuildNumber:      789,
+			BuildBranch:      "feature",
+			BuildCommit:      "def456",
+			AgentTags:        map[string]string{},
+		}
+
+		value, found := emptyClaims.Lookup("agent_tag:queue")
+		assert.Equal(t, "", value)
+		assert.False(t, found)
+	})
+}
