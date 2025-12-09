@@ -236,6 +236,60 @@ func (c *BuildkiteClaims) setField(key string, value interface{}) error {
 	return nil
 }
 
+// Lookup implements ClaimValueLookup interface for BuildkiteClaims.
+// Returns (value, true) when claim is present and populated.
+// Returns ("", false) for optional claims when not present or for unknown claims.
+func (c BuildkiteClaims) Lookup(claim string) (string, bool) {
+	switch claim {
+	case "organization_slug":
+		return c.OrganizationSlug, true
+	case "pipeline_slug":
+		return c.PipelineSlug, true
+	case "pipeline_id":
+		return c.PipelineID, true
+	case "build_number":
+		return strconv.Itoa(c.BuildNumber), true
+	case "build_branch":
+		return c.BuildBranch, true
+	case "build_tag":
+		// Optional claim: return false when not present
+		if c.BuildTag != "" {
+			return c.BuildTag, true
+		}
+		return "", false
+	case "build_commit":
+		return c.BuildCommit, true
+	case "cluster_id":
+		if c.ClusterID != "" {
+			return c.ClusterID, true
+		}
+		return "", false
+	case "cluster_name":
+		if c.ClusterName != "" {
+			return c.ClusterName, true
+		}
+		return "", false
+	case "queue_id":
+		if c.QueueID != "" {
+			return c.QueueID, true
+		}
+		return "", false
+	case "queue_key":
+		if c.QueueKey != "" {
+			return c.QueueKey, true
+		}
+		return "", false
+	default:
+		// Handle agent_tag: prefix dynamically
+		if agentTag, found := strings.CutPrefix(claim, "agent_tag:"); found {
+			if val, ok := c.AgentTags[agentTag]; ok {
+				return val, true
+			}
+		}
+		return "", false
+	}
+}
+
 // buildkiteCustomClaims sets up OIDC custom claims for a Buildkite-issued JWT.
 func buildkiteCustomClaims(expectedOrganizationSlug string) func() validator.CustomClaims {
 	return func() validator.CustomClaims {
