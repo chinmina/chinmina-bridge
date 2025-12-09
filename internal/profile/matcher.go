@@ -22,3 +22,20 @@ type ClaimMatch struct {
 // Returns matched claims for audit logging and a boolean indicating success.
 // Multiple ClaimMatch entries may be returned when composite matchers combine multiple conditions.
 type Matcher func(claims ClaimValueLookup) (matches []ClaimMatch, ok bool)
+
+// ExactMatcher creates a matcher that performs exact string comparison on a claim value.
+// Returns a successful match only when the claim exists and exactly equals the expected value.
+// Performance: O(1) string comparison.
+func ExactMatcher(matchClaim string, matchValue string) Matcher {
+	return func(claims ClaimValueLookup) ([]ClaimMatch, bool) {
+		value, ok := claims.Lookup(matchClaim)
+		if !ok || value != matchValue {
+			return nil, false
+		}
+
+		return []ClaimMatch{{
+			Claim: matchClaim,
+			Value: value,
+		}}, true
+	}
+}
