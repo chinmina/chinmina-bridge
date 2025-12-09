@@ -29,3 +29,7 @@ GIT_CONFIG_VALUE_0=false \
   git clone --depth 1 --single-branch --no-tags \
     --branch "${plugin_version}" -- \
     "${plugin_repo}" "${plugin_dir}"
+
+# Installing gh cli
+echo "@community http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+apk add github-cli@community
