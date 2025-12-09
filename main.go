@@ -208,14 +208,15 @@ func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, g
 	}()
 
 	for {
-		profileConfig, err := github.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
+		profileConfig, failedProfiles, err := github.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
 		if err != nil {
 			// log the failure to fetch, then continue. This may be transient, so we
 			// need to keep trying.
 			log.Info().Err(err).Msg("organization profile refresh failed, continuing")
 		} else {
 			// only update the profile if retrieval succeeded
-			profileStore.Update(&profileConfig)
+			// failed profiles are already logged during FetchOrganizationProfile
+			profileStore.Update(&profileConfig, failedProfiles)
 		}
 
 		select {

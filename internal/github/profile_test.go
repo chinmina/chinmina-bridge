@@ -11,23 +11,53 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
-	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	api "github.com/google/go-github/v80/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-//go:embed profile/valid_profile.yaml
+//go:embed testdata/profile/valid_profile.yaml
 var profile string
 
-//go:embed profile/invalid_profile.yaml
+//go:embed testdata/profile/shared_valid.yaml
+var sharedValidProfile string
+
+//go:embed testdata/profile/invalid_profile.yaml
 var invalidProfile string
 
-//go:embed profile/profile_with_defaults.yaml
+//go:embed testdata/profile/profile_with_defaults.yaml
 var profileWithDefaults string
 
-//go:embed profile/profile_with_match_rules.yaml
+//go:embed testdata/profile/profile_with_match_rules.yaml
 var profileWithMatchRules string
+
+//go:embed testdata/profile/profile_with_mixed_validation.yaml
+var profileWithMixedValidation string
+
+// Helper function to compare ProfileConfigs without comparing CompiledMatcher function pointers
+func assertProfileConfigEqual(t *testing.T, expected, actual github.ProfileConfig) {
+	t.Helper()
+
+	// Compare organization defaults
+	assert.Equal(t, expected.Organization.Defaults.Permissions, actual.Organization.Defaults.Permissions)
+
+	// Compare number of profiles
+	assert.Len(t, actual.Organization.Profiles, len(expected.Organization.Profiles))
+
+	// Compare each profile excluding CompiledMatcher
+	for i, expectedProf := range expected.Organization.Profiles {
+		if i >= len(actual.Organization.Profiles) {
+			break
+		}
+		actualProf := actual.Organization.Profiles[i]
+
+		assert.Equal(t, expectedProf.Name, actualProf.Name, "profile name mismatch at index %d", i)
+		assert.Equal(t, expectedProf.Match, actualProf.Match, "match rules mismatch for profile %s", expectedProf.Name)
+		assert.Equal(t, expectedProf.Repositories, actualProf.Repositories, "repositories mismatch for profile %s", expectedProf.Name)
+		assert.Equal(t, expectedProf.Permissions, actualProf.Permissions, "permissions mismatch for profile %s", expectedProf.Name)
+		assert.NotNil(t, actualProf.CompiledMatcher, "compiled matcher should not be nil for profile %s", actualProf.Name)
+	}
+}
 
 // Test that the triplet logic works as expected
 func TestTripletDecomposition(t *testing.T) {
@@ -135,14 +165,14 @@ func TestInvalidRepositoryContents(t *testing.T) {
 
 // Test that the profile that is loaded is valid
 func TestValidProfile(t *testing.T) {
-	_, err := github.ValidateProfile(context.Background(), profile)
+	_, _, err := github.ValidateProfile(context.Background(), profile)
 
 	require.NoError(t, err)
 }
 
 // Test case where the profile that is loaded is invalid
 func TestInvalidProfile(t *testing.T) {
-	_, err := github.ValidateProfile(context.Background(), invalidProfile)
+	_, _, err := github.ValidateProfile(context.Background(), invalidProfile)
 
 	require.Error(t, err)
 }
@@ -192,7 +222,7 @@ func TestLoadProfile(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	validProfile, _ := github.ValidateProfile(context.Background(), profile)
+	validProfile, _, _ := github.ValidateProfile(context.Background(), profile)
 
 	testCases := []struct {
 		config         string
@@ -218,9 +248,11 @@ func TestLoadProfile(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.config, func(t *testing.T) {
-			result, err := github.LoadProfile(context.Background(), gh, tc.config)
+			result, _, err := github.LoadProfile(context.Background(), gh, tc.config)
 			tc.errorAssertion(t, err)
-			assert.Equal(t, tc.expectedConfig, result)
+			if err == nil {
+				assertProfileConfigEqual(t, tc.expectedConfig, result)
+			}
 		})
 	}
 }
@@ -265,26 +297,26 @@ func TestFetchProfile(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	validatedProfile, err := github.ValidateProfile(context.Background(), profile)
+	validatedProfile, _, err := github.ValidateProfile(context.Background(), profile)
 	require.NoError(t, err)
 
 	// Test that we get an error attempting to load it before fetching
 	_, err = profileStore.GetOrganization()
 	require.Error(t, err)
 
-	orgProfile, err := github.FetchOrganizationProfile(context.Background(), profileConfig, gh)
+	orgProfile, _, err := github.FetchOrganizationProfile(context.Background(), profileConfig, gh)
 	require.NoError(t, err)
-	assert.Equal(t, validatedProfile, orgProfile)
+	assertProfileConfigEqual(t, validatedProfile, orgProfile)
 
-	orgProfile, err = github.FetchOrganizationProfile(context.Background(), profileConfig, gh)
+	orgProfile, _, err = github.FetchOrganizationProfile(context.Background(), profileConfig, gh)
 	require.NoError(t, err)
 
-	profileStore.Update(&orgProfile)
+	profileStore.Update(&orgProfile, nil)
 	loadedProfile, err := profileStore.GetOrganization()
 	require.NoError(t, err)
-	assert.Equal(t, loadedProfile, validatedProfile)
+	assertProfileConfigEqual(t, validatedProfile, loadedProfile)
 
-	_, err = github.FetchOrganizationProfile(context.Background(), fakeProfileConfig, gh)
+	_, _, err = github.FetchOrganizationProfile(context.Background(), fakeProfileConfig, gh)
 	require.Error(t, err)
 }
 
@@ -319,7 +351,7 @@ func TestProfile(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.profileName, func(t *testing.T) {
-			profileConfig, err := github.ValidateProfile(context.Background(), profile)
+			profileConfig, _, err := github.ValidateProfile(context.Background(), profile)
 			require.NoError(t, err)
 
 			p, ok := profileConfig.LookupProfile(tc.profileName)
@@ -329,13 +361,18 @@ func TestProfile(t *testing.T) {
 	}
 }
 func TestGetProfileFromStore(t *testing.T) {
+	profileConfig, _, err := github.ValidateProfile(context.Background(), sharedValidProfile)
+	require.NoError(t, err)
 
-	store := testhelpers.CreateTestProfileStore()
+	store := github.NewProfileStore()
+	store.Update(&profileConfig, nil)
+
 	validProfileName := "simple-profile"
 	invalidProfileName := "glizzy"
 
 	expectedProfile := github.Profile{
 		Name:         "simple-profile",
+		Match:        nil,
 		Repositories: []string{"repo-1", "repo-2"},
 		Permissions:  []string{"read", "write"},
 	}
@@ -343,7 +380,11 @@ func TestGetProfileFromStore(t *testing.T) {
 	t.Run("Successful retrieval of an existing profile", func(t *testing.T) {
 		retrievedProfile, err := store.GetProfileFromStore(validProfileName)
 		require.NoError(t, err)
-		assert.Equal(t, expectedProfile, retrievedProfile)
+		assert.Equal(t, expectedProfile.Name, retrievedProfile.Name)
+		assert.Equal(t, expectedProfile.Match, retrievedProfile.Match)
+		assert.Equal(t, expectedProfile.Repositories, retrievedProfile.Repositories)
+		assert.Equal(t, expectedProfile.Permissions, retrievedProfile.Permissions)
+		assert.NotNil(t, retrievedProfile.CompiledMatcher)
 	})
 
 	t.Run("Error handling when a profile is not found", func(t *testing.T) {
@@ -463,7 +504,7 @@ func TestGetDefaultPermissions(t *testing.T) {
 func TestValidateProfileWithDefaults(t *testing.T) {
 	ctx := context.Background()
 
-	profileConfig, err := github.ValidateProfile(ctx, profileWithDefaults)
+	profileConfig, _, err := github.ValidateProfile(ctx, profileWithDefaults)
 	require.NoError(t, err)
 
 	expectedDefaults := []string{"contents:read", "pull_requests:write"}
@@ -482,7 +523,7 @@ func TestValidateProfileWithoutDefaults(t *testing.T) {
       repositories: ["repo1"]
       permissions: ["contents:read"]`
 
-	profileConfig, err := github.ValidateProfile(ctx, profileWithoutDefaults)
+	profileConfig, _, err := github.ValidateProfile(ctx, profileWithoutDefaults)
 	require.NoError(t, err)
 
 	// Backward compatibility: profile without defaults should still load and use fallback
@@ -604,8 +645,9 @@ func TestIsAllowedClaim(t *testing.T) {
 func TestValidateProfileWithMatchRules(t *testing.T) {
 	ctx := context.Background()
 
-	profileConfig, err := github.ValidateProfile(ctx, profileWithMatchRules)
+	profileConfig, failedProfiles, err := github.ValidateProfile(ctx, profileWithMatchRules)
 	require.NoError(t, err)
+	assert.Empty(t, failedProfiles, "valid profile should not have failures")
 
 	// Verify we have all expected profiles
 	assert.Len(t, profileConfig.Organization.Profiles, 4)
@@ -613,59 +655,105 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	// Test profile with exact match rule
 	productionDeploy, ok := profileConfig.LookupProfile("production-deploy")
 	require.True(t, ok)
-	assert.Equal(t, github.Profile{
-		Name: "production-deploy",
-		Match: []github.MatchRule{
-			{
-				Claim: "pipeline_slug",
-				Value: "silk-prod",
-			},
+	assert.Equal(t, "production-deploy", productionDeploy.Name)
+	assert.Equal(t, []github.MatchRule{
+		{
+			Claim: "pipeline_slug",
+			Value: "silk-prod",
 		},
-		Repositories: []string{"acme/silk"},
-		Permissions:  []string{"contents:write"},
-	}, productionDeploy)
+	}, productionDeploy.Match)
+	assert.Equal(t, []string{"acme/silk"}, productionDeploy.Repositories)
+	assert.Equal(t, []string{"contents:write"}, productionDeploy.Permissions)
+	assert.NotNil(t, productionDeploy.CompiledMatcher, "compiled matcher should be set")
 
 	// Test profile with regex pattern match
 	stagingDeploy, ok := profileConfig.LookupProfile("staging-deploy")
 	require.True(t, ok)
-	assert.Equal(t, github.Profile{
-		Name: "staging-deploy",
-		Match: []github.MatchRule{
-			{
-				Claim:        "pipeline_slug",
-				ValuePattern: "(silk|cotton)-(staging|stg)",
-			},
+	assert.Equal(t, "staging-deploy", stagingDeploy.Name)
+	assert.Equal(t, []github.MatchRule{
+		{
+			Claim:        "pipeline_slug",
+			ValuePattern: "(silk|cotton)-(staging|stg)",
 		},
-		Repositories: []string{"acme/silk", "acme/cotton"},
-		Permissions:  []string{"contents:write"},
-	}, stagingDeploy)
+	}, stagingDeploy.Match)
+	assert.Equal(t, []string{"acme/silk", "acme/cotton"}, stagingDeploy.Repositories)
+	assert.Equal(t, []string{"contents:write"}, stagingDeploy.Permissions)
+	assert.NotNil(t, stagingDeploy.CompiledMatcher, "compiled matcher should be set")
 
 	// Test profile with multiple match rules (AND logic)
 	productionSilkOnly, ok := profileConfig.LookupProfile("production-silk-only")
 	require.True(t, ok)
-	assert.Equal(t, github.Profile{
-		Name: "production-silk-only",
-		Match: []github.MatchRule{
-			{
-				Claim:        "pipeline_slug",
-				ValuePattern: "silk-.*",
-			},
-			{
-				Claim: "build_branch",
-				Value: "main",
-			},
+	assert.Equal(t, "production-silk-only", productionSilkOnly.Name)
+	assert.Equal(t, []github.MatchRule{
+		{
+			Claim:        "pipeline_slug",
+			ValuePattern: "silk-.*",
 		},
-		Repositories: []string{"acme/silk"},
-		Permissions:  []string{"contents:write"},
-	}, productionSilkOnly)
+		{
+			Claim: "build_branch",
+			Value: "main",
+		},
+	}, productionSilkOnly.Match)
+	assert.Equal(t, []string{"acme/silk"}, productionSilkOnly.Repositories)
+	assert.Equal(t, []string{"contents:write"}, productionSilkOnly.Permissions)
+	assert.NotNil(t, productionSilkOnly.CompiledMatcher, "compiled matcher should be set")
 
 	// Test profile with no match rules (empty array)
 	sharedUtilities, ok := profileConfig.LookupProfile("shared-utilities-read")
 	require.True(t, ok)
-	assert.Equal(t, github.Profile{
-		Name:         "shared-utilities-read",
-		Match:        []github.MatchRule{},
-		Repositories: []string{"acme/shared-utilities"},
-		Permissions:  []string{"contents:read"},
-	}, sharedUtilities)
+	assert.Equal(t, "shared-utilities-read", sharedUtilities.Name)
+	assert.Equal(t, []github.MatchRule{}, sharedUtilities.Match)
+	assert.Equal(t, []string{"acme/shared-utilities"}, sharedUtilities.Repositories)
+	assert.Equal(t, []string{"contents:read"}, sharedUtilities.Permissions)
+	assert.NotNil(t, sharedUtilities.CompiledMatcher, "compiled matcher should be set even for empty match rules")
+}
+
+// TestGracefulDegradation verifies that profile validation implements graceful degradation:
+// - Invalid profiles are dropped with warnings
+// - Valid profiles remain accessible
+// - Failed profiles are tracked for diagnostics
+func TestGracefulDegradation(t *testing.T) {
+	ctx := context.Background()
+
+	profileConfig, failedProfiles, err := github.ValidateProfile(ctx, profileWithMixedValidation)
+	require.NoError(t, err, "ValidateProfile should not return an error even with invalid profiles")
+
+	// We should have 3 failed profiles
+	assert.Len(t, failedProfiles, 3, "expected 3 failed profiles")
+
+	// Verify failed profiles are tracked with errors
+	assert.Contains(t, failedProfiles, "invalid-both-match-types")
+	assert.Contains(t, failedProfiles, "invalid-disallowed-claim")
+	assert.Contains(t, failedProfiles, "invalid-regex-pattern")
+
+	// Verify error messages contain the reasons
+	assert.ErrorContains(t, failedProfiles["invalid-both-match-types"], "exactly one")
+	assert.ErrorContains(t, failedProfiles["invalid-disallowed-claim"], "not allowed")
+	assert.ErrorContains(t, failedProfiles["invalid-regex-pattern"], "invalid regex")
+
+	// Only valid profiles should be in the config
+	assert.Len(t, profileConfig.Organization.Profiles, 3, "expected 3 valid profiles")
+
+	// Verify valid profiles are accessible
+	validNames := []string{"valid-production", "valid-staging", "valid-no-match"}
+	for _, name := range validNames {
+		prof, ok := profileConfig.LookupProfile(name)
+		assert.True(t, ok, "valid profile %q should be accessible", name)
+		assert.NotNil(t, prof.CompiledMatcher, "profile %q should have compiled matcher", name)
+	}
+
+	// Verify invalid profiles are not accessible
+	invalidNames := []string{"invalid-both-match-types", "invalid-disallowed-claim", "invalid-regex-pattern"}
+	for _, name := range invalidNames {
+		_, ok := profileConfig.LookupProfile(name)
+		assert.False(t, ok, "invalid profile %q should not be accessible", name)
+	}
+
+	// Verify that the valid profiles have working matchers
+	// We can't test actual matching without BuildkiteClaims implementation,
+	// but we can verify the matchers are compiled
+	validProd, _ := profileConfig.LookupProfile("valid-production")
+	assert.NotNil(t, validProd.CompiledMatcher)
+	assert.Equal(t, "valid-production", validProd.Name)
+	assert.Equal(t, []string{"acme/silk"}, validProd.Repositories)
 }
