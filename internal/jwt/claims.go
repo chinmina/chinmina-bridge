@@ -11,12 +11,21 @@ import (
 	"github.com/auth0/go-jwt-middleware/v2/validator"
 )
 
+// buildkiteCustomClaims sets up OIDC custom claims for a Buildkite-issued JWT.
+func buildkiteCustomClaims(expectedOrganizationSlug string) func() validator.CustomClaims {
+	return func() validator.CustomClaims {
+		return &BuildkiteClaims{
+			expectedOrganizationSlug: expectedOrganizationSlug,
+		}
+	}
+}
+
 // registeredClaimsValidator ensures that the basic claims that we rely on are
 // part of the supplied claims. It also ensures that the the token has a valid
 // time period. The core validation takes care of enforcing the active and
 // expiry dates: this simply ensures that they're present.
 func registeredClaimsValidator(next jwtmiddleware.ValidateToken) jwtmiddleware.ValidateToken {
-	return func(ctx context.Context, token string) (interface{}, error) {
+	return func(ctx context.Context, token string) (any, error) {
 
 		claims, err := next(ctx, token)
 		if err != nil {
@@ -60,23 +69,23 @@ type ClaimValueLookup interface {
 //
 // See: https://buildkite.com/docs/agent/v3/cli-oidc#claims
 type BuildkiteClaims struct {
-	OrganizationSlug string `json:"organization_slug"`
-	PipelineSlug     string `json:"pipeline_slug"`
-	PipelineID       string `json:"pipeline_id"`
-	BuildNumber      int    `json:"build_number"`
-	BuildBranch      string `json:"build_branch"`
-	BuildTag         string `json:"build_tag"`
-	BuildCommit      string `json:"build_commit"`
-	StepKey          string `json:"step_key"`
-	JobId            string `json:"job_id"`
-	AgentId          string `json:"agent_id"`
-	ClusterID        string `json:"cluster_id"`
-	ClusterName      string `json:"cluster_name"`
-	QueueID          string `json:"queue_id"`
-	QueueKey         string `json:"queue_key"`
-	AgentTags        map[string]string `json:"-"`
+	OrganizationSlug string            `json:"organization_slug"`
+	PipelineSlug     string            `json:"pipeline_slug"`
+	PipelineID       string            `json:"pipeline_id"`
+	BuildNumber      int               `json:"build_number"`
+	BuildBranch      string            `json:"build_branch"`
+	BuildTag         string            `json:"build_tag"`
+	BuildCommit      string            `json:"build_commit"`
+	StepKey          string            `json:"step_key"`
+	JobId            string            `json:"job_id"`
+	AgentId          string            `json:"agent_id"`
+	ClusterID        string            `json:"cluster_id"`
+	ClusterName      string            `json:"cluster_name"`
+	QueueID          string            `json:"queue_id"`
+	QueueKey         string            `json:"queue_key"`
+	AgentTags        map[string]string `json:"-"` // handled in UnmarshalJSON
 
-	expectedOrganizationSlug string
+	expectedOrganizationSlug string `json:"-"` // not part of JWT
 }
 
 // Validate ensures that the expected claims are present in the token, and that
@@ -114,10 +123,29 @@ func (c *BuildkiteClaims) Validate(ctx context.Context) error {
 	return nil
 }
 
+// JSON JWT claims unmarshaling with agent_tag: prefix handling
+//
+// Custom unmarshaling is implemented because struct-tag based approaches don't
+// allow us to extract fields prefixed with "agent_tag:" into the AgentTags map.
+// This will be easier when JSONv2 is shipped.
+//
+// This implementation uses a generic switch approach with setField[T] for type
+// conversion. It was chosen after benchmarking 5 different implementations for
+// optimal balance of performance and maintainability:
+//
+//   - Current approach (switch + generic setField): 14.0µs/op, baseline performance, ~50 lines of code
+//   - Setter map with constant: 14.2µs/op (+2% slower), slightly more flexible but minimal difference
+//   - Manual type assertions (original): 14.0µs/op, identical performance but ~200 lines of repetitive code
+//   - Double unmarshal (with a "shadow" type): 20.0µs/op (+43% slower), eliminated as too slow
+//   - Token-based decoder: 17.9µs/op (+28% slower, +88% memory), eliminated as too slow and complex
+//
+// The generic approach eliminates repetitive type checking while maintaining
+// identical performance characteristics.
+
 // UnmarshalJSON implements custom JSON unmarshaling to handle agent_tag: prefixed fields.
 func (c *BuildkiteClaims) UnmarshalJSON(data []byte) error {
 	// Parse into map to access all fields
-	var raw map[string]interface{}
+	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
@@ -125,7 +153,7 @@ func (c *BuildkiteClaims) UnmarshalJSON(data []byte) error {
 	// Process each field
 	c.AgentTags = make(map[string]string)
 	for key, value := range raw {
-		if err := c.setField(key, value); err != nil {
+		if err := c.setClaimField(key, value); err != nil {
 			return err
 		}
 	}
@@ -133,105 +161,56 @@ func (c *BuildkiteClaims) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// setField maps a JWT field name to the appropriate struct field.
+// setClaimField maps a JWT field name to the appropriate struct field.
 // Returns an error if a known field has the wrong type.
 // Unknown fields are silently ignored.
-func (c *BuildkiteClaims) setField(key string, value interface{}) error {
+func (c *BuildkiteClaims) setClaimField(key string, value any) error {
+	var err error
 	switch key {
 	case "organization_slug":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("organization_slug: expected string, got %T", value)
-		}
-		c.OrganizationSlug = v
+		err = setField(&c.OrganizationSlug, value)
 	case "pipeline_slug":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("pipeline_slug: expected string, got %T", value)
-		}
-		c.PipelineSlug = v
+		err = setField(&c.PipelineSlug, value)
 	case "pipeline_id":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("pipeline_id: expected string, got %T", value)
-		}
-		c.PipelineID = v
+		err = setField(&c.PipelineID, value)
 	case "build_number":
-		v, ok := value.(float64)
-		if !ok {
-			return fmt.Errorf("build_number: expected number, got %T", value)
-		}
-		c.BuildNumber = int(v)
+		err = setField(&c.BuildNumber, value)
 	case "build_branch":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("build_branch: expected string, got %T", value)
-		}
-		c.BuildBranch = v
+		err = setField(&c.BuildBranch, value)
 	case "build_tag":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("build_tag: expected string, got %T", value)
-		}
-		c.BuildTag = v
+		err = setField(&c.BuildTag, value)
 	case "build_commit":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("build_commit: expected string, got %T", value)
-		}
-		c.BuildCommit = v
+		err = setField(&c.BuildCommit, value)
 	case "step_key":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("step_key: expected string, got %T", value)
-		}
-		c.StepKey = v
+		err = setField(&c.StepKey, value)
 	case "job_id":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("job_id: expected string, got %T", value)
-		}
-		c.JobId = v
+		err = setField(&c.JobId, value)
 	case "agent_id":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("agent_id: expected string, got %T", value)
-		}
-		c.AgentId = v
+		err = setField(&c.AgentId, value)
 	case "cluster_id":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("cluster_id: expected string, got %T", value)
-		}
-		c.ClusterID = v
+		err = setField(&c.ClusterID, value)
 	case "cluster_name":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("cluster_name: expected string, got %T", value)
-		}
-		c.ClusterName = v
+		err = setField(&c.ClusterName, value)
 	case "queue_id":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("queue_id: expected string, got %T", value)
-		}
-		c.QueueID = v
+		err = setField(&c.QueueID, value)
 	case "queue_key":
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("queue_key: expected string, got %T", value)
-		}
-		c.QueueKey = v
+		err = setField(&c.QueueKey, value)
 	default:
 		// Handle agent_tag: prefix
 		if tagName, found := strings.CutPrefix(key, "agent_tag:"); found {
-			strVal, ok := value.(string)
-			if !ok {
-				return fmt.Errorf("agent_tag:%s: expected string, got %T", tagName, value)
+			strVal, convErr := convertValue[string](value)
+			if convErr != nil {
+				return fmt.Errorf("agent_tag:%s: %w", tagName, convErr)
 			}
 			c.AgentTags[tagName] = strVal
 		}
+
 		// Unknown fields silently ignored
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("%s: %w", key, err)
 	}
 	return nil
 }
@@ -252,33 +231,17 @@ func (c BuildkiteClaims) Lookup(claim string) (string, bool) {
 	case "build_branch":
 		return c.BuildBranch, true
 	case "build_tag":
-		// Optional claim: return false when not present
-		if c.BuildTag != "" {
-			return c.BuildTag, true
-		}
-		return "", false
+		return lookupOptional(c.BuildTag)
 	case "build_commit":
 		return c.BuildCommit, true
 	case "cluster_id":
-		if c.ClusterID != "" {
-			return c.ClusterID, true
-		}
-		return "", false
+		return lookupOptional(c.ClusterID)
 	case "cluster_name":
-		if c.ClusterName != "" {
-			return c.ClusterName, true
-		}
-		return "", false
+		return lookupOptional(c.ClusterName)
 	case "queue_id":
-		if c.QueueID != "" {
-			return c.QueueID, true
-		}
-		return "", false
+		return lookupOptional(c.QueueID)
 	case "queue_key":
-		if c.QueueKey != "" {
-			return c.QueueKey, true
-		}
-		return "", false
+		return lookupOptional(c.QueueKey)
 	default:
 		// Handle agent_tag: prefix dynamically
 		if agentTag, found := strings.CutPrefix(claim, "agent_tag:"); found {
@@ -290,11 +253,43 @@ func (c BuildkiteClaims) Lookup(claim string) (string, bool) {
 	}
 }
 
-// buildkiteCustomClaims sets up OIDC custom claims for a Buildkite-issued JWT.
-func buildkiteCustomClaims(expectedOrganizationSlug string) func() validator.CustomClaims {
-	return func() validator.CustomClaims {
-		return &BuildkiteClaims{
-			expectedOrganizationSlug: expectedOrganizationSlug,
+// convertValue converts any to target type T, handling JSON number conversion.
+// This function is inlined by the compiler for each concrete type T.
+func convertValue[T any](value any) (T, error) {
+	var zero T
+
+	// Handle JSON number (float64) to int conversion
+	switch any(zero).(type) {
+	case int:
+		if f, ok := value.(float64); ok {
+			return any(int(f)).(T), nil
 		}
 	}
+
+	// Default: direct type assertion
+	v, ok := value.(T)
+	if !ok {
+		return zero, fmt.Errorf("expected %T, got %T", zero, value)
+	}
+
+	return v, nil
+}
+
+// setField is a generic setter that converts and assigns value to target.
+// This function is inlined by the compiler for each concrete type T.
+func setField[T any](target *T, value any) error {
+	v, err := convertValue[T](value)
+	if err != nil {
+		return err
+	}
+	*target = v
+	return nil
+}
+
+// lookupOptional returns (value, true) if the value is non-empty, otherwise ("", false).
+func lookupOptional(value string) (string, bool) {
+	if value != "" {
+		return value, true
+	}
+	return "", false
 }

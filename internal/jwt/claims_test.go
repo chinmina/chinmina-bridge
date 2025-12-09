@@ -299,7 +299,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedError: "build_number: expected number, got string",
+			expectedError: "build_number: expected int, got string",
 		},
 		{
 			name: "agent_tag with wrong type",
