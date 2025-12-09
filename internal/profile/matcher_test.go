@@ -103,6 +103,93 @@ func TestExactMatcher_ValueMismatch(t *testing.T) {
 	assert.Nil(t, matches)
 }
 
+// TestRegexMatcher_ValidPattern tests regex matching with valid patterns.
+func TestRegexMatcher_ValidPattern(t *testing.T) {
+	matcher, err := profile.RegexMatcher("build_branch", "main|master")
+	assert.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		value    string
+		expected bool
+	}{
+		{"matches main", "main", true},
+		{"matches master", "master", true},
+		{"no match develop", "develop", false},
+		{"no substring match", "not-main", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lookup := mockClaimLookup{
+				claims: map[string]string{
+					"build_branch": tt.value,
+				},
+			}
+
+			matches, ok := matcher(lookup)
+
+			assert.Equal(t, tt.expected, ok)
+			if tt.expected {
+				assert.Len(t, matches, 1)
+				assert.Equal(t, "build_branch", matches[0].Claim)
+				assert.Equal(t, tt.value, matches[0].Value)
+			} else {
+				assert.Nil(t, matches)
+			}
+		})
+	}
+}
+
+// TestRegexMatcher_InvalidPattern tests error handling for invalid regex.
+func TestRegexMatcher_InvalidPattern(t *testing.T) {
+	matcher, err := profile.RegexMatcher("build_branch", "[invalid")
+
+	assert.Error(t, err)
+	assert.Nil(t, matcher)
+	assert.Contains(t, err.Error(), "invalid regex pattern")
+}
+
+// TestRegexMatcher_LiteralOptimization tests that literal patterns use ExactMatcher.
+func TestRegexMatcher_LiteralOptimization(t *testing.T) {
+	// Purely literal pattern should be optimized to ExactMatcher
+	matcher, err := profile.RegexMatcher("pipeline_slug", "my-pipeline")
+	assert.NoError(t, err)
+
+	lookup := mockClaimLookup{
+		claims: map[string]string{
+			"pipeline_slug": "my-pipeline",
+		},
+	}
+
+	matches, ok := matcher(lookup)
+
+	expected := []profile.ClaimMatch{
+		{Claim: "pipeline_slug", Value: "my-pipeline"},
+	}
+	assert.True(t, ok)
+	assert.Equal(t, expected, matches)
+}
+
+// TestRegexMatcher_AnchoringPreventsSubstring tests that patterns are anchored.
+func TestRegexMatcher_AnchoringPreventsSubstring(t *testing.T) {
+	// Pattern should match entire string, not substring
+	matcher, err := profile.RegexMatcher("build_branch", "main")
+	assert.NoError(t, err)
+
+	lookup := mockClaimLookup{
+		claims: map[string]string{
+			"build_branch": "not-main-branch",
+		},
+	}
+
+	matches, ok := matcher(lookup)
+
+	// Should not match because pattern is anchored
+	assert.False(t, ok)
+	assert.Nil(t, matches)
+}
+
 // mockClaimLookup implements ClaimValueLookup for testing.
 type mockClaimLookup struct {
 	claims map[string]string

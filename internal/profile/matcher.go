@@ -1,5 +1,10 @@
 package profile
 
+import (
+	"fmt"
+	"regexp"
+)
+
 // ClaimValueLookup provides zero-allocation interface for claim value retrieval.
 // Instead of passing claims as a map, this interface allows transparent handling
 // of standard claims and agent tags without allocations.
@@ -38,4 +43,44 @@ func ExactMatcher(matchClaim string, matchValue string) Matcher {
 			Value: value,
 		}}, true
 	}
+}
+
+// RegexMatcher creates a matcher that performs RE2 regex pattern matching on a claim value.
+// Patterns are automatically anchored to prevent substring matching.
+// Returns an error if the pattern is invalid.
+// Optimization: Purely literal patterns are automatically converted to ExactMatcher.
+// Performance: O(n) RE2 linear time guarantee, or O(1) for literal patterns.
+func RegexMatcher(matchClaim string, matchPattern string) (Matcher, error) {
+	// 1. Validate user pattern compiles
+	validatedRegex, err := regexp.Compile(matchPattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex pattern: %w", err)
+	}
+
+	// 2. Optimization: if pattern is purely literal, use ExactMatcher
+	prefix, complete := validatedRegex.LiteralPrefix()
+	if complete {
+		return ExactMatcher(matchClaim, prefix), nil
+	}
+
+	// 3. Wrap with non-capturing group and string anchors
+	anchored := `\A(?:` + matchPattern + `)\z`
+
+	// 4. Compile final pattern
+	compiledRegex, err := regexp.Compile(anchored)
+	if err != nil {
+		return nil, fmt.Errorf("anchored pattern failed to compile: %w", err)
+	}
+
+	return func(claims ClaimValueLookup) ([]ClaimMatch, bool) {
+		value, ok := claims.Lookup(matchClaim)
+		if !ok || !compiledRegex.MatchString(value) {
+			return nil, false
+		}
+
+		return []ClaimMatch{{
+			Claim: matchClaim,
+			Value: value,
+		}}, true
+	}, nil
 }
