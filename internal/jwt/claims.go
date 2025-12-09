@@ -49,6 +49,11 @@ func registeredClaimsValidator(next jwtmiddleware.ValidateToken) jwtmiddleware.V
 	}
 }
 
+// ClaimValueLookup provides zero-allocation claim value lookup.
+type ClaimValueLookup interface {
+	Lookup(claim string) (value string, found bool)
+}
+
 // BuildkiteClaims define the additional claims that Builkite includes in the
 // JWT.
 //
@@ -64,6 +69,11 @@ type BuildkiteClaims struct {
 	StepKey          string `json:"step_key"`
 	JobId            string `json:"job_id"`
 	AgentId          string `json:"agent_id"`
+	ClusterID        string `json:"cluster_id"`
+	ClusterName      string `json:"cluster_name"`
+	QueueID          string `json:"queue_id"`
+	QueueKey         string `json:"queue_key"`
+	AgentTags        map[string]string `json:"-"`
 
 	expectedOrganizationSlug string
 }
