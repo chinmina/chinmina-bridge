@@ -54,7 +54,7 @@ func TestCreateAccessToken_Succeeds(t *testing.T) {
 		actualInstallation = r.PathValue("installationID")
 
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -94,7 +94,7 @@ func TestCreateAccessToken_Succeeds_If_Some_URLs_Valid(t *testing.T) {
 		actualInstallation = r.PathValue("installationID")
 
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -164,7 +164,7 @@ func TestTransportOptions(t *testing.T) {
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
 
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -260,8 +260,8 @@ func TestScopesToPermissions_Succeed(t *testing.T) {
 		"packages:write",
 	}
 	expectedPermissions := &api.InstallationPermissions{
-		Contents: api.String("read"),
-		Packages: api.String("write"),
+		Contents: api.Ptr("read"),
+		Packages: api.Ptr("write"),
 	}
 
 	actualPermissions, err := github.ScopesToPermissions(scopes)
@@ -292,7 +292,7 @@ func TestScopesToPermissions_Succeed_If_Some_Valid(t *testing.T) {
 		"actions:admin",
 	}
 	expectedPermissions := &api.InstallationPermissions{
-		PullRequests: api.String("write"),
+		PullRequests: api.Ptr("write"),
 	}
 
 	actualPermissions, err := github.ScopesToPermissions(scopes)

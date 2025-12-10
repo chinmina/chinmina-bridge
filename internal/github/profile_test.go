@@ -87,7 +87,7 @@ func TestRepositoryContents(t *testing.T) {
 
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -128,7 +128,7 @@ func TestInvalidRepositoryContents(t *testing.T) {
 
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -184,7 +184,7 @@ func TestLoadProfile(t *testing.T) {
 
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -265,7 +265,7 @@ func TestFetchProfile(t *testing.T) {
 
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
