@@ -17,7 +17,7 @@ import (
 )
 
 type ProfileStore struct {
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	config ProfileConfig
 }
 
@@ -26,15 +26,15 @@ func NewProfileStore() *ProfileStore {
 }
 
 func (p *ProfileStore) GetProfileFromStore(name string) (Profile, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	return p.config.LookupProfile(name)
 }
 
 func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	if len(p.config.Organization.Profiles) == 0 {
 		return p.config, errors.New("organization profile not loaded")
