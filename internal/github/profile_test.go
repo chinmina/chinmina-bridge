@@ -390,7 +390,9 @@ func TestGetProfileFromStore(t *testing.T) {
 	t.Run("Error handling when a profile is not found", func(t *testing.T) {
 		_, err := store.GetProfileFromStore(invalidProfileName)
 		require.Error(t, err)
-		assert.EqualError(t, err, "profile not found")
+		var notFoundErr github.ProfileNotFoundError
+		require.ErrorAs(t, err, &notFoundErr)
+		assert.Equal(t, invalidProfileName, notFoundErr.Name)
 	})
 
 	t.Run("Profile lookup is limited to one goroutine at a time", func(t *testing.T) {

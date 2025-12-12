@@ -37,13 +37,13 @@ func (p *ProfileStore) GetProfileFromStore(name string) (Profile, error) {
 
 	// not found, check if it failed validation
 	if err, failed := p.failedProfiles[name]; failed {
-		return Profile{}, &ProfileUnavailableError{
+		return Profile{}, ProfileUnavailableError{
 			Name:  name,
 			Cause: err,
 		}
 	}
 
-	return Profile{}, errors.New("profile not found")
+	return Profile{}, ProfileNotFoundError{Name: name}
 }
 
 func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
@@ -141,12 +141,21 @@ type ProfileUnavailableError struct {
 	Cause error
 }
 
-func (e *ProfileUnavailableError) Error() string {
+func (e ProfileUnavailableError) Error() string {
 	return fmt.Sprintf("profile %q unavailable: validation failed", e.Name)
 }
 
-func (e *ProfileUnavailableError) Unwrap() error {
+func (e ProfileUnavailableError) Unwrap() error {
 	return e.Cause
+}
+
+// ProfileNotFoundError indicates a profile was not found in the store
+type ProfileNotFoundError struct {
+	Name string
+}
+
+func (e ProfileNotFoundError) Error() string {
+	return fmt.Sprintf("profile %q not found", e.Name)
 }
 
 // ValidateMatchRule validates that a match rule is well-formed:
