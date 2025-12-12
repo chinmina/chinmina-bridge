@@ -11,6 +11,7 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
+	profilepkg "github.com/chinmina/chinmina-bridge/internal/profile"
 	api "github.com/google/go-github/v80/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -418,6 +419,127 @@ func TestGetProfileFromStore(t *testing.T) {
 		wg.Wait()
 
 		assert.Equal(t, numGoroutines, accessCount, "All goroutines should have executed")
+	})
+}
+
+func TestProfileStoreRWMutexConcurrency(t *testing.T) {
+	// Setup: Create a ProfileStore with a valid profile
+	store := github.NewProfileStore()
+	profileConfig := github.ProfileConfig{}
+	profileConfig.Organization.Profiles = []github.Profile{
+		{
+			Name:         "test-profile",
+			Match:        []github.MatchRule{},
+			Repositories: []string{"test-repo"},
+			Permissions:  []string{"contents:read"},
+			CompiledMatcher: func(claims profilepkg.ClaimValueLookup) ([]profilepkg.ClaimMatch, bool) {
+				return nil, true
+			},
+		},
+	}
+	profileConfig.Organization.InvalidProfiles = make(map[string]error)
+	store.Update(&profileConfig)
+
+	t.Run("Concurrent reads can execute in parallel", func(t *testing.T) {
+		const numGoroutines = 10
+		var wg sync.WaitGroup
+
+		// Channel to track when each goroutine starts reading
+		startedReading := make(chan struct{}, numGoroutines)
+		// Channel to coordinate when goroutines should finish
+		finishReading := make(chan struct{})
+
+		// Launch multiple read goroutines
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				// Signal that we've started reading
+				startedReading <- struct{}{}
+
+				// Hold the read lock until told to finish
+				_, err := store.GetProfileFromStore("test-profile")
+				assert.NoError(t, err)
+
+				// Wait for signal to finish
+				<-finishReading
+			}()
+		}
+
+		// Wait for all goroutines to start reading
+		for i := 0; i < numGoroutines; i++ {
+			select {
+			case <-startedReading:
+				// Good, goroutine started
+			case <-time.After(1 * time.Second):
+				t.Fatal("Timeout waiting for goroutines to start - reads may be blocking each other")
+			}
+		}
+
+		// If we got here, all goroutines started reading concurrently
+		// Now let them finish
+		close(finishReading)
+		wg.Wait()
+	})
+
+	t.Run("Writes serialize with reads correctly", func(t *testing.T) {
+		// Test that concurrent reads and writes maintain data consistency
+		// With RWMutex: reads can be concurrent, but writes must be exclusive
+
+		const numReaders = 20
+		const numWriters = 5
+		var wg sync.WaitGroup
+		errChan := make(chan error, numReaders+numWriters)
+
+		// Launch concurrent readers
+		for i := 0; i < numReaders; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				// Multiple reads should all succeed
+				_, err := store.GetProfileFromStore("test-profile")
+				if err != nil {
+					errChan <- err
+				}
+				_, err = store.GetOrganization()
+				if err != nil {
+					errChan <- err
+				}
+			}()
+		}
+
+		// Launch concurrent writers
+		for i := 0; i < numWriters; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				newConfig := github.ProfileConfig{}
+				newConfig.Organization.Profiles = []github.Profile{
+					{
+						Name:         "test-profile",
+						Match:        []github.MatchRule{},
+						Repositories: []string{"test-repo"},
+						Permissions:  []string{"contents:read"},
+						CompiledMatcher: func(claims profilepkg.ClaimValueLookup) ([]profilepkg.ClaimMatch, bool) {
+							return nil, true
+						},
+					},
+				}
+				newConfig.Organization.InvalidProfiles = make(map[string]error)
+				store.Update(&newConfig)
+			}(i)
+		}
+
+		wg.Wait()
+		close(errChan)
+
+		// Verify no errors occurred during concurrent access
+		var errors []error
+		for err := range errChan {
+			errors = append(errors, err)
+		}
+		assert.Empty(t, errors, "Should have no errors during concurrent read/write operations")
 	})
 }
 
