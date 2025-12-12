@@ -300,7 +300,7 @@ See `organization-profiles-claim-match-spec.md` for detailed technical design, i
 - Configuration format with `value` and `valuePattern` fields
 - Data structures (MatchRule with performance optimizations)
 - Implementation algorithms (compilation, matching, validation)
-- Graceful degradation (failed profiles handled at load time)
+- Graceful degradation (invalid profiles tracked in ProfileConfig at load time)
 - Performance optimizations (`regexp.LiteralPrefix()` for literal patterns)
 - Error handling and HTTP response codes
 - Testing strategy
@@ -312,7 +312,7 @@ See `organization-profiles-claim-match-spec.md` for detailed technical design, i
 - Automatic anchoring: `\A(?:...)\z` prevents bypass attacks
 - Graceful degradation: Invalid profiles dropped at load, service starts normally
 - Three-tier performance: value → literal optimization → full regex
-- Failed profiles return "profile unavailable: validation failed" (HTTP 404)
+- Invalid profiles return "profile unavailable: validation failed" (HTTP 404)
 
 ## Open Questions
 

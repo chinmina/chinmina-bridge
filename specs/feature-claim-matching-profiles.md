@@ -265,9 +265,9 @@ This prevents bypass attacks:
 - Permissions list must be non-empty
 
 **Graceful Degradation**:
-- Invalid profiles are **dropped** at load time with warning log
+- Invalid profiles are **tracked** in `ProfileConfig.Organization.InvalidProfiles` at load time with warning log
 - Service **continues to start** with remaining valid profiles
-- Accessing dropped profile returns 404 "profile unavailable: validation failed"
+- Accessing invalid profile returns 404 "profile unavailable: validation failed"
 
 **Example Warning Log**:
 ```
@@ -281,7 +281,7 @@ WARN  profile validation failed, profile unavailable
 **Validations**:
 - JWT must be valid and signed by Buildkite
 - Claim values must not contain control characters or whitespace
-- Profile must exist and not be in failed state
+- Profile must exist and not be in invalid state
 - Match conditions must be satisfied (403 if not)
 
 ## Migration Guide

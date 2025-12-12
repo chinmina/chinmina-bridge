@@ -65,10 +65,10 @@
 
 ### Graceful Degradation
 
-- Service starts with failed profiles
-- Failed profile returns 404 with "validation failed"
+- Service starts with invalid profiles tracked in ProfileConfig
+- Invalid profile returns 404 with "validation failed"
 - Valid profiles work correctly
-- Failed profile tracked for diagnostics
+- Invalid profile tracked in ProfileConfig.Organization.InvalidProfiles for diagnostics
 
 ### Audit Logging
 

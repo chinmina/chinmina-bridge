@@ -148,7 +148,7 @@ func ValidateClaimValue(value string) error {
 ```go
 func LoadProfiles(config ProfileConfig) (*ProfileStore, []error) {
     validProfiles := []Profile{}
-    failedProfiles := map[string]error{}  // Track failures for diagnostics
+    invalidProfiles := map[string]error{}  // Track validation failures for diagnostics
     warnings := []error{}
 
     for _, profileConfig := range config.Organization.Profiles {
@@ -157,7 +157,7 @@ func LoadProfiles(config ProfileConfig) (*ProfileStore, []error) {
             warning := fmt.Errorf("profile %q validation failed, skipping: %w",
                 profileConfig.Name, err)
             warnings = append(warnings, warning)
-            failedProfiles[profileConfig.Name] = err
+            invalidProfiles[profileConfig.Name] = err
 
             log.Warn().
                 Err(err).
@@ -169,8 +169,12 @@ func LoadProfiles(config ProfileConfig) (*ProfileStore, []error) {
     }
 
     return &ProfileStore{
-        config:         ProfileConfig{Organization: OrganizationConfig{Profiles: validProfiles}},
-        failedProfiles: failedProfiles,
+        config: ProfileConfig{
+            Organization: OrganizationConfig{
+                Profiles:        validProfiles,
+                InvalidProfiles: invalidProfiles,  // Stored in config, not ProfileStore
+            },
+        },
     }, warnings
 }
 ```
@@ -193,23 +197,31 @@ func (p *ProfileStore) GetProfile(name string) (Profile, error) {
     p.mu.Lock()
     defer p.mu.Unlock()
 
-    // Check for validation failure
-    if err, failed := p.failedProfiles[name]; failed {
+    // LookupProfile handles both valid and invalid profile cases
+    return p.config.LookupProfile(name)
+}
+
+// LookupProfile checks valid profiles first, then invalid profiles
+func (config *ProfileConfig) LookupProfile(name string) (Profile, error) {
+    // Check valid profiles
+    for _, profile := range config.Organization.Profiles {
+        if profile.Name == name {
+            return profile, nil
+        }
+    }
+
+    // Check invalid profiles
+    if err, invalid := config.Organization.InvalidProfiles[name]; invalid {
         return Profile{}, &ProfileUnavailableError{
             Name:  name,
             Cause: err,
         }
     }
 
-    // Lookup profile
-    profile, ok := p.config.LookupProfile(name)
-    if !ok {
-        return Profile{}, &ProfileNotFoundError{
-            Name: name,
-        }
+    // Not found
+    return Profile{}, &ProfileNotFoundError{
+        Name: name,
     }
-
-    return profile, nil
 }
 
 // Custom error types for HTTP status mapping
