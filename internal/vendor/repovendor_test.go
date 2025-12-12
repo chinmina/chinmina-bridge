@@ -18,7 +18,7 @@ func createProfileStoreWithPermissions(permissions []string) *github.ProfileStor
 	config := github.ProfileConfig{}
 	config.Organization.Defaults.Permissions = permissions
 	config.Organization.Profiles = []github.Profile{{Name: "default"}}
-	ps.Update(&config, make(map[string]error))
+	ps.Update(&config)
 	return ps
 }
 

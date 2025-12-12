@@ -375,13 +375,15 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 			Defaults struct {
 				Permissions []string `yaml:"permissions"`
 			} `yaml:"defaults"`
-			Profiles []github.Profile `yaml:"profiles"`
+			Profiles        []github.Profile `yaml:"profiles"`
+			InvalidProfiles map[string]error `yaml:"-"`
 		}{
 			Defaults: struct {
 				Permissions []string `yaml:"permissions"`
 			}{
 				Permissions: []string{},
 			},
+			InvalidProfiles: make(map[string]error),
 			Profiles: []github.Profile{
 				{
 					Name:         "org:shared-profile",

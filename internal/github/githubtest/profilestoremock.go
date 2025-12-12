@@ -29,14 +29,16 @@ func createTestProfile() github.ProfileConfig {
 			Defaults struct {
 				Permissions []string `yaml:"permissions"`
 			} `yaml:"defaults"`
-			Profiles []github.Profile `yaml:"profiles"`
+			Profiles        []github.Profile `yaml:"profiles"`
+			InvalidProfiles map[string]error `yaml:"-"`
 		}{
 			Defaults: struct {
 				Permissions []string `yaml:"permissions"`
 			}{
 				Permissions: []string{"contents:read"},
 			},
-			Profiles: profiles,
+			Profiles:        profiles,
+			InvalidProfiles: make(map[string]error),
 		},
 	}
 }
@@ -46,7 +48,7 @@ func createTestProfile() github.ProfileConfig {
 func CreateTestProfileStore() *github.ProfileStore {
 	testProfile := createTestProfile()
 	store := github.NewProfileStore()
-	store.Update(&testProfile, nil)
+	store.Update(&testProfile)
 
 	return store
 }

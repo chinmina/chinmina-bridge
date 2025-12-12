@@ -17,9 +17,8 @@ import (
 )
 
 type ProfileStore struct {
-	mu             sync.Mutex
-	config         ProfileConfig
-	failedProfiles map[string]error // Tracks profiles that failed validation
+	mu     sync.Mutex
+	config ProfileConfig
 }
 
 func NewProfileStore() *ProfileStore {
@@ -30,20 +29,7 @@ func (p *ProfileStore) GetProfileFromStore(name string) (Profile, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	profile, ok := p.config.LookupProfile(name)
-	if ok {
-		return profile, nil
-	}
-
-	// not found, check if it failed validation
-	if err, failed := p.failedProfiles[name]; failed {
-		return Profile{}, ProfileUnavailableError{
-			Name:  name,
-			Cause: err,
-		}
-	}
-
-	return Profile{}, ProfileNotFoundError{Name: name}
+	return p.config.LookupProfile(name)
 }
 
 func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
@@ -57,13 +43,12 @@ func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
 	return p.config, nil
 }
 
-// Update the currently stored organization profile with failed profiles tracking
-func (p *ProfileStore) Update(profile *ProfileConfig, failedProfiles map[string]error) {
+// Update the currently stored organization profile
+func (p *ProfileStore) Update(profile *ProfileConfig) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	p.config.Organization = profile.Organization
-	p.failedProfiles = failedProfiles
 }
 
 type ProfileConfig struct {
@@ -71,7 +56,8 @@ type ProfileConfig struct {
 		Defaults struct {
 			Permissions []string `yaml:"permissions"`
 		} `yaml:"defaults"`
-		Profiles []Profile `yaml:"profiles"`
+		Profiles        []Profile        `yaml:"profiles"`
+		InvalidProfiles map[string]error `yaml:"-"`
 	} `yaml:"organization"`
 }
 
@@ -94,14 +80,22 @@ func (config *ProfileConfig) GetDefaultPermissions() []string {
 	return config.Organization.Defaults.Permissions
 }
 
-func (config *ProfileConfig) LookupProfile(name string) (Profile, bool) {
+func (config *ProfileConfig) LookupProfile(name string) (Profile, error) {
 	for _, profile := range config.Organization.Profiles {
 		if profile.Name == name {
-			return profile, true
+			return profile, nil
 		}
 	}
 
-	return Profile{}, false
+	// not found, check if it's invalid
+	if err, invalid := config.Organization.InvalidProfiles[name]; invalid {
+		return Profile{}, ProfileUnavailableError{
+			Name:  name,
+			Cause: err,
+		}
+	}
+
+	return Profile{}, ProfileNotFoundError{Name: name}
 }
 
 type Profile struct {
@@ -239,42 +233,42 @@ func IsAllowedClaim(claim string) bool {
 	return false
 }
 
-func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh Client) (ProfileConfig, map[string]error, error) {
-	profile, failedProfiles, err := LoadProfile(ctx, gh, orgProfileLocation)
+func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh Client) (ProfileConfig, error) {
+	profile, err := LoadProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
-		return ProfileConfig{}, failedProfiles, err
+		return ProfileConfig{}, err
 	}
 
-	return profile, failedProfiles, nil
+	return profile, nil
 }
 
-func LoadProfile(ctx context.Context, gh Client, orgProfileLocation string) (ProfileConfig, map[string]error, error) {
+func LoadProfile(ctx context.Context, gh Client, orgProfileLocation string) (ProfileConfig, error) {
 	// get the profile
 	profile, err := GetProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
-		return ProfileConfig{}, nil, err
+		return ProfileConfig{}, err
 	}
 
 	// validate the profile and compile matchers
-	profileConfig, failedProfiles, err := ValidateProfile(ctx, profile)
+	profileConfig, err := ValidateProfile(ctx, profile)
 	if err != nil {
-		return ProfileConfig{}, failedProfiles, err
+		return ProfileConfig{}, err
 	}
 
 	validCount := len(profileConfig.Organization.Profiles)
-	failedCount := len(failedProfiles)
+	invalidCount := len(profileConfig.Organization.InvalidProfiles)
 	level := zerolog.InfoLevel
-	if failedCount > 0 {
+	if invalidCount > 0 {
 		level = zerolog.WarnLevel
 	}
 
 	log.WithLevel(level).
 		Str("url", orgProfileLocation).
 		Int("valid_profiles", validCount).
-		Int("failed_profiles", failedCount).
+		Int("invalid_profiles", invalidCount).
 		Msg("organization profile configuration loaded with validation warnings")
 
-	return profileConfig, failedProfiles, nil
+	return profileConfig, nil
 }
 
 func GetProfile(ctx context.Context, gh Client, orgProfileLocation string) (string, error) {
@@ -288,7 +282,7 @@ func GetProfile(ctx context.Context, gh Client, orgProfileLocation string) (stri
 	return profile.GetContent()
 }
 
-func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, map[string]error, error) {
+func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error) {
 	profileConfig := ProfileConfig{}
 
 	dec := yaml.NewDecoder(strings.NewReader(profile))
@@ -300,17 +294,17 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, map[st
 
 	err := dec.Decode(&profileConfig)
 	if err != nil {
-		return ProfileConfig{}, nil, fmt.Errorf("organization profile file parsing failed: %w", err)
+		return ProfileConfig{}, fmt.Errorf("organization profile file parsing failed: %w", err)
 	}
 
 	// Compile matchers for each profile (graceful degradation)
 	validProfiles := make([]Profile, 0, len(profileConfig.Organization.Profiles))
-	failedProfiles := make(map[string]error)
+	invalidProfiles := make(map[string]error)
 
 	for _, prof := range profileConfig.Organization.Profiles {
 		matcher, err := CompileMatchRules(prof.Match)
 		if err != nil {
-			failedProfiles[prof.Name] = err
+			invalidProfiles[prof.Name] = err
 
 			log.Warn().
 				Err(err).
@@ -326,8 +320,9 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, map[st
 
 	// Update config with only valid profiles
 	profileConfig.Organization.Profiles = validProfiles
+	profileConfig.Organization.InvalidProfiles = invalidProfiles
 
-	return profileConfig, failedProfiles, nil
+	return profileConfig, nil
 }
 
 // DecomposePath into the owner, repo, and path (no http prefix), assuming the
