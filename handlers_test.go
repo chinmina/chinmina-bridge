@@ -373,3 +373,61 @@ func TestMaxRequestSizeMiddleware(t *testing.T) {
 	respBody := rr.Body.String()
 	assert.Equal(t, "", respBody)
 }
+
+func TestWriteJSONError_Success(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	// act
+	writeJSONError(rr, http.StatusForbidden, "access denied: profile match conditions not met")
+
+	// assert
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err := json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "access denied: profile match conditions not met"}, respBody)
+}
+
+func TestWriteJSONError_MultipleStatusCodes(t *testing.T) {
+	cases := []struct {
+		name       string
+		statusCode int
+		message    string
+	}{
+		{
+			name:       "400 Bad Request",
+			statusCode: http.StatusBadRequest,
+			message:    "invalid JWT claims",
+		},
+		{
+			name:       "403 Forbidden",
+			statusCode: http.StatusForbidden,
+			message:    "access denied: profile match conditions not met",
+		},
+		{
+			name:       "404 Not Found",
+			statusCode: http.StatusNotFound,
+			message:    "profile not found",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+
+			// act
+			writeJSONError(rr, tc.statusCode, tc.message)
+
+			// assert
+			assert.Equal(t, tc.statusCode, rr.Code)
+			assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+			var respBody ErrorResponse
+			err := json.Unmarshal(rr.Body.Bytes(), &respBody)
+			require.NoError(t, err)
+			assert.Equal(t, ErrorResponse{Error: tc.message}, respBody)
+		})
+	}
+}
