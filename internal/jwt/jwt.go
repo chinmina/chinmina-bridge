@@ -75,6 +75,15 @@ func ContextWithClaims(ctx context.Context, claims *validator.ValidatedClaims) c
 	return context.WithValue(ctx, jwtmiddleware.ContextKey{}, claims)
 }
 
+// ContextWithBuildkiteClaims creates a context with BuildkiteClaims for testing.
+// This is a convenience helper for tests that need to set up claim-based contexts.
+func ContextWithBuildkiteClaims(ctx context.Context, claims *BuildkiteClaims) context.Context {
+	return ContextWithClaims(ctx, &validator.ValidatedClaims{
+		RegisteredClaims: validator.RegisteredClaims{},
+		CustomClaims:     claims,
+	})
+}
+
 // ClaimsFromContext returns the validated claims from the context as set by the
 // JWT middleware. This will return nil if the context data is not set. This
 // should be regarded as an error for handlers that expect the claims to be
