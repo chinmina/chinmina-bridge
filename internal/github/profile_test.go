@@ -396,6 +396,23 @@ func TestGetProfileFromStore(t *testing.T) {
 		assert.Equal(t, invalidProfileName, notFoundErr.Name)
 	})
 
+	t.Run("Error handling when a profile is unavailable due to validation failure", func(t *testing.T) {
+		// Load a profile config with validation failures
+		invalidProfileConfig, err := github.ValidateProfile(context.Background(), profileWithMixedValidation)
+		require.NoError(t, err)
+
+		storeWithInvalid := github.NewProfileStore()
+		storeWithInvalid.Update(&invalidProfileConfig)
+
+		// Try to lookup an invalid profile
+		_, err = storeWithInvalid.GetProfileFromStore("invalid-regex-pattern")
+		require.Error(t, err)
+		var unavailableErr github.ProfileUnavailableError
+		require.ErrorAs(t, err, &unavailableErr)
+		assert.Equal(t, "invalid-regex-pattern", unavailableErr.Name)
+		assert.NotNil(t, unavailableErr.Cause)
+	})
+
 	t.Run("Profile lookup is limited to one goroutine at a time", func(t *testing.T) {
 		const numGoroutines = 10
 		var wg sync.WaitGroup
