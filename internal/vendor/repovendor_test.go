@@ -13,17 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createProfileStoreWithPermissions(permissions []string) *github.ProfileStore {
-	ps := github.NewProfileStore()
-	config := github.ProfileConfig{}
+func createProfileStoreWithPermissions(permissions []string) *profile.ProfileStore {
+	ps := profile.NewProfileStore()
+	config := profile.ProfileConfig{}
 	config.Organization.Defaults.Permissions = permissions
-	config.Organization.Profiles = []github.Profile{{Name: "default"}}
+	config.Organization.Profiles = []profile.Profile{{Name: "default"}}
 	ps.Update(&config)
 	return ps
 }
 
-func createProfileStoreWithError() *github.ProfileStore {
-	return github.NewProfileStore()
+func createProfileStoreWithError() *profile.ProfileStore {
+	return profile.NewProfileStore()
 }
 
 func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {

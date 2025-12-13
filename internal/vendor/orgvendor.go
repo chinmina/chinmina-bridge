@@ -14,7 +14,7 @@ import (
 // NewOrgVendor creates a vendor for organization-scoped (org:*) profiles.
 // Used by /organization/token/{profile} and /organization/git-credentials/{profile} routes.
 // It vends tokens for a set of repositories defined in the profile configuration.
-func NewOrgVendor(profileStore *github.ProfileStore, tokenVendor TokenVendor) ProfileTokenVendor {
+func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) ProfileTokenVendor {
 	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) (*ProfileToken, error) {
 		// Validate that this is an org-scoped profile
 		if ref.Type != profile.ProfileTypeOrg {
@@ -37,7 +37,7 @@ func NewOrgVendor(profileStore *github.ProfileStore, tokenVendor TokenVendor) Pr
 		claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
 		_, matchOk := profileConf.Matches(claims)
 		if !matchOk {
-			return nil, github.ProfileMatchFailedError{Name: ref.Name}
+			return nil, profile.ProfileMatchFailedError{Name: ref.Name}
 		}
 
 		// The repository is only supplied for the git-credentials endpoint:

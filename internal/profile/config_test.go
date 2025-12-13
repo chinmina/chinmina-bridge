@@ -1,4 +1,4 @@
-package github_test
+package profile_test
 
 import (
 	"context"
@@ -12,13 +12,14 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	api "github.com/google/go-github/v80/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 //go:embed testdata/profile/valid_profile.yaml
-var profile string
+var validProfileYAML string
 
 //go:embed testdata/profile/shared_valid.yaml
 var sharedValidProfile string
@@ -36,7 +37,7 @@ var profileWithMatchRules string
 var profileWithMixedValidation string
 
 // Helper function to compare ProfileConfigs without comparing CompiledMatcher function pointers
-func assertProfileConfigEqual(t *testing.T, expected, actual github.ProfileConfig) {
+func assertProfileConfigEqual(t *testing.T, expected, actual profile.ProfileConfig) {
 	t.Helper()
 
 	// Compare organization defaults
@@ -66,7 +67,7 @@ func TestTripletDecomposition(t *testing.T) {
 	profileConfig := "chinmina:chinmina-bridge:docs/profile.yaml"
 	// Test that the profile triplet is valid
 
-	owner, repo, path := github.DecomposePath(profileConfig)
+	owner, repo, path := profile.DecomposePath(profileConfig)
 	assert.Equal(t, "chinmina", owner)
 	assert.Equal(t, "chinmina-bridge", repo)
 	assert.Equal(t, "docs/profile.yaml", path)
@@ -75,7 +76,7 @@ func TestTripletDecomposition(t *testing.T) {
 	profileConfig = "chinmina:profile.yaml"
 
 	// Test that the profile triplet is invalid (path contains missing owner/repo)
-	owner, repo, path = github.DecomposePath(profileConfig)
+	owner, repo, path = profile.DecomposePath(profileConfig)
 	assert.Equal(t, "", owner)
 	assert.Equal(t, "", repo)
 	assert.Equal(t, "", path)
@@ -95,7 +96,7 @@ func TestRepositoryContents(t *testing.T) {
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, &api.RepositoryContent{
-			Content: &profile,
+			Content: &validProfileYAML,
 		})
 	})
 
@@ -119,7 +120,7 @@ func TestRepositoryContents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load the profile
-	profile, err = github.GetProfile(context.Background(), gh, profileConfig)
+	validProfileYAML, err = profile.GetProfile(context.Background(), gh, profileConfig)
 	require.NoError(t, err)
 }
 
@@ -159,21 +160,21 @@ func TestInvalidRepositoryContents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load the profile
-	_, err = github.GetProfile(context.Background(), gh, profileConfig)
+	_, err = profile.GetProfile(context.Background(), gh, profileConfig)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, ": 418")
 }
 
 // Test that the profile that is loaded is valid
 func TestValidProfile(t *testing.T) {
-	_, err := github.ValidateProfile(context.Background(), profile)
+	_, err := profile.ValidateProfile(context.Background(), validProfileYAML)
 
 	require.NoError(t, err)
 }
 
 // Test case where the profile that is loaded is invalid
 func TestInvalidProfile(t *testing.T) {
-	_, err := github.ValidateProfile(context.Background(), invalidProfile)
+	_, err := profile.ValidateProfile(context.Background(), invalidProfile)
 
 	require.Error(t, err)
 }
@@ -192,7 +193,7 @@ func TestLoadProfile(t *testing.T) {
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, &api.RepositoryContent{
-			Content: &profile,
+			Content: &validProfileYAML,
 		})
 	})
 
@@ -223,11 +224,11 @@ func TestLoadProfile(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	validProfile, _ := github.ValidateProfile(context.Background(), profile)
+	validProfile, _ := profile.ValidateProfile(context.Background(), validProfileYAML)
 
 	testCases := []struct {
 		config         string
-		expectedConfig github.ProfileConfig
+		expectedConfig profile.ProfileConfig
 		errorAssertion assert.ErrorAssertionFunc
 	}{
 		{
@@ -237,19 +238,19 @@ func TestLoadProfile(t *testing.T) {
 		},
 		{
 			config:         "chinmina:non-existent-profile.yaml",
-			expectedConfig: github.ProfileConfig{},
+			expectedConfig: profile.ProfileConfig{},
 			errorAssertion: assert.Error,
 		},
 		{
 			config:         "chinmina:chinmina-bridge:docs/invalid-profile.yaml",
-			expectedConfig: github.ProfileConfig{},
+			expectedConfig: profile.ProfileConfig{},
 			errorAssertion: assert.Error,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.config, func(t *testing.T) {
-			result, err := github.LoadProfile(context.Background(), gh, tc.config)
+			result, err := profile.LoadProfile(context.Background(), gh, tc.config)
 			tc.errorAssertion(t, err)
 			if err == nil {
 				assertProfileConfigEqual(t, tc.expectedConfig, result)
@@ -260,7 +261,7 @@ func TestLoadProfile(t *testing.T) {
 
 func TestFetchProfile(t *testing.T) {
 	router := http.NewServeMux()
-	profileStore := github.NewProfileStore()
+	profileStore := profile.NewProfileStore()
 
 	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
 
@@ -273,7 +274,7 @@ func TestFetchProfile(t *testing.T) {
 
 	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, &api.RepositoryContent{
-			Content: &profile,
+			Content: &validProfileYAML,
 		})
 	})
 
@@ -298,18 +299,18 @@ func TestFetchProfile(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	validatedProfile, err := github.ValidateProfile(context.Background(), profile)
+	validatedProfile, err := profile.ValidateProfile(context.Background(), validProfileYAML)
 	require.NoError(t, err)
 
 	// Test that we get an error attempting to load it before fetching
 	_, err = profileStore.GetOrganization()
 	require.Error(t, err)
 
-	orgProfile, err := github.FetchOrganizationProfile(context.Background(), profileConfig, gh)
+	orgProfile, err := profile.FetchOrganizationProfile(context.Background(), profileConfig, gh)
 	require.NoError(t, err)
 	assertProfileConfigEqual(t, validatedProfile, orgProfile)
 
-	orgProfile, err = github.FetchOrganizationProfile(context.Background(), profileConfig, gh)
+	orgProfile, err = profile.FetchOrganizationProfile(context.Background(), profileConfig, gh)
 	require.NoError(t, err)
 
 	profileStore.Update(&orgProfile)
@@ -317,7 +318,7 @@ func TestFetchProfile(t *testing.T) {
 	require.NoError(t, err)
 	assertProfileConfigEqual(t, validatedProfile, loadedProfile)
 
-	_, err = github.FetchOrganizationProfile(context.Background(), fakeProfileConfig, gh)
+	_, err = profile.FetchOrganizationProfile(context.Background(), fakeProfileConfig, gh)
 	require.Error(t, err)
 }
 
@@ -352,7 +353,7 @@ func TestProfile(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.profileName, func(t *testing.T) {
-			profileConfig, err := github.ValidateProfile(context.Background(), profile)
+			profileConfig, err := profile.ValidateProfile(context.Background(), validProfileYAML)
 			require.NoError(t, err)
 
 			p, err := profileConfig.LookupProfile(tc.profileName)
@@ -362,16 +363,16 @@ func TestProfile(t *testing.T) {
 	}
 }
 func TestGetProfileFromStore(t *testing.T) {
-	profileConfig, err := github.ValidateProfile(context.Background(), sharedValidProfile)
+	profileConfig, err := profile.ValidateProfile(context.Background(), sharedValidProfile)
 	require.NoError(t, err)
 
-	store := github.NewProfileStore()
+	store := profile.NewProfileStore()
 	store.Update(&profileConfig)
 
 	validProfileName := "simple-profile"
 	invalidProfileName := "glizzy"
 
-	expectedProfile := github.Profile{
+	expectedProfile := profile.Profile{
 		Name:         "simple-profile",
 		Match:        nil,
 		Repositories: []string{"repo-1", "repo-2"},
@@ -391,23 +392,23 @@ func TestGetProfileFromStore(t *testing.T) {
 	t.Run("Error handling when a profile is not found", func(t *testing.T) {
 		_, err := store.GetProfileFromStore(invalidProfileName)
 		require.Error(t, err)
-		var notFoundErr github.ProfileNotFoundError
+		var notFoundErr profile.ProfileNotFoundError
 		require.ErrorAs(t, err, &notFoundErr)
 		assert.Equal(t, invalidProfileName, notFoundErr.Name)
 	})
 
 	t.Run("Error handling when a profile is unavailable due to validation failure", func(t *testing.T) {
 		// Load a profile config with validation failures
-		invalidProfileConfig, err := github.ValidateProfile(context.Background(), profileWithMixedValidation)
+		invalidProfileConfig, err := profile.ValidateProfile(context.Background(), profileWithMixedValidation)
 		require.NoError(t, err)
 
-		storeWithInvalid := github.NewProfileStore()
+		storeWithInvalid := profile.NewProfileStore()
 		storeWithInvalid.Update(&invalidProfileConfig)
 
 		// Try to lookup an invalid profile
 		_, err = storeWithInvalid.GetProfileFromStore("invalid-regex-pattern")
 		require.Error(t, err)
-		var unavailableErr github.ProfileUnavailableError
+		var unavailableErr profile.ProfileUnavailableError
 		require.ErrorAs(t, err, &unavailableErr)
 		assert.Equal(t, "invalid-regex-pattern", unavailableErr.Name)
 		assert.NotNil(t, unavailableErr.Cause)
@@ -441,9 +442,9 @@ func TestGetProfileFromStore(t *testing.T) {
 
 func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 	// Setup: Create a ProfileStore with a valid profile
-	store := github.NewProfileStore()
-	profileConfig := github.NewTestProfileConfig(
-		github.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
+	store := profile.NewProfileStore()
+	profileConfig := profile.NewTestProfileConfig(
+		profile.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
 	)
 	store.Update(&profileConfig)
 
@@ -521,8 +522,8 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				newConfig := github.NewTestProfileConfig(
-					github.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
+				newConfig := profile.NewTestProfileConfig(
+					profile.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
 				)
 				store.Update(&newConfig)
 			}(i)
@@ -543,18 +544,18 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 func TestGetDefaultPermissions(t *testing.T) {
 	testCases := []struct {
 		name     string
-		config   github.ProfileConfig
+		config   profile.ProfileConfig
 		expected []string
 	}{
 		{
 			name: "returns configured permissions when present",
-			config: github.ProfileConfig{
+			config: profile.ProfileConfig{
 				Organization: struct {
 					Defaults struct {
 						Permissions []string `yaml:"permissions"`
 					} `yaml:"defaults"`
-					Profiles        []github.Profile `yaml:"profiles"`
-					InvalidProfiles map[string]error `yaml:"-"`
+					Profiles        []profile.Profile `yaml:"profiles"`
+					InvalidProfiles map[string]error  `yaml:"-"`
 				}{
 					Defaults: struct {
 						Permissions []string `yaml:"permissions"`
@@ -568,13 +569,13 @@ func TestGetDefaultPermissions(t *testing.T) {
 		},
 		{
 			name: "returns fallback when defaults section not configured",
-			config: github.ProfileConfig{
+			config: profile.ProfileConfig{
 				Organization: struct {
 					Defaults struct {
 						Permissions []string `yaml:"permissions"`
 					} `yaml:"defaults"`
-					Profiles        []github.Profile `yaml:"profiles"`
-					InvalidProfiles map[string]error `yaml:"-"`
+					Profiles        []profile.Profile `yaml:"profiles"`
+					InvalidProfiles map[string]error  `yaml:"-"`
 				}{
 					InvalidProfiles: make(map[string]error),
 				},
@@ -583,13 +584,13 @@ func TestGetDefaultPermissions(t *testing.T) {
 		},
 		{
 			name: "returns fallback when permissions array is empty",
-			config: github.ProfileConfig{
+			config: profile.ProfileConfig{
 				Organization: struct {
 					Defaults struct {
 						Permissions []string `yaml:"permissions"`
 					} `yaml:"defaults"`
-					Profiles        []github.Profile `yaml:"profiles"`
-					InvalidProfiles map[string]error `yaml:"-"`
+					Profiles        []profile.Profile `yaml:"profiles"`
+					InvalidProfiles map[string]error  `yaml:"-"`
 				}{
 					Defaults: struct {
 						Permissions []string `yaml:"permissions"`
@@ -603,13 +604,13 @@ func TestGetDefaultPermissions(t *testing.T) {
 		},
 		{
 			name: "returns single custom permission",
-			config: github.ProfileConfig{
+			config: profile.ProfileConfig{
 				Organization: struct {
 					Defaults struct {
 						Permissions []string `yaml:"permissions"`
 					} `yaml:"defaults"`
-					Profiles        []github.Profile `yaml:"profiles"`
-					InvalidProfiles map[string]error `yaml:"-"`
+					Profiles        []profile.Profile `yaml:"profiles"`
+					InvalidProfiles map[string]error  `yaml:"-"`
 				}{
 					Defaults: struct {
 						Permissions []string `yaml:"permissions"`
@@ -634,7 +635,7 @@ func TestGetDefaultPermissions(t *testing.T) {
 func TestValidateProfileWithDefaults(t *testing.T) {
 	ctx := context.Background()
 
-	profileConfig, err := github.ValidateProfile(ctx, profileWithDefaults)
+	profileConfig, err := profile.ValidateProfile(ctx, profileWithDefaults)
 	require.NoError(t, err)
 
 	expectedDefaults := []string{"contents:read", "pull_requests:write"}
@@ -653,7 +654,7 @@ func TestValidateProfileWithoutDefaults(t *testing.T) {
       repositories: ["repo1"]
       permissions: ["contents:read"]`
 
-	profileConfig, err := github.ValidateProfile(ctx, profileWithoutDefaults)
+	profileConfig, err := profile.ValidateProfile(ctx, profileWithoutDefaults)
 	require.NoError(t, err)
 
 	// Backward compatibility: profile without defaults should still load and use fallback
@@ -665,12 +666,12 @@ func TestValidateProfileWithoutDefaults(t *testing.T) {
 func TestValidateMatchRule(t *testing.T) {
 	testCases := []struct {
 		name          string
-		rule          github.MatchRule
+		rule          profile.MatchRule
 		expectedError string
 	}{
 		{
 			name: "valid rule with value",
-			rule: github.MatchRule{
+			rule: profile.MatchRule{
 				Claim: "pipeline_slug",
 				Value: "silk-prod",
 			},
@@ -678,7 +679,7 @@ func TestValidateMatchRule(t *testing.T) {
 		},
 		{
 			name: "valid rule with valuePattern",
-			rule: github.MatchRule{
+			rule: profile.MatchRule{
 				Claim:        "pipeline_slug",
 				ValuePattern: "silk-.*",
 			},
@@ -686,7 +687,7 @@ func TestValidateMatchRule(t *testing.T) {
 		},
 		{
 			name: "valid rule with agent_tag prefix",
-			rule: github.MatchRule{
+			rule: profile.MatchRule{
 				Claim: "agent_tag:environment",
 				Value: "production",
 			},
@@ -694,7 +695,7 @@ func TestValidateMatchRule(t *testing.T) {
 		},
 		{
 			name: "error when both value and valuePattern specified",
-			rule: github.MatchRule{
+			rule: profile.MatchRule{
 				Claim:        "pipeline_slug",
 				Value:        "silk-prod",
 				ValuePattern: "silk-.*",
@@ -703,14 +704,14 @@ func TestValidateMatchRule(t *testing.T) {
 		},
 		{
 			name: "error when neither value nor valuePattern specified",
-			rule: github.MatchRule{
+			rule: profile.MatchRule{
 				Claim: "pipeline_slug",
 			},
 			expectedError: "one of 'value' or 'valuePattern' is required",
 		},
 		{
 			name: "error when claim is not allowed",
-			rule: github.MatchRule{
+			rule: profile.MatchRule{
 				Claim: "invalid_claim",
 				Value: "test",
 			},
@@ -718,7 +719,7 @@ func TestValidateMatchRule(t *testing.T) {
 		},
 		{
 			name: "error when claim is step_key (not allowed)",
-			rule: github.MatchRule{
+			rule: profile.MatchRule{
 				Claim: "step_key",
 				Value: "test",
 			},
@@ -728,7 +729,7 @@ func TestValidateMatchRule(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := github.ValidateMatchRule(tc.rule)
+			err := profile.ValidateMatchRule(tc.rule)
 			if tc.expectedError == "" {
 				assert.NoError(t, err)
 			} else {
@@ -766,7 +767,7 @@ func TestIsAllowedClaim(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := github.IsAllowedClaim(tc.claim)
+			result := profile.IsAllowedClaim(tc.claim)
 			assert.Equal(t, tc.expected, result)
 		})
 	}
@@ -775,7 +776,7 @@ func TestIsAllowedClaim(t *testing.T) {
 func TestValidateProfileWithMatchRules(t *testing.T) {
 	ctx := context.Background()
 
-	profileConfig, err := github.ValidateProfile(ctx, profileWithMatchRules)
+	profileConfig, err := profile.ValidateProfile(ctx, profileWithMatchRules)
 	require.NoError(t, err)
 	assert.Empty(t, profileConfig.Organization.InvalidProfiles, "valid profile should not have failures")
 
@@ -786,7 +787,7 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	productionDeploy, err := profileConfig.LookupProfile("production-deploy")
 	require.NoError(t, err)
 	assert.Equal(t, "production-deploy", productionDeploy.Name)
-	assert.Equal(t, []github.MatchRule{
+	assert.Equal(t, []profile.MatchRule{
 		{
 			Claim: "pipeline_slug",
 			Value: "silk-prod",
@@ -800,7 +801,7 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	stagingDeploy, err := profileConfig.LookupProfile("staging-deploy")
 	require.NoError(t, err)
 	assert.Equal(t, "staging-deploy", stagingDeploy.Name)
-	assert.Equal(t, []github.MatchRule{
+	assert.Equal(t, []profile.MatchRule{
 		{
 			Claim:        "pipeline_slug",
 			ValuePattern: "(silk|cotton)-(staging|stg)",
@@ -814,7 +815,7 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	productionSilkOnly, err := profileConfig.LookupProfile("production-silk-only")
 	require.NoError(t, err)
 	assert.Equal(t, "production-silk-only", productionSilkOnly.Name)
-	assert.Equal(t, []github.MatchRule{
+	assert.Equal(t, []profile.MatchRule{
 		{
 			Claim:        "pipeline_slug",
 			ValuePattern: "silk-.*",
@@ -832,7 +833,7 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	sharedUtilities, err := profileConfig.LookupProfile("shared-utilities-read")
 	require.NoError(t, err)
 	assert.Equal(t, "shared-utilities-read", sharedUtilities.Name)
-	assert.Equal(t, []github.MatchRule{}, sharedUtilities.Match)
+	assert.Equal(t, []profile.MatchRule{}, sharedUtilities.Match)
 	assert.Equal(t, []string{"acme/shared-utilities"}, sharedUtilities.Repositories)
 	assert.Equal(t, []string{"contents:read"}, sharedUtilities.Permissions)
 	// Note: compiledMatcher verified through ValidateProfile, even for empty match rules
@@ -845,7 +846,7 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 func TestGracefulDegradation(t *testing.T) {
 	ctx := context.Background()
 
-	profileConfig, err := github.ValidateProfile(ctx, profileWithMixedValidation)
+	profileConfig, err := profile.ValidateProfile(ctx, profileWithMixedValidation)
 	require.NoError(t, err, "ValidateProfile should not return an error even with invalid profiles")
 
 	// We should have 3 invalid profiles
@@ -891,7 +892,7 @@ func TestProfileMatches(t *testing.T) {
 	ctx := context.Background()
 
 	// Load profile config with various match rules
-	profileConfig, err := github.ValidateProfile(ctx, profileWithMatchRules)
+	profileConfig, err := profile.ValidateProfile(ctx, profileWithMatchRules)
 	require.NoError(t, err)
 
 	testCases := []struct {
@@ -1006,13 +1007,13 @@ func TestProfileErrorTypes(t *testing.T) {
 	}{
 		{
 			name:        "ProfileNotFoundError with name",
-			err:         github.ProfileNotFoundError{Name: "test-profile"},
+			err:         profile.ProfileNotFoundError{Name: "test-profile"},
 			expectedMsg: `profile "test-profile" not found`,
 			errorType:   "ProfileNotFoundError",
 		},
 		{
 			name: "ProfileUnavailableError with name and cause",
-			err: github.ProfileUnavailableError{
+			err: profile.ProfileUnavailableError{
 				Name:  "invalid-profile",
 				Cause: errors.New("invalid regex pattern"),
 			},
@@ -1023,7 +1024,7 @@ func TestProfileErrorTypes(t *testing.T) {
 		},
 		{
 			name:        "ProfileMatchFailedError with name",
-			err:         github.ProfileMatchFailedError{Name: "restricted-profile"},
+			err:         profile.ProfileMatchFailedError{Name: "restricted-profile"},
 			expectedMsg: `profile "restricted-profile" match conditions not met`,
 			errorType:   "ProfileMatchFailedError",
 		},
@@ -1037,16 +1038,16 @@ func TestProfileErrorTypes(t *testing.T) {
 			// Test type assertion
 			switch tc.errorType {
 			case "ProfileNotFoundError":
-				var notFoundErr github.ProfileNotFoundError
+				var notFoundErr profile.ProfileNotFoundError
 				require.ErrorAs(t, tc.err, &notFoundErr)
 				assert.Equal(t, "test-profile", notFoundErr.Name)
 			case "ProfileUnavailableError":
-				var unavailableErr github.ProfileUnavailableError
+				var unavailableErr profile.ProfileUnavailableError
 				require.ErrorAs(t, tc.err, &unavailableErr)
 				assert.Equal(t, "invalid-profile", unavailableErr.Name)
 				assert.NotNil(t, unavailableErr.Cause)
 			case "ProfileMatchFailedError":
-				var matchFailedErr github.ProfileMatchFailedError
+				var matchFailedErr profile.ProfileMatchFailedError
 				require.ErrorAs(t, tc.err, &matchFailedErr)
 				assert.Equal(t, "restricted-profile", matchFailedErr.Name)
 			}

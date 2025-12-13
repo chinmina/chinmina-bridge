@@ -1,10 +1,10 @@
 package githubtest
 
 import (
-	"github.com/chinmina/chinmina-bridge/internal/github"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
-func createTestProfile() github.ProfileConfig {
+func createTestProfile() profile.ProfileConfig {
 	// Create profiles with compiled matchers (empty match rules)
 	return github.NewTestProfileConfig(
 		github.NewTestProfile("simple-profile", []string{"repo-1", "repo-2"}, []string{"read", "write"}),
@@ -14,7 +14,7 @@ func createTestProfile() github.ProfileConfig {
 
 // CreateTestProfileStore creates a ProfileStore for testing with sample profiles.
 // All profiles have empty match rules and compiled matchers.
-func CreateTestProfileStore() *github.ProfileStore {
+func CreateTestProfileStore() *profile.ProfileStore {
 	testProfile := createTestProfile()
 	store := github.NewProfileStore()
 	store.Update(&testProfile)

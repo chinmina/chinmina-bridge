@@ -13,7 +13,6 @@ import (
 
 	"github.com/auth0/go-jwt-middleware/v2/validator"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
-	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -376,7 +375,7 @@ func TestMaxRequestSizeMiddleware(t *testing.T) {
 }
 
 func TestHandlePostToken_ProfileMatchFailedError(t *testing.T) {
-	tokenVendor := tvFails(github.ProfileMatchFailedError{Name: "test-profile"})
+	tokenVendor := tvFails(profile.ProfileMatchFailedError{Name: "test-profile"})
 
 	ctx := claimsContext()
 
@@ -401,7 +400,7 @@ func TestHandlePostToken_ProfileMatchFailedError(t *testing.T) {
 }
 
 func TestHandlePostToken_ProfileNotFoundError(t *testing.T) {
-	tokenVendor := tvFails(github.ProfileNotFoundError{Name: "test-profile"})
+	tokenVendor := tvFails(profile.ProfileNotFoundError{Name: "test-profile"})
 
 	ctx := claimsContext()
 
@@ -426,7 +425,7 @@ func TestHandlePostToken_ProfileNotFoundError(t *testing.T) {
 }
 
 func TestHandlePostToken_ProfileUnavailableError(t *testing.T) {
-	tokenVendor := tvFails(github.ProfileUnavailableError{Name: "test-profile", Cause: errors.New("validation failed")})
+	tokenVendor := tvFails(profile.ProfileUnavailableError{Name: "test-profile", Cause: errors.New("validation failed")})
 
 	ctx := claimsContext()
 

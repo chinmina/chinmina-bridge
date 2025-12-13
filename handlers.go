@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
-	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -44,9 +43,9 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 		tokenResponse, err := tokenVendor(r.Context(), ref, "")
 		if err != nil {
 			// Check for profile-specific errors and map to appropriate HTTP status
-			var matchFailedErr github.ProfileMatchFailedError
-			var notFoundErr github.ProfileNotFoundError
-			var unavailableErr github.ProfileUnavailableError
+			var matchFailedErr profile.ProfileMatchFailedError
+			var notFoundErr profile.ProfileNotFoundError
+			var unavailableErr profile.ProfileUnavailableError
 
 			switch {
 			case errors.As(err, &matchFailedErr):
@@ -112,9 +111,9 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 		tokenResponse, err := tokenVendor(r.Context(), ref, requestedRepoURL)
 		if err != nil {
 			// Check for profile-specific errors and map to appropriate HTTP status
-			var matchFailedErr github.ProfileMatchFailedError
-			var notFoundErr github.ProfileNotFoundError
-			var unavailableErr github.ProfileUnavailableError
+			var matchFailedErr profile.ProfileMatchFailedError
+			var notFoundErr profile.ProfileNotFoundError
+			var unavailableErr profile.ProfileUnavailableError
 
 			switch {
 			case errors.As(err, &matchFailedErr):

@@ -370,12 +370,12 @@ func (e E) Error() string {
 func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 	callIndex := 0
 
-	var testProfile = github.ProfileConfig{
+	var testProfile = profile.ProfileConfig{
 		Organization: struct {
 			Defaults struct {
 				Permissions []string `yaml:"permissions"`
 			} `yaml:"defaults"`
-			Profiles        []github.Profile `yaml:"profiles"`
+			Profiles        []profile.Profile `yaml:"profiles"`
 			InvalidProfiles map[string]error `yaml:"-"`
 		}{
 			Defaults: struct {
@@ -384,7 +384,7 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 				Permissions: []string{},
 			},
 			InvalidProfiles: make(map[string]error),
-			Profiles: []github.Profile{
+			Profiles: []profile.Profile{
 				{
 					Name:         "org:shared-profile",
 					Repositories: []string{"any-repo", "different-repo"},
