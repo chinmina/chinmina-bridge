@@ -1,0 +1,33 @@
+organization:
+  profiles:
+    # Profile with exact match rule
+    - name: "production-deploy"
+      match:
+        - claim: pipeline_slug
+          value: "silk-prod"
+      repositories: ["acme/silk"]
+      permissions: ["contents:write"]
+
+    # Profile with regex pattern match
+    - name: "staging-deploy"
+      match:
+        - claim: pipeline_slug
+          valuePattern: "(silk|cotton)-(staging|stg)"
+      repositories: ["acme/silk", "acme/cotton"]
+      permissions: ["contents:write"]
+
+    # Profile with multiple match rules (AND logic)
+    - name: "production-silk-only"
+      match:
+        - claim: pipeline_slug
+          valuePattern: "silk-.*"
+        - claim: build_branch
+          value: "main"
+      repositories: ["acme/silk"]
+      permissions: ["contents:write"]
+
+    # Profile with no match rules (available to all)
+    - name: "shared-utilities-read"
+      match: []
+      repositories: ["acme/shared-utilities"]
+      permissions: ["contents:read"]

@@ -353,29 +353,28 @@ func TestBuildkiteClaims_Lookup(t *testing.T) {
 			name          string
 			claim         string
 			expectedValue string
-			expectedFound bool
 		}{
-			{"organization_slug", "organization_slug", "acme", true},
-			{"pipeline_slug", "pipeline_slug", "pipeline", true},
-			{"pipeline_id", "pipeline_id", "pipeline-123", true},
-			{"build_number", "build_number", "456", true},
-			{"build_branch", "build_branch", "main", true},
-			{"build_tag", "build_tag", "v1.0.0", true},
-			{"build_commit", "build_commit", "abc123", true},
-			{"cluster_id", "cluster_id", "cluster-xyz", true},
-			{"cluster_name", "cluster_name", "prod-cluster", true},
-			{"queue_id", "queue_id", "queue-789", true},
-			{"queue_key", "queue_key", "default", true},
-			{"agent_tag:queue", "agent_tag:queue", "runners", true},
-			{"agent_tag:os", "agent_tag:os", "linux", true},
-			{"agent_tag:region", "agent_tag:region", "us-west-2", true},
+			{"organization_slug", "organization_slug", "acme"},
+			{"pipeline_slug", "pipeline_slug", "pipeline"},
+			{"pipeline_id", "pipeline_id", "pipeline-123"},
+			{"build_number", "build_number", "456"},
+			{"build_branch", "build_branch", "main"},
+			{"build_tag", "build_tag", "v1.0.0"},
+			{"build_commit", "build_commit", "abc123"},
+			{"cluster_id", "cluster_id", "cluster-xyz"},
+			{"cluster_name", "cluster_name", "prod-cluster"},
+			{"queue_id", "queue_id", "queue-789"},
+			{"queue_key", "queue_key", "default"},
+			{"agent_tag:queue", "agent_tag:queue", "runners"},
+			{"agent_tag:os", "agent_tag:os", "linux"},
+			{"agent_tag:region", "agent_tag:region", "us-west-2"},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				value, found := claims.Lookup(tt.claim)
+				value, err := claims.Lookup(tt.claim)
 				assert.Equal(t, tt.expectedValue, value)
-				assert.Equal(t, tt.expectedFound, found)
+				assert.NoError(t, err)
 			})
 		}
 	})
@@ -404,9 +403,9 @@ func TestBuildkiteClaims_Lookup(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				value, found := emptyClaims.Lookup(tt.claim)
+				value, err := emptyClaims.Lookup(tt.claim)
 				assert.Equal(t, "", value)
-				assert.False(t, found, "optional claim should return false when empty")
+				assert.ErrorIs(t, err, ErrClaimNotFound, "optional claim should return ErrClaimNotFound when empty")
 			})
 		}
 	})
@@ -424,17 +423,17 @@ func TestBuildkiteClaims_Lookup(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				value, found := claims.Lookup(tt.claim)
+				value, err := claims.Lookup(tt.claim)
 				assert.Equal(t, "", value)
-				assert.False(t, found)
+				assert.ErrorIs(t, err, ErrClaimNotFound)
 			})
 		}
 	})
 
 	t.Run("agent tag not present", func(t *testing.T) {
-		value, found := claims.Lookup("agent_tag:nonexistent")
+		value, err := claims.Lookup("agent_tag:nonexistent")
 		assert.Equal(t, "", value)
-		assert.False(t, found)
+		assert.ErrorIs(t, err, ErrClaimNotFound)
 	})
 
 	t.Run("empty agent tags map", func(t *testing.T) {
@@ -448,8 +447,8 @@ func TestBuildkiteClaims_Lookup(t *testing.T) {
 			AgentTags:        map[string]string{},
 		}
 
-		value, found := emptyClaims.Lookup("agent_tag:queue")
+		value, err := emptyClaims.Lookup("agent_tag:queue")
 		assert.Equal(t, "", value)
-		assert.False(t, found)
+		assert.ErrorIs(t, err, ErrClaimNotFound)
 	})
 }

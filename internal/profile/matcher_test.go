@@ -3,6 +3,7 @@ package profile_test
 import (
 	"testing"
 
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/stretchr/testify/assert"
 )
@@ -21,15 +22,15 @@ func TestClaimMatch_TypeDefinition(t *testing.T) {
 // TestMatcher_TypeDefinition verifies Matcher function type compiles correctly.
 func TestMatcher_TypeDefinition(t *testing.T) {
 	// Create a simple matcher that always succeeds
-	var matcher profile.Matcher = func(claims profile.ClaimValueLookup) ([]profile.ClaimMatch, bool) {
+	var matcher profile.Matcher = func(claims profile.ClaimValueLookup) ([]profile.ClaimMatch, error) {
 		return []profile.ClaimMatch{
 			{Claim: "test", Value: "value"},
-		}, true
+		}, nil
 	}
 
 	// Verify matcher can be called
-	matches, ok := matcher(mockClaimLookup{})
-	assert.True(t, ok)
+	matches, err := matcher(mockClaimLookup{})
+	assert.NoError(t, err)
 	assert.Len(t, matches, 1)
 	assert.Equal(t, "test", matches[0].Claim)
 	assert.Equal(t, "value", matches[0].Value)
@@ -45,13 +46,13 @@ func TestClaimValueLookup_Interface(t *testing.T) {
 	}
 
 	// Test found claim
-	value, found := lookup.Lookup("pipeline_slug")
-	assert.True(t, found)
+	value, err := lookup.Lookup("pipeline_slug")
+	assert.NoError(t, err)
 	assert.Equal(t, "my-pipeline", value)
 
 	// Test missing claim
-	value, found = lookup.Lookup("nonexistent")
-	assert.False(t, found)
+	value, err = lookup.Lookup("nonexistent")
+	assert.ErrorIs(t, err, jwt.ErrClaimNotFound)
 	assert.Equal(t, "", value)
 }
 
@@ -64,12 +65,12 @@ func TestExactMatcher_Success(t *testing.T) {
 		},
 	}
 
-	matches, ok := matcher(lookup)
+	matches, err := matcher(lookup)
 
 	expected := []profile.ClaimMatch{
 		{Claim: "pipeline_slug", Value: "my-pipeline"},
 	}
-	assert.True(t, ok)
+	assert.NoError(t, err)
 	assert.Equal(t, expected, matches)
 }
 
@@ -82,9 +83,9 @@ func TestExactMatcher_ClaimMissing(t *testing.T) {
 		},
 	}
 
-	matches, ok := matcher(lookup)
+	matches, err := matcher(lookup)
 
-	assert.False(t, ok)
+	assert.ErrorIs(t, err, profile.ErrNoMatch)
 	assert.Nil(t, matches)
 }
 
@@ -97,9 +98,9 @@ func TestExactMatcher_ValueMismatch(t *testing.T) {
 		},
 	}
 
-	matches, ok := matcher(lookup)
+	matches, err := matcher(lookup)
 
-	assert.False(t, ok)
+	assert.ErrorIs(t, err, profile.ErrNoMatch)
 	assert.Nil(t, matches)
 }
 
@@ -127,14 +128,15 @@ func TestRegexMatcher_ValidPattern(t *testing.T) {
 				},
 			}
 
-			matches, ok := matcher(lookup)
+			matches, err := matcher(lookup)
 
-			assert.Equal(t, tt.expected, ok)
 			if tt.expected {
+				assert.NoError(t, err)
 				assert.Len(t, matches, 1)
 				assert.Equal(t, "build_branch", matches[0].Claim)
 				assert.Equal(t, tt.value, matches[0].Value)
 			} else {
+				assert.ErrorIs(t, err, profile.ErrNoMatch)
 				assert.Nil(t, matches)
 			}
 		})
@@ -162,12 +164,12 @@ func TestRegexMatcher_LiteralOptimization(t *testing.T) {
 		},
 	}
 
-	matches, ok := matcher(lookup)
+	matches, err := matcher(lookup)
 
 	expected := []profile.ClaimMatch{
 		{Claim: "pipeline_slug", Value: "my-pipeline"},
 	}
-	assert.True(t, ok)
+	assert.NoError(t, err)
 	assert.Equal(t, expected, matches)
 }
 
@@ -183,10 +185,10 @@ func TestRegexMatcher_AnchoringPreventsSubstring(t *testing.T) {
 		},
 	}
 
-	matches, ok := matcher(lookup)
+	matches, err := matcher(lookup)
 
 	// Should not match because pattern is anchored
-	assert.False(t, ok)
+	assert.ErrorIs(t, err, profile.ErrNoMatch)
 	assert.Nil(t, matches)
 }
 
@@ -199,9 +201,9 @@ func TestCompositeMatcher_Empty(t *testing.T) {
 		},
 	}
 
-	matches, ok := matcher(lookup)
+	matches, err := matcher(lookup)
 
-	assert.True(t, ok)
+	assert.NoError(t, err)
 	assert.Equal(t, []profile.ClaimMatch{}, matches)
 }
 
@@ -216,12 +218,12 @@ func TestCompositeMatcher_Single(t *testing.T) {
 		},
 	}
 
-	matches, ok := composite(lookup)
+	matches, err := composite(lookup)
 
 	expected := []profile.ClaimMatch{
 		{Claim: "pipeline_slug", Value: "my-pipeline"},
 	}
-	assert.True(t, ok)
+	assert.NoError(t, err)
 	assert.Equal(t, expected, matches)
 }
 
@@ -239,13 +241,13 @@ func TestCompositeMatcher_Multiple(t *testing.T) {
 		},
 	}
 
-	matches, ok := composite(lookup)
+	matches, err := composite(lookup)
 
 	expected := []profile.ClaimMatch{
 		{Claim: "pipeline_slug", Value: "my-pipeline"},
 		{Claim: "build_branch", Value: "main"},
 	}
-	assert.True(t, ok)
+	assert.NoError(t, err)
 	assert.Equal(t, expected, matches)
 }
 
@@ -263,10 +265,10 @@ func TestCompositeMatcher_ShortCircuit(t *testing.T) {
 		},
 	}
 
-	matches, ok := composite(lookup)
+	matches, err := composite(lookup)
 
 	// Should fail because second matcher doesn't match
-	assert.False(t, ok)
+	assert.ErrorIs(t, err, profile.ErrNoMatch)
 	assert.Nil(t, matches)
 }
 
@@ -275,10 +277,13 @@ type mockClaimLookup struct {
 	claims map[string]string
 }
 
-func (m mockClaimLookup) Lookup(claim string) (string, bool) {
+func (m mockClaimLookup) Lookup(claim string) (string, error) {
 	if m.claims == nil {
-		return "", false
+		return "", jwt.ErrClaimNotFound
 	}
 	value, found := m.claims[claim]
-	return value, found
+	if !found {
+		return "", jwt.ErrClaimNotFound
+	}
+	return value, nil
 }

@@ -1,0 +1,48 @@
+organization:
+  profiles:
+    # Valid profile with exact match
+    - name: "valid-production"
+      match:
+        - claim: pipeline_slug
+          value: "silk-prod"
+      repositories: ["acme/silk"]
+      permissions: ["contents:write"]
+
+    # Invalid profile - both value and valuePattern specified
+    - name: "invalid-both-match-types"
+      match:
+        - claim: pipeline_slug
+          value: "silk-prod"
+          valuePattern: "silk-.*"
+      repositories: ["acme/silk"]
+      permissions: ["contents:write"]
+
+    # Valid profile with regex
+    - name: "valid-staging"
+      match:
+        - claim: pipeline_slug
+          valuePattern: "(silk|cotton)-(staging|stg)"
+      repositories: ["acme/silk", "acme/cotton"]
+      permissions: ["contents:write"]
+
+    # Invalid profile - disallowed claim
+    - name: "invalid-disallowed-claim"
+      match:
+        - claim: not_allowed_claim
+          value: "test"
+      repositories: ["acme/test"]
+      permissions: ["contents:read"]
+
+    # Valid profile with no match rules
+    - name: "valid-no-match"
+      match: []
+      repositories: ["acme/shared"]
+      permissions: ["contents:read"]
+
+    # Invalid profile - invalid regex pattern
+    - name: "invalid-regex-pattern"
+      match:
+        - claim: pipeline_slug
+          valuePattern: "(?P<invalid)"
+      repositories: ["acme/test"]
+      permissions: ["contents:read"]

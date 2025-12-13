@@ -3,6 +3,8 @@ package profile
 import (
 	"fmt"
 	"regexp"
+
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
 )
 
 // ClaimValueLookup provides zero-allocation interface for claim value retrieval.
@@ -10,9 +12,10 @@ import (
 // of standard claims and agent tags without allocations.
 type ClaimValueLookup interface {
 	// Lookup retrieves the value for a claim.
-	// Returns (value, true) if the claim exists and has a value.
-	// Returns ("", false) if the claim is absent or empty (for optional claims).
-	Lookup(claim string) (value string, found bool)
+	// Returns (value, nil) if the claim exists and has a value.
+	// Returns ("", jwt.ErrClaimNotFound) if the claim is absent or empty (for optional claims).
+	// Returns ("", ClaimValidationError) if the claim value fails validation.
+	Lookup(claim string) (value string, err error)
 }
 
 // ClaimMatch records which claim matched and its value for audit logging.
@@ -23,25 +26,84 @@ type ClaimMatch struct {
 	Value string // The actual value that satisfied the match condition
 }
 
+// ValidatingLookup wraps a ClaimValueLookup to add validation of claim values.
+// This is applied at the vendor layer to validate claims lazily: only claims
+// actually used in matchers are validated.
+type ValidatingLookup struct {
+	lookup ClaimValueLookup
+}
+
+// NewValidatingLookup creates a new ValidatingLookup wrapper around the provided lookup.
+func NewValidatingLookup(lookup ClaimValueLookup) *ValidatingLookup {
+	return &ValidatingLookup{lookup: lookup}
+}
+
+// Lookup retrieves and validates a claim value.
+// Returns (value, nil) if the claim exists, has a value, and passes validation.
+// Returns ("", jwt.ErrClaimNotFound) if the claim is absent.
+// Returns ("", ClaimValidationError) if the claim value fails validation.
+func (v *ValidatingLookup) Lookup(claim string) (string, error) {
+	value, err := v.lookup.Lookup(claim)
+	if err != nil {
+		return "", err
+	}
+
+	// Validate agent tag values (keys don't need validation)
+	// Agent tags are the only user-controlled values that need validation
+	if len(claim) > 10 && claim[:10] == "agent_tag:" {
+		// Agent tag validation: disallow control characters and enforce reasonable length
+		if len(value) > 256 {
+			return "", ClaimValidationError{
+				Claim: claim,
+				Value: value,
+				Err:   fmt.Errorf("value exceeds maximum length of 256 characters"),
+			}
+		}
+
+		// Check for control characters (0x00-0x1F, 0x7F-0x9F)
+		for _, r := range value {
+			if r < 0x20 || (r >= 0x7F && r < 0xA0) {
+				return "", ClaimValidationError{
+					Claim: claim,
+					Value: value,
+					Err:   fmt.Errorf("value contains control characters"),
+				}
+			}
+		}
+	}
+
+	return value, nil
+}
+
 // Matcher evaluates whether claims satisfy match conditions.
-// Returns matched claims for audit logging and a boolean indicating success.
+// Returns matched claims for audit logging and an error indicating failure.
 // Multiple ClaimMatch entries may be returned when composite matchers combine multiple conditions.
-type Matcher func(claims ClaimValueLookup) (matches []ClaimMatch, ok bool)
+// Returns (matches, nil) on success, (nil, ErrNoMatch) when conditions aren't met,
+// or (nil, error) for validation or other errors.
+type Matcher func(claims ClaimValueLookup) (matches []ClaimMatch, err error)
 
 // ExactMatcher creates a matcher that performs exact string comparison on a claim value.
 // Returns a successful match only when the claim exists and exactly equals the expected value.
 // Performance: O(1) string comparison.
 func ExactMatcher(matchClaim string, matchValue string) Matcher {
-	return func(claims ClaimValueLookup) ([]ClaimMatch, bool) {
-		value, ok := claims.Lookup(matchClaim)
-		if !ok || value != matchValue {
-			return nil, false
+	return func(claims ClaimValueLookup) ([]ClaimMatch, error) {
+		value, err := claims.Lookup(matchClaim)
+		if err != nil {
+			// Distinguish between not found (no match) and validation error
+			if err == jwt.ErrClaimNotFound {
+				return nil, ErrNoMatch
+			}
+			return nil, err
+		}
+
+		if value != matchValue {
+			return nil, ErrNoMatch
 		}
 
 		return []ClaimMatch{{
 			Claim: matchClaim,
 			Value: value,
-		}}, true
+		}}, nil
 	}
 }
 
@@ -72,16 +134,24 @@ func RegexMatcher(matchClaim string, matchPattern string) (Matcher, error) {
 		return nil, fmt.Errorf("anchored pattern failed to compile: %w", err)
 	}
 
-	return func(claims ClaimValueLookup) ([]ClaimMatch, bool) {
-		value, ok := claims.Lookup(matchClaim)
-		if !ok || !compiledRegex.MatchString(value) {
-			return nil, false
+	return func(claims ClaimValueLookup) ([]ClaimMatch, error) {
+		value, err := claims.Lookup(matchClaim)
+		if err != nil {
+			// Distinguish between not found (no match) and validation error
+			if err == jwt.ErrClaimNotFound {
+				return nil, ErrNoMatch
+			}
+			return nil, err
+		}
+
+		if !compiledRegex.MatchString(value) {
+			return nil, ErrNoMatch
 		}
 
 		return []ClaimMatch{{
 			Claim: matchClaim,
 			Value: value,
-		}}, true
+		}}, nil
 	}, nil
 }
 
@@ -93,8 +163,8 @@ func RegexMatcher(matchClaim string, matchPattern string) (Matcher, error) {
 func CompositeMatcher(matchers ...Matcher) Matcher {
 	// Handle empty case: no match rules = always match
 	if len(matchers) == 0 {
-		return func(claims ClaimValueLookup) ([]ClaimMatch, bool) {
-			return []ClaimMatch{}, true
+		return func(claims ClaimValueLookup) ([]ClaimMatch, error) {
+			return []ClaimMatch{}, nil
 		}
 	}
 
@@ -104,18 +174,18 @@ func CompositeMatcher(matchers ...Matcher) Matcher {
 	}
 
 	// Multiple matchers: AND logic with short-circuit
-	return func(claims ClaimValueLookup) ([]ClaimMatch, bool) {
+	return func(claims ClaimValueLookup) ([]ClaimMatch, error) {
 		matches := make([]ClaimMatch, 0, len(matchers))
 
 		for _, m := range matchers {
-			mMatches, ok := m(claims)
-			if !ok {
+			mMatches, err := m(claims)
+			if err != nil {
 				// Short-circuit on first failure
-				return nil, false
+				return nil, err
 			}
 			matches = append(matches, mMatches...)
 		}
 
-		return matches, true
+		return matches, nil
 	}
 }

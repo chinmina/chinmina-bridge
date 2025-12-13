@@ -3,12 +3,18 @@ package jwt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
 	"github.com/auth0/go-jwt-middleware/v2/validator"
+)
+
+var (
+	// ErrClaimNotFound indicates a required claim was not found in the claims lookup
+	ErrClaimNotFound = errors.New("claim not found")
 )
 
 // buildkiteCustomClaims sets up OIDC custom claims for a Buildkite-issued JWT.
@@ -57,11 +63,6 @@ func registeredClaimsValidator(next jwtmiddleware.ValidateToken) jwtmiddleware.V
 
 		return claims, nil
 	}
-}
-
-// ClaimValueLookup provides zero-allocation claim value lookup.
-type ClaimValueLookup interface {
-	Lookup(claim string) (value string, found bool)
 }
 
 // BuildkiteClaims define the additional claims that Builkite includes in the
@@ -216,24 +217,24 @@ func (c *BuildkiteClaims) setClaimField(key string, value any) error {
 }
 
 // Lookup implements ClaimValueLookup interface for BuildkiteClaims.
-// Returns (value, true) when claim is present and populated.
-// Returns ("", false) for optional claims when not present or for unknown claims.
-func (c BuildkiteClaims) Lookup(claim string) (string, bool) {
+// Returns (value, nil) when claim is present and populated.
+// Returns ("", error) for optional claims when not present or for unknown claims.
+func (c BuildkiteClaims) Lookup(claim string) (string, error) {
 	switch claim {
 	case "organization_slug":
-		return c.OrganizationSlug, true
+		return c.OrganizationSlug, nil
 	case "pipeline_slug":
-		return c.PipelineSlug, true
+		return c.PipelineSlug, nil
 	case "pipeline_id":
-		return c.PipelineID, true
+		return c.PipelineID, nil
 	case "build_number":
-		return strconv.Itoa(c.BuildNumber), true
+		return strconv.Itoa(c.BuildNumber), nil
 	case "build_branch":
-		return c.BuildBranch, true
+		return c.BuildBranch, nil
 	case "build_tag":
 		return lookupOptional(c.BuildTag)
 	case "build_commit":
-		return c.BuildCommit, true
+		return c.BuildCommit, nil
 	case "cluster_id":
 		return lookupOptional(c.ClusterID)
 	case "cluster_name":
@@ -246,10 +247,10 @@ func (c BuildkiteClaims) Lookup(claim string) (string, bool) {
 		// Handle agent_tag: prefix dynamically
 		if agentTag, found := strings.CutPrefix(claim, "agent_tag:"); found {
 			if val, ok := c.AgentTags[agentTag]; ok {
-				return val, true
+				return val, nil
 			}
 		}
-		return "", false
+		return "", ErrClaimNotFound
 	}
 }
 
@@ -286,10 +287,10 @@ func setField[T any](target *T, value any) error {
 	return nil
 }
 
-// lookupOptional returns (value, true) if the value is non-empty, otherwise ("", false).
-func lookupOptional(value string) (string, bool) {
+// lookupOptional returns (value, nil) if the value is non-empty, otherwise ("", ErrClaimNotFound).
+func lookupOptional(value string) (string, error) {
 	if value != "" {
-		return value, true
+		return value, nil
 	}
-	return "", false
+	return "", ErrClaimNotFound
 }

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/github/githubtest"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"

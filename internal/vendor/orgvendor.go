@@ -34,10 +34,17 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		}
 
 		// Evaluate match conditions against JWT claims
+		// Wrap claims with ValidatingLookup to add validation
 		claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
-		_, matchOk := profileConf.Matches(claims)
-		if !matchOk {
-			return nil, profile.ProfileMatchFailedError{Name: ref.Name}
+		validatingClaims := profile.NewValidatingLookup(claims)
+		_, err = profileConf.Matches(validatingClaims)
+		if err != nil {
+			// Distinguish between ErrNoMatch and validation errors
+			if err == profile.ErrNoMatch {
+				return nil, profile.ProfileMatchFailedError{Name: ref.Name}
+			}
+			// Return validation errors or other errors directly
+			return nil, fmt.Errorf("profile match evaluation failed: %w", err)
 		}
 
 		// The repository is only supplied for the git-credentials endpoint:

@@ -16,6 +16,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Sentinel errors for matching
+var (
+	// ErrNoMatch indicates that profile match conditions were not satisfied
+	ErrNoMatch = errors.New("profile match conditions not met")
+)
+
+// ClaimValidationError indicates a claim value failed validation
+type ClaimValidationError struct {
+	Claim string
+	Value string
+	Err   error
+}
+
+func (e ClaimValidationError) Error() string {
+	return fmt.Sprintf("claim %q validation failed for value %q: %v", e.Claim, e.Value, e.Err)
+}
+
+func (e ClaimValidationError) Unwrap() error {
+	return e.Err
+}
+
 type ProfileStore struct {
 	mu     sync.RWMutex
 	config ProfileConfig
@@ -114,9 +135,11 @@ func (config Profile) HasRepository(repo string) bool {
 }
 
 // Matches evaluates the profile's match conditions against the provided claims.
-// Returns the matched claims for audit logging and a boolean indicating success.
+// Returns the matched claims for audit logging and an error indicating failure.
+// Returns (matches, nil) on success, (nil, ErrNoMatch) when conditions aren't met,
+// or (nil, error) for validation or other errors.
 // Panics if compiledMatcher is nil (indicates profile wasn't properly loaded).
-func (p Profile) Matches(claims ClaimValueLookup) (matches []ClaimMatch, ok bool) {
+func (p Profile) Matches(claims ClaimValueLookup) (matches []ClaimMatch, err error) {
 	if p.compiledMatcher == nil {
 		panic("profile matcher not compiled - profile must be loaded via LoadProfile")
 	}

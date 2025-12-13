@@ -2,7 +2,12 @@ package profile_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	_ "embed"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +17,7 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	api "github.com/google/go-github/v80/github"
 	"github.com/stretchr/testify/assert"
@@ -35,6 +41,30 @@ var profileWithMatchRules string
 
 //go:embed testdata/profile/profile_with_mixed_validation.yaml
 var profileWithMixedValidation string
+
+// JSON writes a JSON response for testing HTTP handlers
+func JSON(w http.ResponseWriter, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	res, _ := json.Marshal(payload)
+	_, _ = w.Write(res)
+}
+
+// generateKey creates and PEM encodes a valid RSA private key for testing.
+func generateKey(t *testing.T) string {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	privateKeyPEM := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	}
+
+	key := pem.EncodeToMemory(privateKeyPEM)
+
+	return string(key)
+}
 
 // Helper function to compare ProfileConfigs without comparing CompiledMatcher function pointers
 func assertProfileConfigEqual(t *testing.T, expected, actual profile.ProfileConfig) {
@@ -978,11 +1008,15 @@ func TestProfileMatches(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			profile, err := profileConfig.LookupProfile(tc.profileName)
+			prof, err := profileConfig.LookupProfile(tc.profileName)
 			require.NoError(t, err)
 
-			matches, ok := profile.Matches(tc.claims)
-			assert.Equal(t, tc.expectMatch, ok, "match result mismatch")
+			matches, err := prof.Matches(tc.claims)
+			if tc.expectMatch {
+				assert.NoError(t, err, "match should succeed")
+			} else {
+				assert.ErrorIs(t, err, profile.ErrNoMatch, "match should fail")
+			}
 			assert.Len(t, matches, tc.expectMatches, "number of matches mismatch")
 		})
 	}
@@ -991,9 +1025,12 @@ func TestProfileMatches(t *testing.T) {
 // mockClaims implements profile.ClaimValueLookup for testing
 type mockClaims map[string]string
 
-func (m mockClaims) Lookup(claim string) (string, bool) {
+func (m mockClaims) Lookup(claim string) (string, error) {
 	val, ok := m[claim]
-	return val, ok
+	if !ok {
+		return "", jwt.ErrClaimNotFound
+	}
+	return val, nil
 }
 
 func TestProfileErrorTypes(t *testing.T) {

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
@@ -376,7 +375,7 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 				Permissions []string `yaml:"permissions"`
 			} `yaml:"defaults"`
 			Profiles        []profile.Profile `yaml:"profiles"`
-			InvalidProfiles map[string]error `yaml:"-"`
+			InvalidProfiles map[string]error  `yaml:"-"`
 		}{
 			Defaults: struct {
 				Permissions []string `yaml:"permissions"`

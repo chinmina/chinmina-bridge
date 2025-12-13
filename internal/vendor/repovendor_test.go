@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"

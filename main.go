@@ -90,7 +90,7 @@ func main() {
 }
 
 func launchServer() error {
-	orgProfile := github.NewProfileStore()
+	orgProfile := profile.NewProfileStore()
 	ctx := context.Background()
 
 	cfg, err := config.Load(context.Background())
@@ -209,7 +209,7 @@ func refreshOrgProfile(ctx context.Context, profileStore *profile.ProfileStore, 
 	}()
 
 	for {
-		profileConfig, err := github.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
+		profileConfig, err := profile.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
 		if err != nil {
 			// log the failure to fetch, then continue. This may be transient, so we
 			// need to keep trying.
