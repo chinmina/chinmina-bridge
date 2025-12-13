@@ -283,12 +283,12 @@ func LoadProfile(ctx context.Context, gh github.Client, orgProfileLocation strin
 func GetProfile(ctx context.Context, gh github.Client, orgProfileLocation string) (string, error) {
 	// get the profile
 	owner, repo, path := DecomposePath(orgProfileLocation)
-	profile, _, _, err := gh.client.Repositories.GetContents(ctx, owner, repo, path, nil)
+	profile, err := gh.GetFileContent(ctx, owner, repo, path)
 	if err != nil {
 		return "", fmt.Errorf("organization profile load failed from %s: %w", orgProfileLocation, err)
 	}
 
-	return profile.GetContent()
+	return profile, nil
 }
 
 func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error) {

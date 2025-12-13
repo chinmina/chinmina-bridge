@@ -107,6 +107,16 @@ func createAppTransport(ctx context.Context, cfg config.GithubConfig, wrapped ht
 	return appInstallationTransport, nil
 }
 
+func (c Client) GetFileContent(ctx context.Context, owner string, repo string, path string) (string, error) {
+	contents, _, _, err := c.client.Repositories.GetContents(ctx, owner, repo, path, nil)
+
+	if contents != nil && err == nil {
+		return contents.GetContent()
+	}
+
+	return "", err
+}
+
 func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
 	tokenPermissions, err := ScopesToPermissions(scopes)
 	if err != nil {
