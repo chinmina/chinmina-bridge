@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/rs/zerolog/log"
 )
@@ -30,6 +31,13 @@ func NewOrgVendor(profileStore *github.ProfileStore, tokenVendor TokenVendor) Pr
 		profileConf, err := profileStore.GetProfileFromStore(ref.Name)
 		if err != nil {
 			return nil, fmt.Errorf("could not find profile %s: %w", ref.Name, err)
+		}
+
+		// Evaluate match conditions against JWT claims
+		claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
+		_, matchOk := profileConf.Matches(claims)
+		if !matchOk {
+			return nil, github.ProfileMatchFailedError{Name: ref.Name}
 		}
 
 		// The repository is only supplied for the git-credentials endpoint:
