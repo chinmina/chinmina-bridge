@@ -151,6 +151,23 @@ func maxRequestSize(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
+// ErrorResponse represents a JSON error response.
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// writeJSONError writes a JSON error response with the given status code and message.
+func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+
+	response := ErrorResponse{Error: message}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		// At this point the status code has been written, so we can only log
+		log.Info().Msgf("failed to write JSON error response: %v", err)
+	}
+}
+
 func requestError(w http.ResponseWriter, statusCode int) {
 	http.Error(w, http.StatusText(statusCode), statusCode)
 }
