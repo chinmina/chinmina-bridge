@@ -13,6 +13,7 @@ import (
 
 	"github.com/auth0/go-jwt-middleware/v2/validator"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -372,6 +373,81 @@ func TestMaxRequestSizeMiddleware(t *testing.T) {
 
 	respBody := rr.Body.String()
 	assert.Equal(t, "", respBody)
+}
+
+func TestHandlePostToken_ProfileMatchFailedError(t *testing.T) {
+	tokenVendor := tvFails(github.ProfileMatchFailedError{Name: "test-profile"})
+
+	ctx := claimsContext()
+
+	req, err := http.NewRequest("POST", "/token", nil)
+	require.NoError(t, err)
+
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// act
+	handler := handlePostToken(tokenVendor)
+	handler.ServeHTTP(rr, req)
+
+	// assert
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "access denied: profile match conditions not met"}, respBody)
+}
+
+func TestHandlePostToken_ProfileNotFoundError(t *testing.T) {
+	tokenVendor := tvFails(github.ProfileNotFoundError{Name: "test-profile"})
+
+	ctx := claimsContext()
+
+	req, err := http.NewRequest("POST", "/token", nil)
+	require.NoError(t, err)
+
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// act
+	handler := handlePostToken(tokenVendor)
+	handler.ServeHTTP(rr, req)
+
+	// assert
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "profile not found"}, respBody)
+}
+
+func TestHandlePostToken_ProfileUnavailableError(t *testing.T) {
+	tokenVendor := tvFails(github.ProfileUnavailableError{Name: "test-profile", Cause: errors.New("validation failed")})
+
+	ctx := claimsContext()
+
+	req, err := http.NewRequest("POST", "/token", nil)
+	require.NoError(t, err)
+
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// act
+	handler := handlePostToken(tokenVendor)
+	handler.ServeHTTP(rr, req)
+
+	// assert
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "profile unavailable: validation failed"}, respBody)
 }
 
 func TestWriteJSONError_Success(t *testing.T) {

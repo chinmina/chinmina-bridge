@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -41,8 +43,25 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 
 		tokenResponse, err := tokenVendor(r.Context(), ref, "")
 		if err != nil {
-			log.Info().Msgf("token creation failed %v\n", err)
-			requestError(w, http.StatusInternalServerError)
+			// Check for profile-specific errors and map to appropriate HTTP status
+			var matchFailedErr github.ProfileMatchFailedError
+			var notFoundErr github.ProfileNotFoundError
+			var unavailableErr github.ProfileUnavailableError
+
+			switch {
+			case errors.As(err, &matchFailedErr):
+				log.Info().Msgf("profile match failed: %v", err)
+				writeJSONError(w, http.StatusForbidden, "access denied: profile match conditions not met")
+			case errors.As(err, &notFoundErr):
+				log.Info().Msgf("profile not found: %v", err)
+				writeJSONError(w, http.StatusNotFound, "profile not found")
+			case errors.As(err, &unavailableErr):
+				log.Info().Msgf("profile unavailable: %v", err)
+				writeJSONError(w, http.StatusNotFound, "profile unavailable: validation failed")
+			default:
+				log.Info().Msgf("token creation failed %v\n", err)
+				requestError(w, http.StatusInternalServerError)
+			}
 			return
 		}
 
@@ -92,8 +111,25 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 
 		tokenResponse, err := tokenVendor(r.Context(), ref, requestedRepoURL)
 		if err != nil {
-			log.Info().Msgf("token creation failed %v\n", err)
-			requestError(w, http.StatusInternalServerError)
+			// Check for profile-specific errors and map to appropriate HTTP status
+			var matchFailedErr github.ProfileMatchFailedError
+			var notFoundErr github.ProfileNotFoundError
+			var unavailableErr github.ProfileUnavailableError
+
+			switch {
+			case errors.As(err, &matchFailedErr):
+				log.Info().Msgf("profile match failed: %v", err)
+				writeJSONError(w, http.StatusForbidden, "access denied: profile match conditions not met")
+			case errors.As(err, &notFoundErr):
+				log.Info().Msgf("profile not found: %v", err)
+				writeJSONError(w, http.StatusNotFound, "profile not found")
+			case errors.As(err, &unavailableErr):
+				log.Info().Msgf("profile unavailable: %v", err)
+				writeJSONError(w, http.StatusNotFound, "profile unavailable: validation failed")
+			default:
+				log.Info().Msgf("token creation failed %v\n", err)
+				requestError(w, http.StatusInternalServerError)
+			}
 			return
 		}
 
