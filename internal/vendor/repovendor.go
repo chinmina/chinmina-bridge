@@ -13,7 +13,7 @@ import (
 // Used by /token and /git-credentials routes.
 // It uses the Buildkite API to find the pipeline's repository and vends
 // tokens for that specific repository.
-func NewRepoVendor(profileStore *github.ProfileStore, repoLookup RepositoryLookup, tokenVendor TokenVendor) ProfileTokenVendor {
+func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLookup, tokenVendor TokenVendor) ProfileTokenVendor {
 	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) (*ProfileToken, error) {
 		// Validate that this is a repo-scoped profile
 		if ref.Type != profile.ProfileTypeRepo {

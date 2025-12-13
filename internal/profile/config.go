@@ -1,4 +1,4 @@
-package github
+package profile
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"slices"
 
-	"github.com/chinmina/chinmina-bridge/internal/profile"
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
@@ -106,7 +106,7 @@ type Profile struct {
 
 	// compiledMatcher is the compiled matcher from Match rules.
 	// Populated during profile loading, not from YAML.
-	compiledMatcher profile.Matcher `yaml:"-"`
+	compiledMatcher Matcher `yaml:"-"`
 }
 
 func (config Profile) HasRepository(repo string) bool {
@@ -116,7 +116,7 @@ func (config Profile) HasRepository(repo string) bool {
 // Matches evaluates the profile's match conditions against the provided claims.
 // Returns the matched claims for audit logging and a boolean indicating success.
 // Panics if compiledMatcher is nil (indicates profile wasn't properly loaded).
-func (p Profile) Matches(claims profile.ClaimValueLookup) (matches []profile.ClaimMatch, ok bool) {
+func (p Profile) Matches(claims ClaimValueLookup) (matches []ClaimMatch, ok bool) {
 	if p.compiledMatcher == nil {
 		panic("profile matcher not compiled - profile must be loaded via LoadProfile")
 	}
@@ -183,8 +183,8 @@ func ValidateMatchRule(rule MatchRule) error {
 
 // CompileMatchRules compiles a list of MatchRules into a single Matcher.
 // Returns an error if any rule is invalid or fails to compile.
-func CompileMatchRules(rules []MatchRule) (profile.Matcher, error) {
-	matchers := make([]profile.Matcher, 0, len(rules))
+func CompileMatchRules(rules []MatchRule) (Matcher, error) {
+	matchers := make([]Matcher, 0, len(rules))
 
 	for _, rule := range rules {
 		// Validate the rule
@@ -193,15 +193,15 @@ func CompileMatchRules(rules []MatchRule) (profile.Matcher, error) {
 		}
 
 		// Create appropriate matcher based on rule type
-		var matcher profile.Matcher
+		var matcher Matcher
 		var err error
 
 		if rule.Value != "" {
 			// Exact match
-			matcher = profile.ExactMatcher(rule.Claim, rule.Value)
+			matcher = ExactMatcher(rule.Claim, rule.Value)
 		} else {
 			// Regex match
-			matcher, err = profile.RegexMatcher(rule.Claim, rule.ValuePattern)
+			matcher, err = RegexMatcher(rule.Claim, rule.ValuePattern)
 			if err != nil {
 				return nil, fmt.Errorf("failed to compile regex pattern for claim %q: %w", rule.Claim, err)
 			}
@@ -211,7 +211,7 @@ func CompileMatchRules(rules []MatchRule) (profile.Matcher, error) {
 	}
 
 	// Return composite matcher (handles empty list case)
-	return profile.CompositeMatcher(matchers...), nil
+	return CompositeMatcher(matchers...), nil
 }
 
 // IsAllowedClaim checks if a claim is allowed for matching.
@@ -242,7 +242,7 @@ func IsAllowedClaim(claim string) bool {
 	return false
 }
 
-func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh Client) (ProfileConfig, error) {
+func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh github.Client) (ProfileConfig, error) {
 	profile, err := LoadProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
 		return ProfileConfig{}, err
@@ -251,7 +251,7 @@ func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh
 	return profile, nil
 }
 
-func LoadProfile(ctx context.Context, gh Client, orgProfileLocation string) (ProfileConfig, error) {
+func LoadProfile(ctx context.Context, gh github.Client, orgProfileLocation string) (ProfileConfig, error) {
 	// get the profile
 	profile, err := GetProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
@@ -280,7 +280,7 @@ func LoadProfile(ctx context.Context, gh Client, orgProfileLocation string) (Pro
 	return profileConfig, nil
 }
 
-func GetProfile(ctx context.Context, gh Client, orgProfileLocation string) (string, error) {
+func GetProfile(ctx context.Context, gh github.Client, orgProfileLocation string) (string, error) {
 	// get the profile
 	owner, repo, path := DecomposePath(orgProfileLocation)
 	profile, _, _, err := gh.client.Repositories.GetContents(ctx, owner, repo, path, nil)
@@ -357,7 +357,7 @@ func NewTestProfile(name string, repositories []string, permissions []string) Pr
 		Match:           []MatchRule{},
 		Repositories:    repositories,
 		Permissions:     permissions,
-		compiledMatcher: profile.CompositeMatcher(), // Empty matcher for testing
+		compiledMatcher: CompositeMatcher(), // Empty matcher for testing
 	}
 }
 

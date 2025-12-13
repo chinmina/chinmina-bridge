@@ -159,7 +159,7 @@ func TestOrgVendor_MatchEvaluation(t *testing.T) {
 	}
 
 	// Create profile store with match rules
-	createMatchingProfileStore := func() *github.ProfileStore {
+	createMatchingProfileStore := func() *profile.ProfileStore {
 		// Load profile YAML with match rules to get compiled matchers
 		profileYAML := `
 organization:
@@ -179,12 +179,12 @@ organization:
       repositories: [test-repo]
       permissions: [contents:read]
 `
-		profileConfig, err := github.ValidateProfile(context.Background(), profileYAML)
+		profileConfig, err := profile.ValidateProfile(context.Background(), profileYAML)
 		if err != nil {
 			t.Fatalf("failed to validate profile: %v", err)
 		}
 
-		store := github.NewProfileStore()
+		store := profile.NewProfileStore()
 		store.Update(&profileConfig)
 		return store
 	}
@@ -225,7 +225,7 @@ organization:
 		require.Error(t, err)
 		assert.Nil(t, tok)
 
-		var matchErr github.ProfileMatchFailedError
+		var matchErr profile.ProfileMatchFailedError
 		require.ErrorAs(t, err, &matchErr)
 		assert.Equal(t, "prod-deploy", matchErr.Name)
 	})
@@ -262,7 +262,7 @@ organization:
 		require.Error(t, err)
 		assert.Nil(t, tok)
 
-		var matchErr github.ProfileMatchFailedError
+		var matchErr profile.ProfileMatchFailedError
 		require.ErrorAs(t, err, &matchErr)
 		assert.Equal(t, "staging-deploy", matchErr.Name)
 	})
