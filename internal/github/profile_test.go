@@ -3,6 +3,7 @@ package github_test
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -867,4 +868,71 @@ func TestGracefulDegradation(t *testing.T) {
 	validProd, _ := profileConfig.LookupProfile("valid-production")
 	assert.Equal(t, "valid-production", validProd.Name)
 	assert.Equal(t, []string{"acme/silk"}, validProd.Repositories)
+}
+
+func TestProfileErrorTypes(t *testing.T) {
+	testCases := []struct {
+		name         string
+		err          error
+		expectedMsg  string
+		errorType    string
+		checkUnwrap  bool
+		unwrappedErr error
+	}{
+		{
+			name:        "ProfileNotFoundError with name",
+			err:         github.ProfileNotFoundError{Name: "test-profile"},
+			expectedMsg: `profile "test-profile" not found`,
+			errorType:   "ProfileNotFoundError",
+		},
+		{
+			name: "ProfileUnavailableError with name and cause",
+			err: github.ProfileUnavailableError{
+				Name:  "invalid-profile",
+				Cause: errors.New("invalid regex pattern"),
+			},
+			expectedMsg:  `profile "invalid-profile" unavailable: validation failed`,
+			errorType:    "ProfileUnavailableError",
+			checkUnwrap:  true,
+			unwrappedErr: errors.New("invalid regex pattern"),
+		},
+		{
+			name:        "ProfileMatchFailedError with name",
+			err:         github.ProfileMatchFailedError{Name: "restricted-profile"},
+			expectedMsg: `profile "restricted-profile" match conditions not met`,
+			errorType:   "ProfileMatchFailedError",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Test error message
+			assert.Equal(t, tc.expectedMsg, tc.err.Error())
+
+			// Test type assertion
+			switch tc.errorType {
+			case "ProfileNotFoundError":
+				var notFoundErr github.ProfileNotFoundError
+				require.ErrorAs(t, tc.err, &notFoundErr)
+				assert.Equal(t, "test-profile", notFoundErr.Name)
+			case "ProfileUnavailableError":
+				var unavailableErr github.ProfileUnavailableError
+				require.ErrorAs(t, tc.err, &unavailableErr)
+				assert.Equal(t, "invalid-profile", unavailableErr.Name)
+				assert.NotNil(t, unavailableErr.Cause)
+			case "ProfileMatchFailedError":
+				var matchFailedErr github.ProfileMatchFailedError
+				require.ErrorAs(t, tc.err, &matchFailedErr)
+				assert.Equal(t, "restricted-profile", matchFailedErr.Name)
+			}
+
+			// Test Unwrap if applicable
+			if tc.checkUnwrap {
+				unwrapper, ok := tc.err.(interface{ Unwrap() error })
+				require.True(t, ok, "error should implement Unwrap")
+				unwrappedErr := unwrapper.Unwrap()
+				assert.Equal(t, tc.unwrappedErr.Error(), unwrappedErr.Error())
+			}
+		})
+	}
 }
