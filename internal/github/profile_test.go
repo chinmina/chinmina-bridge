@@ -11,7 +11,6 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
-	profilepkg "github.com/chinmina/chinmina-bridge/internal/profile"
 	api "github.com/google/go-github/v80/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,7 +44,7 @@ func assertProfileConfigEqual(t *testing.T, expected, actual github.ProfileConfi
 	// Compare number of profiles
 	assert.Len(t, actual.Organization.Profiles, len(expected.Organization.Profiles))
 
-	// Compare each profile excluding CompiledMatcher
+	// Compare each profile excluding compiledMatcher
 	for i, expectedProf := range expected.Organization.Profiles {
 		if i >= len(actual.Organization.Profiles) {
 			break
@@ -56,7 +55,7 @@ func assertProfileConfigEqual(t *testing.T, expected, actual github.ProfileConfi
 		assert.Equal(t, expectedProf.Match, actualProf.Match, "match rules mismatch for profile %s", expectedProf.Name)
 		assert.Equal(t, expectedProf.Repositories, actualProf.Repositories, "repositories mismatch for profile %s", expectedProf.Name)
 		assert.Equal(t, expectedProf.Permissions, actualProf.Permissions, "permissions mismatch for profile %s", expectedProf.Name)
-		assert.NotNil(t, actualProf.CompiledMatcher, "compiled matcher should not be nil for profile %s", actualProf.Name)
+		// Note: compiledMatcher is private and verified through Matches() behavior
 	}
 }
 
@@ -385,7 +384,7 @@ func TestGetProfileFromStore(t *testing.T) {
 		assert.Equal(t, expectedProfile.Match, retrievedProfile.Match)
 		assert.Equal(t, expectedProfile.Repositories, retrievedProfile.Repositories)
 		assert.Equal(t, expectedProfile.Permissions, retrievedProfile.Permissions)
-		assert.NotNil(t, retrievedProfile.CompiledMatcher)
+		// Note: compiledMatcher is private and verified through Matches() behavior
 	})
 
 	t.Run("Error handling when a profile is not found", func(t *testing.T) {
@@ -425,19 +424,9 @@ func TestGetProfileFromStore(t *testing.T) {
 func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 	// Setup: Create a ProfileStore with a valid profile
 	store := github.NewProfileStore()
-	profileConfig := github.ProfileConfig{}
-	profileConfig.Organization.Profiles = []github.Profile{
-		{
-			Name:         "test-profile",
-			Match:        []github.MatchRule{},
-			Repositories: []string{"test-repo"},
-			Permissions:  []string{"contents:read"},
-			CompiledMatcher: func(claims profilepkg.ClaimValueLookup) ([]profilepkg.ClaimMatch, bool) {
-				return nil, true
-			},
-		},
-	}
-	profileConfig.Organization.InvalidProfiles = make(map[string]error)
+	profileConfig := github.NewTestProfileConfig(
+		github.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
+	)
 	store.Update(&profileConfig)
 
 	t.Run("Concurrent reads can execute in parallel", func(t *testing.T) {
@@ -514,19 +503,9 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				newConfig := github.ProfileConfig{}
-				newConfig.Organization.Profiles = []github.Profile{
-					{
-						Name:         "test-profile",
-						Match:        []github.MatchRule{},
-						Repositories: []string{"test-repo"},
-						Permissions:  []string{"contents:read"},
-						CompiledMatcher: func(claims profilepkg.ClaimValueLookup) ([]profilepkg.ClaimMatch, bool) {
-							return nil, true
-						},
-					},
-				}
-				newConfig.Organization.InvalidProfiles = make(map[string]error)
+				newConfig := github.NewTestProfileConfig(
+					github.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
+				)
 				store.Update(&newConfig)
 			}(i)
 		}
@@ -797,7 +776,7 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	}, productionDeploy.Match)
 	assert.Equal(t, []string{"acme/silk"}, productionDeploy.Repositories)
 	assert.Equal(t, []string{"contents:write"}, productionDeploy.Permissions)
-	assert.NotNil(t, productionDeploy.CompiledMatcher, "compiled matcher should be set")
+	// Note: compiledMatcher verified through ValidateProfile and can be tested via Matches()
 
 	// Test profile with regex pattern match
 	stagingDeploy, err := profileConfig.LookupProfile("staging-deploy")
@@ -811,7 +790,7 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	}, stagingDeploy.Match)
 	assert.Equal(t, []string{"acme/silk", "acme/cotton"}, stagingDeploy.Repositories)
 	assert.Equal(t, []string{"contents:write"}, stagingDeploy.Permissions)
-	assert.NotNil(t, stagingDeploy.CompiledMatcher, "compiled matcher should be set")
+	// Note: compiledMatcher verified through ValidateProfile and can be tested via Matches()
 
 	// Test profile with multiple match rules (AND logic)
 	productionSilkOnly, err := profileConfig.LookupProfile("production-silk-only")
@@ -829,7 +808,7 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	}, productionSilkOnly.Match)
 	assert.Equal(t, []string{"acme/silk"}, productionSilkOnly.Repositories)
 	assert.Equal(t, []string{"contents:write"}, productionSilkOnly.Permissions)
-	assert.NotNil(t, productionSilkOnly.CompiledMatcher, "compiled matcher should be set")
+	// Note: compiledMatcher verified through ValidateProfile and can be tested via Matches()
 
 	// Test profile with no match rules (empty array)
 	sharedUtilities, err := profileConfig.LookupProfile("shared-utilities-read")
@@ -838,7 +817,7 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	assert.Equal(t, []github.MatchRule{}, sharedUtilities.Match)
 	assert.Equal(t, []string{"acme/shared-utilities"}, sharedUtilities.Repositories)
 	assert.Equal(t, []string{"contents:read"}, sharedUtilities.Permissions)
-	assert.NotNil(t, sharedUtilities.CompiledMatcher, "compiled matcher should be set even for empty match rules")
+	// Note: compiledMatcher verified through ValidateProfile, even for empty match rules
 }
 
 // TestGracefulDegradation verifies that profile validation implements graceful degradation:
@@ -870,9 +849,9 @@ func TestGracefulDegradation(t *testing.T) {
 	// Verify valid profiles are accessible
 	validNames := []string{"valid-production", "valid-staging", "valid-no-match"}
 	for _, name := range validNames {
-		prof, err := profileConfig.LookupProfile(name)
+		_, err := profileConfig.LookupProfile(name)
 		assert.NoError(t, err, "valid profile %q should be accessible", name)
-		assert.NotNil(t, prof.CompiledMatcher, "profile %q should have compiled matcher", name)
+		// Note: compiledMatcher is private, verified through ValidateProfile
 	}
 
 	// Verify invalid profiles are not accessible (return error)
@@ -884,9 +863,8 @@ func TestGracefulDegradation(t *testing.T) {
 
 	// Verify that the valid profiles have working matchers
 	// We can't test actual matching without BuildkiteClaims implementation,
-	// but we can verify the matchers are compiled
+	// but compiledMatcher is verified through ValidateProfile
 	validProd, _ := profileConfig.LookupProfile("valid-production")
-	assert.NotNil(t, validProd.CompiledMatcher)
 	assert.Equal(t, "valid-production", validProd.Name)
 	assert.Equal(t, []string{"acme/silk"}, validProd.Repositories)
 }

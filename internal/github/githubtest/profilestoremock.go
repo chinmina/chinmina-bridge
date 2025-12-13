@@ -2,45 +2,14 @@ package githubtest
 
 import (
 	"github.com/chinmina/chinmina-bridge/internal/github"
-	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
 func createTestProfile() github.ProfileConfig {
 	// Create profiles with compiled matchers (empty match rules)
-	profiles := []github.Profile{
-		{
-			Name:            "simple-profile",
-			Repositories:    []string{"repo-1", "repo-2"},
-			Permissions:     []string{"read", "write"},
-			Match:           []github.MatchRule{},
-			CompiledMatcher: profile.CompositeMatcher(), // Empty matcher for no match rules
-		},
-		{
-			Name:            "non-default-profile",
-			Repositories:    []string{"secret-repo", "another-secret-repo"},
-			Permissions:     []string{"contents:read", "packages:read"},
-			Match:           []github.MatchRule{},
-			CompiledMatcher: profile.CompositeMatcher(), // Empty matcher for no match rules
-		},
-	}
-
-	return github.ProfileConfig{
-		Organization: struct {
-			Defaults struct {
-				Permissions []string `yaml:"permissions"`
-			} `yaml:"defaults"`
-			Profiles        []github.Profile `yaml:"profiles"`
-			InvalidProfiles map[string]error `yaml:"-"`
-		}{
-			Defaults: struct {
-				Permissions []string `yaml:"permissions"`
-			}{
-				Permissions: []string{"contents:read"},
-			},
-			Profiles:        profiles,
-			InvalidProfiles: make(map[string]error),
-		},
-	}
+	return github.NewTestProfileConfig(
+		github.NewTestProfile("simple-profile", []string{"repo-1", "repo-2"}, []string{"read", "write"}),
+		github.NewTestProfile("non-default-profile", []string{"secret-repo", "another-secret-repo"}, []string{"contents:read", "packages:read"}),
+	)
 }
 
 // CreateTestProfileStore creates a ProfileStore for testing with sample profiles.

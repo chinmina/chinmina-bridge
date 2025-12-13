@@ -104,9 +104,9 @@ type Profile struct {
 	Repositories []string    `yaml:"repositories"`
 	Permissions  []string    `yaml:"permissions"`
 
-	// CompiledMatcher is the compiled matcher from Match rules.
+	// compiledMatcher is the compiled matcher from Match rules.
 	// Populated during profile loading, not from YAML.
-	CompiledMatcher profile.Matcher `yaml:"-"`
+	compiledMatcher profile.Matcher `yaml:"-"`
 }
 
 func (config Profile) HasRepository(repo string) bool {
@@ -115,12 +115,12 @@ func (config Profile) HasRepository(repo string) bool {
 
 // Matches evaluates the profile's match conditions against the provided claims.
 // Returns the matched claims for audit logging and a boolean indicating success.
-// Panics if CompiledMatcher is nil (indicates profile wasn't properly loaded).
+// Panics if compiledMatcher is nil (indicates profile wasn't properly loaded).
 func (p Profile) Matches(claims profile.ClaimValueLookup) (matches []profile.ClaimMatch, ok bool) {
-	if p.CompiledMatcher == nil {
+	if p.compiledMatcher == nil {
 		panic("profile matcher not compiled - profile must be loaded via LoadProfile")
 	}
-	return p.CompiledMatcher(claims)
+	return p.compiledMatcher(claims)
 }
 
 type MatchRule struct {
@@ -314,7 +314,7 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 		}
 
 		// Set compiled matcher
-		prof.CompiledMatcher = matcher
+		prof.compiledMatcher = matcher
 		validProfiles = append(validProfiles, prof)
 	}
 
@@ -338,4 +338,38 @@ func DecomposePath(profileLocation string) (string, string, string) {
 	orgName, repoName, filePath := location[0], location[1], location[2]
 
 	return orgName, repoName, filePath
+}
+
+// NewTestProfile creates a Profile for testing with an empty compiled matcher.
+// This is only for use in tests where you need to construct profiles directly.
+func NewTestProfile(name string, repositories []string, permissions []string) Profile {
+	return Profile{
+		Name:            name,
+		Match:           []MatchRule{},
+		Repositories:    repositories,
+		Permissions:     permissions,
+		compiledMatcher: profile.CompositeMatcher(), // Empty matcher for testing
+	}
+}
+
+// NewTestProfileConfig creates a ProfileConfig for testing with the given profiles.
+// This is only for use in tests where you need to construct profile configs directly.
+func NewTestProfileConfig(profiles ...Profile) ProfileConfig {
+	return ProfileConfig{
+		Organization: struct {
+			Defaults struct {
+				Permissions []string `yaml:"permissions"`
+			} `yaml:"defaults"`
+			Profiles        []Profile        `yaml:"profiles"`
+			InvalidProfiles map[string]error `yaml:"-"`
+		}{
+			Defaults: struct {
+				Permissions []string `yaml:"permissions"`
+			}{
+				Permissions: []string{"contents:read"},
+			},
+			Profiles:        profiles,
+			InvalidProfiles: make(map[string]error),
+		},
+	}
 }
