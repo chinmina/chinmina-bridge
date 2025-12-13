@@ -887,6 +887,114 @@ func TestGracefulDegradation(t *testing.T) {
 	assert.Equal(t, []string{"acme/silk"}, validProd.Repositories)
 }
 
+func TestProfileMatches(t *testing.T) {
+	ctx := context.Background()
+
+	// Load profile config with various match rules
+	profileConfig, err := github.ValidateProfile(ctx, profileWithMatchRules)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name          string
+		profileName   string
+		claims        mockClaims
+		expectMatch   bool
+		expectMatches int
+	}{
+		{
+			name:        "exact match success",
+			profileName: "production-deploy",
+			claims: mockClaims{
+				"pipeline_slug": "silk-prod",
+			},
+			expectMatch:   true,
+			expectMatches: 1,
+		},
+		{
+			name:        "exact match failure",
+			profileName: "production-deploy",
+			claims: mockClaims{
+				"pipeline_slug": "cotton-prod",
+			},
+			expectMatch:   false,
+			expectMatches: 0,
+		},
+		{
+			name:        "regex match success",
+			profileName: "staging-deploy",
+			claims: mockClaims{
+				"pipeline_slug": "silk-staging",
+			},
+			expectMatch:   true,
+			expectMatches: 1,
+		},
+		{
+			name:        "regex match failure",
+			profileName: "staging-deploy",
+			claims: mockClaims{
+				"pipeline_slug": "silk-prod",
+			},
+			expectMatch:   false,
+			expectMatches: 0,
+		},
+		{
+			name:        "multiple match rules - all pass",
+			profileName: "production-silk-only",
+			claims: mockClaims{
+				"pipeline_slug": "silk-prod",
+				"build_branch":  "main",
+			},
+			expectMatch:   true,
+			expectMatches: 2,
+		},
+		{
+			name:        "multiple match rules - one fails",
+			profileName: "production-silk-only",
+			claims: mockClaims{
+				"pipeline_slug": "silk-prod",
+				"build_branch":  "feature",
+			},
+			expectMatch:   false,
+			expectMatches: 0,
+		},
+		{
+			name:        "empty match rules - always passes",
+			profileName: "shared-utilities-read",
+			claims: mockClaims{
+				"pipeline_slug": "anything",
+			},
+			expectMatch:   true,
+			expectMatches: 0,
+		},
+		{
+			name:          "empty match rules with empty claims",
+			profileName:   "shared-utilities-read",
+			claims:        mockClaims{},
+			expectMatch:   true,
+			expectMatches: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			profile, err := profileConfig.LookupProfile(tc.profileName)
+			require.NoError(t, err)
+
+			matches, ok := profile.Matches(tc.claims)
+			assert.Equal(t, tc.expectMatch, ok, "match result mismatch")
+			assert.Len(t, matches, tc.expectMatches, "number of matches mismatch")
+		})
+	}
+}
+
+// mockClaims implements profile.ClaimValueLookup for testing
+type mockClaims map[string]string
+
+func (m mockClaims) Lookup(claim string) (string, bool) {
+	val, ok := m[claim]
+	return val, ok
+}
+
 func TestProfileErrorTypes(t *testing.T) {
 	testCases := []struct {
 		name         string
