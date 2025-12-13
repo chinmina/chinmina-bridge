@@ -152,6 +152,15 @@ func (e ProfileNotFoundError) Error() string {
 	return fmt.Sprintf("profile %q not found", e.Name)
 }
 
+// ProfileMatchFailedError indicates a profile's match conditions were not met
+type ProfileMatchFailedError struct {
+	Name string
+}
+
+func (e ProfileMatchFailedError) Error() string {
+	return fmt.Sprintf("profile %q match conditions not met", e.Name)
+}
+
 // ValidateMatchRule validates that a match rule is well-formed:
 // - Exactly one of value or valuePattern must be specified
 // - The claim must be in the allowed list
