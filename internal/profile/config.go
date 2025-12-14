@@ -196,7 +196,7 @@ func ValidateMatchRule(rule MatchRule) error {
 		return errors.New("one of 'value' or 'valuePattern' is required")
 	}
 
-	// Validate claim is allowed
+	// Validate claim name is allowed and valid
 	if !IsAllowedClaim(rule.Claim) {
 		return fmt.Errorf("claim %q is not allowed for matching", rule.Claim)
 	}
@@ -237,28 +237,30 @@ func CompileMatchRules(rules []MatchRule) (Matcher, error) {
 	return CompositeMatcher(matchers...), nil
 }
 
+var allowedClaims = map[string]bool{
+	"pipeline_slug": true,
+	"pipeline_id":   true,
+	"build_number":  true,
+	"build_branch":  true,
+	"build_tag":     true,
+	"build_commit":  true,
+	"cluster_id":    true,
+	"cluster_name":  true,
+	"queue_id":      true,
+	"queue_key":     true,
+}
+
 // IsAllowedClaim checks if a claim is allowed for matching.
 // Allowed claims are standard Buildkite JWT claims or agent_tag: prefixed claims.
 func IsAllowedClaim(claim string) bool {
-	allowedClaims := map[string]bool{
-		"pipeline_slug": true,
-		"pipeline_id":   true,
-		"build_number":  true,
-		"build_branch":  true,
-		"build_tag":     true,
-		"build_commit":  true,
-		"cluster_id":    true,
-		"cluster_name":  true,
-		"queue_id":      true,
-		"queue_key":     true,
-	}
 
 	if allowedClaims[claim] {
 		return true
 	}
 
-	// Allow agent_tag: prefix
-	if strings.HasPrefix(claim, "agent_tag:") {
+	// Allow agent_tag: prefix, but make sure control or whitespace characters
+	// don't creep in and cause havoc
+	if strings.HasPrefix(claim, "agent_tag:") && IsValidClaimPart(claim) {
 		return true
 	}
 

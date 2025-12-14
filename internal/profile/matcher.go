@@ -3,6 +3,8 @@ package profile
 import (
 	"fmt"
 	"regexp"
+	"strings"
+	"unicode"
 
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 )
@@ -48,31 +50,35 @@ func (v *ValidatingLookup) Lookup(claim string) (string, error) {
 		return "", err
 	}
 
-	// Validate agent tag values (keys don't need validation)
-	// Agent tags are the only user-controlled values that need validation
-	if len(claim) > 10 && claim[:10] == "agent_tag:" {
-		// Agent tag validation: disallow control characters and enforce reasonable length
-		if len(value) > 256 {
-			return "", ClaimValidationError{
-				Claim: claim,
-				Value: value,
-				Err:   fmt.Errorf("value exceeds maximum length of 256 characters"),
-			}
+	// Agent tag validation: disallow control characters and enforce reasonable length
+	if len(value) > 256 {
+		return "", ClaimValidationError{
+			Claim: claim,
+			Value: value,
+			Err:   fmt.Errorf("claim value exceeds maximum length of 256 characters"),
 		}
+	}
 
-		// Check for control characters (0x00-0x1F, 0x7F-0x9F)
-		for _, r := range value {
-			if r < 0x20 || (r >= 0x7F && r < 0xA0) {
-				return "", ClaimValidationError{
-					Claim: claim,
-					Value: value,
-					Err:   fmt.Errorf("value contains control characters"),
-				}
-			}
+	if !IsValidClaimPart(value) {
+		return "", ClaimValidationError{
+			Claim: claim,
+			Value: value,
+			Err:   fmt.Errorf("claim value contains invalid characters"),
 		}
 	}
 
 	return value, nil
+}
+
+// IsValidClaimPart checks if a claim part (name or value) is valid. Disallows
+// control characters and whitespace, as these can cause security issues with
+// claim processing.
+func IsValidClaimPart(c string) bool {
+	return !strings.ContainsFunc(c, IsUnicodeControlOrWhitespace)
+}
+
+func IsUnicodeControlOrWhitespace(r rune) bool {
+	return unicode.IsControl(r) || unicode.IsSpace(r)
 }
 
 // Matcher evaluates whether claims satisfy match conditions.
