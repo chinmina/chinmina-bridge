@@ -28,6 +28,24 @@ type ClaimMatch struct {
 	Value string // The actual value that satisfied the match condition
 }
 
+// MatchAttempt records details of a failed match attempt for audit logging.
+// This provides visibility into why a profile match failed.
+type MatchAttempt struct {
+	Claim       string // The claim name that was being matched
+	Pattern     string // The pattern that was being matched against
+	ActualValue string // The actual value that was attempted
+}
+
+// MatchResult encapsulates the result of a matcher evaluation.
+// It supports audit logging by providing structured access to both
+// successful matches and failed attempts.
+type MatchResult struct {
+	Matched bool          // Whether the match succeeded
+	Matches []ClaimMatch  // The matches if successful (empty if not matched)
+	Attempt *MatchAttempt // Details of failed attempt (nil if matched or error)
+	Err     error         // Validation or other errors (nil if matched or no match)
+}
+
 // ValidatingLookup wraps a ClaimValueLookup to add validation of claim values.
 // This is applied at the vendor layer to validate claims lazily: only claims
 // actually used in matchers are validated.
@@ -82,34 +100,51 @@ func IsUnicodeControlOrWhitespace(r rune) bool {
 }
 
 // Matcher evaluates whether claims satisfy match conditions.
-// Returns matched claims for audit logging and an error indicating failure.
-// Multiple ClaimMatch entries may be returned when composite matchers combine multiple conditions.
-// Returns (matches, nil) on success, (nil, ErrNoMatch) when conditions aren't met,
-// or (nil, error) for validation or other errors.
-type Matcher func(claims ClaimValueLookup) (matches []ClaimMatch, err error)
+// Returns a MatchResult containing:
+// - Success: Matched=true, Matches populated
+// - Pattern mismatch: Matched=false, Attempt populated
+// - Validation error: Err populated
+type Matcher func(claims ClaimValueLookup) MatchResult
 
 // ExactMatcher creates a matcher that performs exact string comparison on a claim value.
 // Returns a successful match only when the claim exists and exactly equals the expected value.
 // Performance: O(1) string comparison.
 func ExactMatcher(matchClaim string, matchValue string) Matcher {
-	return func(claims ClaimValueLookup) ([]ClaimMatch, error) {
+	return func(claims ClaimValueLookup) MatchResult {
 		value, err := claims.Lookup(matchClaim)
 		if err != nil {
 			// Distinguish between not found (no match) and validation error
 			if err == jwt.ErrClaimNotFound {
-				return nil, ErrNoMatch
+				return MatchResult{
+					Matched: false,
+					Attempt: &MatchAttempt{
+						Claim:       matchClaim,
+						Pattern:     matchValue,
+						ActualValue: "",
+					},
+				}
 			}
-			return nil, err
+			return MatchResult{Err: err}
 		}
 
 		if value != matchValue {
-			return nil, ErrNoMatch
+			return MatchResult{
+				Matched: false,
+				Attempt: &MatchAttempt{
+					Claim:       matchClaim,
+					Pattern:     matchValue,
+					ActualValue: value,
+				},
+			}
 		}
 
-		return []ClaimMatch{{
-			Claim: matchClaim,
-			Value: value,
-		}}, nil
+		return MatchResult{
+			Matched: true,
+			Matches: []ClaimMatch{{
+				Claim: matchClaim,
+				Value: value,
+			}},
+		}
 	}
 }
 
@@ -140,24 +175,41 @@ func RegexMatcher(matchClaim string, matchPattern string) (Matcher, error) {
 		return nil, fmt.Errorf("anchored pattern failed to compile: %w", err)
 	}
 
-	return func(claims ClaimValueLookup) ([]ClaimMatch, error) {
+	return func(claims ClaimValueLookup) MatchResult {
 		value, err := claims.Lookup(matchClaim)
 		if err != nil {
 			// Distinguish between not found (no match) and validation error
 			if err == jwt.ErrClaimNotFound {
-				return nil, ErrNoMatch
+				return MatchResult{
+					Matched: false,
+					Attempt: &MatchAttempt{
+						Claim:       matchClaim,
+						Pattern:     matchPattern,
+						ActualValue: "",
+					},
+				}
 			}
-			return nil, err
+			return MatchResult{Err: err}
 		}
 
 		if !compiledRegex.MatchString(value) {
-			return nil, ErrNoMatch
+			return MatchResult{
+				Matched: false,
+				Attempt: &MatchAttempt{
+					Claim:       matchClaim,
+					Pattern:     matchPattern,
+					ActualValue: value,
+				},
+			}
 		}
 
-		return []ClaimMatch{{
-			Claim: matchClaim,
-			Value: value,
-		}}, nil
+		return MatchResult{
+			Matched: true,
+			Matches: []ClaimMatch{{
+				Claim: matchClaim,
+				Value: value,
+			}},
+		}
 	}, nil
 }
 
@@ -169,8 +221,11 @@ func RegexMatcher(matchClaim string, matchPattern string) (Matcher, error) {
 func CompositeMatcher(matchers ...Matcher) Matcher {
 	// Handle empty case: no match rules = always match
 	if len(matchers) == 0 {
-		return func(claims ClaimValueLookup) ([]ClaimMatch, error) {
-			return []ClaimMatch{}, nil
+		return func(claims ClaimValueLookup) MatchResult {
+			return MatchResult{
+				Matched: true,
+				Matches: []ClaimMatch{},
+			}
 		}
 	}
 
@@ -180,18 +235,25 @@ func CompositeMatcher(matchers ...Matcher) Matcher {
 	}
 
 	// Multiple matchers: AND logic with short-circuit
-	return func(claims ClaimValueLookup) ([]ClaimMatch, error) {
+	return func(claims ClaimValueLookup) MatchResult {
 		matches := make([]ClaimMatch, 0, len(matchers))
 
 		for _, m := range matchers {
-			mMatches, err := m(claims)
-			if err != nil {
-				// Short-circuit on first failure
-				return nil, err
+			result := m(claims)
+			if result.Err != nil {
+				// Short-circuit on validation error
+				return result
 			}
-			matches = append(matches, mMatches...)
+			if !result.Matched {
+				// Short-circuit on first match failure
+				return result
+			}
+			matches = append(matches, result.Matches...)
 		}
 
-		return matches, nil
+		return MatchResult{
+			Matched: true,
+			Matches: matches,
+		}
 	}
 }

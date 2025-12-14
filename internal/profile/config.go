@@ -135,11 +135,12 @@ func (config Profile) HasRepository(repo string) bool {
 }
 
 // Matches evaluates the profile's match conditions against the provided claims.
-// Returns the matched claims for audit logging and an error indicating failure.
-// Returns (matches, nil) on success, (nil, ErrNoMatch) when conditions aren't met,
-// or (nil, error) for validation or other errors.
+// Returns a MatchResult containing:
+// - Success: Matched=true, Matches populated
+// - Pattern mismatch: Matched=false, Attempt populated
+// - Validation error: Err populated
 // Panics if compiledMatcher is nil (indicates profile wasn't properly loaded).
-func (p Profile) Matches(claims ClaimValueLookup) (matches []ClaimMatch, err error) {
+func (p Profile) Matches(claims ClaimValueLookup) MatchResult {
 	if p.compiledMatcher == nil {
 		panic("profile matcher not compiled - profile must be loaded via LoadProfile")
 	}

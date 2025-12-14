@@ -1011,13 +1011,15 @@ func TestProfileMatches(t *testing.T) {
 			prof, err := profileConfig.LookupProfile(tc.profileName)
 			require.NoError(t, err)
 
-			matches, err := prof.Matches(tc.claims)
+			result := prof.Matches(tc.claims)
 			if tc.expectMatch {
-				assert.NoError(t, err, "match should succeed")
+				assert.True(t, result.Matched, "match should succeed")
+				assert.Nil(t, result.Err, "should have no error")
 			} else {
-				assert.ErrorIs(t, err, profile.ErrNoMatch, "match should fail")
+				assert.False(t, result.Matched, "match should fail")
+				assert.NotNil(t, result.Attempt, "should have attempt details")
 			}
-			assert.Len(t, matches, tc.expectMatches, "number of matches mismatch")
+			assert.Len(t, result.Matches, tc.expectMatches, "number of matches mismatch")
 		})
 	}
 }
