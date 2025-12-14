@@ -170,3 +170,178 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	assert.Empty(t, entry.Error)
 	assert.Equal(t, "profile://organization/org/profile/test-profile", entry.RequestedProfile)
 }
+
+func TestAuditor_SuccessfulMatch(t *testing.T) {
+	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
+		return &vendor.ProfileToken{
+			Repositories:           []string{"https://example.com/repo"},
+			Permissions:            []string{"contents:read"},
+			RequestedRepositoryURL: "https://example.com/repo",
+			Expiry:                 time.Now().Add(1 * time.Hour),
+			MatchResult: profile.MatchResult{
+				Matched: true,
+				Matches: []profile.ClaimMatch{
+					{Claim: "pipeline_slug", Value: "my-pipeline"},
+					{Claim: "build_branch", Value: "main"},
+				},
+			},
+		}, nil
+	}
+	auditedVendor := vendor.Auditor(successfulVendor)
+
+	ctx, _ := audit.Context(context.Background())
+	repo := "example-repo"
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
+	}
+	token, err := auditedVendor(ctx, ref, repo)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, token)
+
+	entry := audit.Log(ctx)
+	assert.Empty(t, entry.Error)
+	expected := []audit.ClaimMatch{
+		{Claim: "pipeline_slug", Value: "my-pipeline"},
+		{Claim: "build_branch", Value: "main"},
+	}
+	assert.Equal(t, expected, entry.ClaimsMatched)
+	assert.Nil(t, entry.ClaimsFailed)
+}
+
+func TestAuditor_FailedMatch(t *testing.T) {
+	failedVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
+		return &vendor.ProfileToken{
+			Repositories:           []string{"https://example.com/repo"},
+			Permissions:            []string{"contents:read"},
+			RequestedRepositoryURL: "https://example.com/repo",
+			Expiry:                 time.Now().Add(1 * time.Hour),
+			MatchResult: profile.MatchResult{
+				Matched: false,
+				Attempt: &profile.MatchAttempt{
+					Claim:       "pipeline_slug",
+					Pattern:     ".*-release",
+					ActualValue: "my-pipeline",
+				},
+			},
+		}, nil
+	}
+	auditedVendor := vendor.Auditor(failedVendor)
+
+	ctx, _ := audit.Context(context.Background())
+	repo := "example-repo"
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
+	}
+	token, err := auditedVendor(ctx, ref, repo)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, token)
+
+	entry := audit.Log(ctx)
+	assert.Empty(t, entry.Error)
+	expected := []audit.ClaimFailure{
+		{
+			Claim:   "pipeline_slug",
+			Pattern: ".*-release",
+			Value:   "my-pipeline",
+		},
+	}
+	assert.Equal(t, expected, entry.ClaimsFailed)
+	assert.Nil(t, entry.ClaimsMatched)
+}
+
+func TestAuditor_EmptyMatchRules(t *testing.T) {
+	emptyRulesVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
+		return &vendor.ProfileToken{
+			Repositories:           []string{"https://example.com/repo"},
+			Permissions:            []string{"contents:read"},
+			RequestedRepositoryURL: "https://example.com/repo",
+			Expiry:                 time.Now().Add(1 * time.Hour),
+			MatchResult: profile.MatchResult{
+				Matched: true,
+				Matches: []profile.ClaimMatch{},
+			},
+		}, nil
+	}
+	auditedVendor := vendor.Auditor(emptyRulesVendor)
+
+	ctx, _ := audit.Context(context.Background())
+	repo := "example-repo"
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
+	}
+	token, err := auditedVendor(ctx, ref, repo)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, token)
+
+	entry := audit.Log(ctx)
+	assert.Empty(t, entry.Error)
+	assert.NotNil(t, entry.ClaimsMatched)
+	assert.Empty(t, entry.ClaimsMatched)
+	assert.Nil(t, entry.ClaimsFailed)
+}
+
+func TestAuditor_ValidationError(t *testing.T) {
+	validationErrorVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
+		return &vendor.ProfileToken{
+			Repositories:           []string{"https://example.com/repo"},
+			Permissions:            []string{"contents:read"},
+			RequestedRepositoryURL: "https://example.com/repo",
+			Expiry:                 time.Now().Add(1 * time.Hour),
+			MatchResult: profile.MatchResult{
+				Matched: false,
+				Err:     errors.New("claim validation failed: claim value contains invalid characters"),
+				Attempt: &profile.MatchAttempt{
+					Claim:       "pipeline_slug",
+					Pattern:     ".*-release",
+					ActualValue: "my-pipeline\x00",
+				},
+			},
+		}, nil
+	}
+	auditedVendor := vendor.Auditor(validationErrorVendor)
+
+	ctx, _ := audit.Context(context.Background())
+	repo := "example-repo"
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
+	}
+	token, err := auditedVendor(ctx, ref, repo)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, token)
+
+	entry := audit.Log(ctx)
+	assert.Empty(t, entry.Error)
+	expected := []audit.ClaimFailure{
+		{
+			Claim:   "pipeline_slug",
+			Pattern: ".*-release",
+			Value:   "my-pipeline\x00",
+		},
+	}
+	assert.Equal(t, expected, entry.ClaimsFailed)
+	assert.Nil(t, entry.ClaimsMatched)
+}

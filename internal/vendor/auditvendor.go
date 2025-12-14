@@ -25,6 +25,42 @@ func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
 			entry.Permissions = token.Permissions
 			entry.RequestedProfile = ref.String()
 			entry.ExpirySecs = token.Expiry.Unix()
+
+			// Populate match results for audit logging
+			result := token.MatchResult
+			if result.Err != nil {
+				// Validation error: populate ClaimsFailed if attempt details available
+				if result.Attempt != nil {
+					entry.ClaimsFailed = []audit.ClaimFailure{
+						{
+							Claim:   result.Attempt.Claim,
+							Pattern: result.Attempt.Pattern,
+							Value:   result.Attempt.ActualValue,
+						},
+					}
+				}
+			} else if !result.Matched {
+				// Match failed: populate ClaimsFailed with attempt details
+				if result.Attempt != nil {
+					entry.ClaimsFailed = []audit.ClaimFailure{
+						{
+							Claim:   result.Attempt.Claim,
+							Pattern: result.Attempt.Pattern,
+							Value:   result.Attempt.ActualValue,
+						},
+					}
+				}
+			} else {
+				// Successful match: populate ClaimsMatched
+				// Always initialize as empty array (not nil) to distinguish "no rules" from "not processed"
+				entry.ClaimsMatched = make([]audit.ClaimMatch, 0, len(result.Matches))
+				for _, match := range result.Matches {
+					entry.ClaimsMatched = append(entry.ClaimsMatched, audit.ClaimMatch{
+						Claim: match.Claim,
+						Value: match.Value,
+					})
+				}
+			}
 		}
 
 		return token, err
