@@ -83,6 +83,7 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			Profile:                ref.ShortString(),
 			Token:                  token,
 			Expiry:                 expiry,
+			MatchResult:            result,
 		}, nil
 	}
 }

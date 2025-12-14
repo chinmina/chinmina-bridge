@@ -28,6 +28,10 @@ type ProfileToken struct {
 	Permissions            []string  `json:"permissions"`
 	Token                  string    `json:"token"`
 	Expiry                 time.Time `json:"expiry"`
+	// MatchResult contains the match evaluation result for audit logging.
+	// For profiles with match rules, this contains the matched claim/value pairs.
+	// For profiles without match rules (available to all), this is an empty slice.
+	MatchResult profile.MatchResult `json:"-"`
 }
 
 func (t ProfileToken) URL() (*url.URL, error) {
