@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -447,6 +448,67 @@ func TestHandlePostToken_ProfileUnavailableError(t *testing.T) {
 	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
 	require.NoError(t, err)
 	assert.Equal(t, ErrorResponse{Error: "profile unavailable: validation failed"}, respBody)
+}
+
+func TestHandlePostToken_ClaimValidationError(t *testing.T) {
+	tokenVendor := tvFails(profile.ClaimValidationError{
+		Claim: "build_branch",
+		Value: "main\n",
+		Err:   errors.New("contains control character or whitespace"),
+	})
+
+	ctx := claimsContext()
+
+	req, err := http.NewRequest("POST", "/token", nil)
+	require.NoError(t, err)
+
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// act
+	handler := handlePostToken(tokenVendor)
+	handler.ServeHTTP(rr, req)
+
+	// assert
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "invalid JWT claims"}, respBody)
+}
+
+func TestHandlePostGitCredentials_ClaimValidationError(t *testing.T) {
+	tokenVendor := tvFails(profile.ClaimValidationError{
+		Claim: "build_branch",
+		Value: "main\n",
+		Err:   errors.New("contains control character or whitespace"),
+	})
+
+	ctx := claimsContext()
+
+	// request body in git-credentials format
+	body := strings.NewReader("protocol=https\nhost=github.com\npath=org/repo\n\n")
+
+	req, err := http.NewRequest("POST", "/git-credentials", body)
+	require.NoError(t, err)
+
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// act
+	handler := handlePostGitCredentials(tokenVendor)
+	handler.ServeHTTP(rr, req)
+
+	// assert
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "invalid JWT claims"}, respBody)
 }
 
 func TestWriteJSONError_Success(t *testing.T) {
