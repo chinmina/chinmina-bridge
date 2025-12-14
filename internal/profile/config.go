@@ -298,7 +298,7 @@ func LoadProfile(ctx context.Context, gh github.Client, orgProfileLocation strin
 		Str("url", orgProfileLocation).
 		Int("valid_profiles", validCount).
 		Int("invalid_profiles", invalidCount).
-		Msg("organization profile configuration loaded with validation warnings")
+		Msg("loaded organization profile configuration")
 
 	return profileConfig, nil
 }

@@ -108,10 +108,18 @@ func createAppTransport(ctx context.Context, cfg config.GithubConfig, wrapped ht
 }
 
 func (c Client) GetFileContent(ctx context.Context, owner string, repo string, path string) (string, error) {
-	contents, _, _, err := c.client.Repositories.GetContents(ctx, owner, repo, path, nil)
+	fileContents, directoryContents, _, err := c.client.Repositories.GetContents(ctx, owner, repo, path, nil)
 
-	if contents != nil && err == nil {
-		return contents.GetContent()
+	if err != nil {
+		return "", err
+	}
+
+	if directoryContents != nil {
+		return "", fmt.Errorf("path %s in repo %s/%s is a directory, expected a file", path, owner, repo)
+	}
+
+	if fileContents != nil {
+		return fileContents.GetContent()
 	}
 
 	return "", err
