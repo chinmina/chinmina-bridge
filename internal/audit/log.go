@@ -25,6 +25,29 @@ var (
 	logKey = key{}
 )
 
+// ClaimMatch represents a successful claim match for audit logging.
+type ClaimMatch struct {
+	Claim string
+	Value string
+}
+
+// MarshalZerologObject implements zerolog.LogObjectMarshaler for ClaimMatch.
+func (cm ClaimMatch) MarshalZerologObject(e *zerolog.Event) {
+	e.Str("claim", cm.Claim).Str("value", cm.Value)
+}
+
+// ClaimFailure represents a failed claim match attempt for audit logging.
+type ClaimFailure struct {
+	Claim   string
+	Pattern string
+	Value   string
+}
+
+// MarshalZerologObject implements zerolog.LogObjectMarshaler for ClaimFailure.
+func (cf ClaimFailure) MarshalZerologObject(e *zerolog.Event) {
+	e.Str("claim", cf.Claim).Str("pattern", cf.Pattern).Str("value", cf.Value)
+}
+
 // Entry is an audit log entry for the current request.
 type Entry struct {
 	Method              string
@@ -43,6 +66,8 @@ type Entry struct {
 	Repositories        []string
 	Permissions         []string
 	ExpirySecs          int64
+	ClaimsMatched       []ClaimMatch
+	ClaimsFailed        []ClaimFailure
 }
 
 // MarshalZerologObject implements zerolog.LogObjectMarshaler. This avoids the
@@ -86,6 +111,22 @@ func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 
 	if len(e.Permissions) > 0 {
 		event.Strs("permissions", e.Permissions)
+	}
+
+	if e.ClaimsMatched != nil {
+		arr := zerolog.Arr()
+		for _, match := range e.ClaimsMatched {
+			arr.Object(match)
+		}
+		event.Array("matches", arr)
+	}
+
+	if e.ClaimsFailed != nil {
+		arr := zerolog.Arr()
+		for _, failure := range e.ClaimsFailed {
+			arr.Object(failure)
+		}
+		event.Array("attempted_patterns", arr)
 	}
 }
 

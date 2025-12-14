@@ -151,3 +151,60 @@ func withLogHook(ctx context.Context, hook zerolog.HookFunc) context.Context {
 	testLog := log.Logger.With().Logger().Hook(hook)
 	return testLog.WithContext(ctx)
 }
+
+func TestClaimMatchSerialization(t *testing.T) {
+	testhelpers.SetupLogger(t)
+
+	tests := []struct {
+		name  string
+		entry audit.Entry
+	}{
+		{
+			name: "successful matches",
+			entry: audit.Entry{
+				ClaimsMatched: []audit.ClaimMatch{
+					{Claim: "pipeline_slug", Value: "silk-prod"},
+					{Claim: "build_branch", Value: "main"},
+				},
+			},
+		},
+		{
+			name: "failed matches",
+			entry: audit.Entry{
+				ClaimsFailed: []audit.ClaimFailure{
+					{Claim: "pipeline_slug", Pattern: ".*-release", Value: "silk-staging"},
+				},
+			},
+		},
+		{
+			name: "empty matches array",
+			entry: audit.Entry{
+				ClaimsMatched: []audit.ClaimMatch{},
+			},
+		},
+		{
+			name:  "nil matches not serialized",
+			entry: audit.Entry{},
+		},
+		{
+			name: "both matches and failures",
+			entry: audit.Entry{
+				ClaimsMatched: []audit.ClaimMatch{
+					{Claim: "pipeline_slug", Value: "silk-prod"},
+				},
+				ClaimsFailed: []audit.ClaimFailure{
+					{Claim: "build_branch", Pattern: "main", Value: "feature"},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Verify the marshaler doesn't panic and runs successfully
+			assert.NotPanics(t, func() {
+				tt.entry.MarshalZerologObject(zerolog.Dict())
+			})
+		})
+	}
+}
