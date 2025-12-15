@@ -126,7 +126,7 @@ func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 		for _, failure := range e.ClaimsFailed {
 			arr.Object(failure)
 		}
-		event.Array("attempted_patterns", arr)
+		event.Array("attemptedPatterns", arr)
 	}
 }
 
