@@ -85,7 +85,8 @@ type ProfileConfig struct {
 func (p ProfileConfig) MarshalZerologObject(e *zerolog.Event) {
 	result, err := json.Marshal(p)
 	if err != nil {
-		e.Err(err).Msg("failed to marshal ProfileConfig")
+		err = fmt.Errorf("failed to marshal ProfileConfig: %w", err)
+		e.Err(err)
 		return
 	}
 
