@@ -11,7 +11,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zerologr v1.2.3
 	github.com/golang-jwt/jwt/v4 v4.5.2
-	github.com/google/go-github/v74 v74.0.0
+	github.com/google/go-github/v80 v80.0.0
 	github.com/justinas/alice v1.2.0
 	github.com/maypok86/otter/v2 v2.2.1
 	github.com/rs/zerolog v1.34.0
