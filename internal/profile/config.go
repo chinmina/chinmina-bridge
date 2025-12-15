@@ -362,9 +362,9 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 }
 
 // DecomposePath into the owner, repo, and path (no http prefix), assuming the
-// path is in the format host/owner/repo/path_seg1/path_seg2/...
+// location is in the format owner:repo:path_seg1/path_seg2/...
 func DecomposePath(profileLocation string) (string, string, string) {
-	// Eg: "/cultureamp/chinmina/docs/profile.yaml"
+	// e.g.: "cultureamp:chinmina:docs/profile.yaml"
 	location := strings.SplitN(profileLocation, ":", 3)
 
 	if len(location) != 3 {
