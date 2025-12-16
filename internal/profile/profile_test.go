@@ -45,6 +45,9 @@ var profileWithMixedValidation string
 //go:embed testdata/profile/profile_with_duplicate_names.yaml
 var profileWithDuplicateNames string
 
+//go:embed testdata/profile/profile_with_empty_lists.yaml
+var profileWithEmptyLists string
+
 // JSON writes a JSON response for testing HTTP handlers
 func JSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -947,6 +950,51 @@ func TestDuplicateProfileNames(t *testing.T) {
 	staging, err := profileConfig.LookupProfile("staging")
 	assert.NoError(t, err, "staging profile should be accessible")
 	assert.Equal(t, "staging", staging.Name)
+}
+
+func TestEmptyRepositoriesAndPermissions(t *testing.T) {
+	ctx := context.Background()
+
+	profileConfig, err := profile.ValidateProfile(ctx, profileWithEmptyLists)
+	require.NoError(t, err, "ValidateProfile should not return an error even with empty lists")
+
+	// We should have 3 invalid profiles (empty-repositories, empty-permissions, both-empty)
+	assert.Len(t, profileConfig.Organization.InvalidProfiles, 3, "expected 3 invalid profiles")
+
+	// Verify the empty-repositories profile is tracked with an error
+	assert.Contains(t, profileConfig.Organization.InvalidProfiles, "empty-repositories")
+	assert.ErrorContains(t, profileConfig.Organization.InvalidProfiles["empty-repositories"], "repositories list must be non-empty")
+
+	// Verify the empty-permissions profile is tracked with an error
+	assert.Contains(t, profileConfig.Organization.InvalidProfiles, "empty-permissions")
+	assert.ErrorContains(t, profileConfig.Organization.InvalidProfiles["empty-permissions"], "permissions list must be non-empty")
+
+	// Verify the both-empty profile is tracked with an error (should fail on repositories first)
+	assert.Contains(t, profileConfig.Organization.InvalidProfiles, "both-empty")
+	assert.ErrorContains(t, profileConfig.Organization.InvalidProfiles["both-empty"], "repositories list must be non-empty")
+
+	// Only the valid profile should remain
+	assert.Len(t, profileConfig.Organization.Profiles, 1, "expected 1 valid profile")
+
+	// Verify the valid profile is accessible
+	expected := profile.Profile{
+		Name:         "valid-profile",
+		Repositories: []string{"acme/test"},
+		Permissions:  []string{"contents:read"},
+	}
+
+	validProf, err := profileConfig.LookupProfile("valid-profile")
+	assert.NoError(t, err, "valid profile should be accessible")
+	assert.Equal(t, expected.Name, validProf.Name)
+	assert.Equal(t, expected.Repositories, validProf.Repositories)
+	assert.Equal(t, expected.Permissions, validProf.Permissions)
+
+	// Verify invalid profiles return errors
+	invalidNames := []string{"empty-repositories", "empty-permissions", "both-empty"}
+	for _, name := range invalidNames {
+		_, err := profileConfig.LookupProfile(name)
+		assert.Error(t, err, "invalid profile %q should return error", name)
+	}
 }
 
 func TestProfileMatches(t *testing.T) {

@@ -343,23 +343,27 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 		if seenNames[prof.Name] {
 			err := fmt.Errorf("duplicate profile name: %q", prof.Name)
 			invalidProfiles[prof.Name] = err
-
-			log.Warn().
-				Err(err).
-				Str("profile", prof.Name).
-				Msg("profile validation failed, profile unavailable")
 			continue
 		}
 		seenNames[prof.Name] = true
 
+		// Check for empty repositories list
+		if len(prof.Repositories) == 0 {
+			err := fmt.Errorf("repositories list must be non-empty")
+			invalidProfiles[prof.Name] = err
+			continue
+		}
+
+		// Check for empty permissions list
+		if len(prof.Permissions) == 0 {
+			err := fmt.Errorf("permissions list must be non-empty")
+			invalidProfiles[prof.Name] = err
+			continue
+		}
+
 		matcher, err := CompileMatchRules(prof.Match)
 		if err != nil {
 			invalidProfiles[prof.Name] = err
-
-			log.Warn().
-				Err(err).
-				Str("profile", prof.Name).
-				Msg("profile validation failed, profile unavailable")
 			continue
 		}
 
