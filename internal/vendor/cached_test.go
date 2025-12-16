@@ -28,7 +28,11 @@ func TestCacheMissOnFirstRequest(t *testing.T) {
 	}
 	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
-	assert.Equal(t, "first-call", token.Token)
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:                  "first-call",
+		RequestedRepositoryURL: "any-repo",
+		Profile:                "repo:default",
+	}, token)
 }
 
 func TestCacheMissWithNilResponse(t *testing.T) {

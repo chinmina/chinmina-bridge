@@ -99,23 +99,20 @@ func assertProfileConfigEqual(t *testing.T, expected, actual profile.ProfileConf
 
 // Test that the triplet logic works as expected
 func TestTripletDecomposition(t *testing.T) {
-	// Example of a valid profile URL
-	profileConfig := "chinmina:chinmina-bridge:docs/profile.yaml"
-	// Test that the profile triplet is valid
+	t.Run("valid triplet decomposition", func(t *testing.T) {
+		owner, repo, path := profile.DecomposePath("chinmina:chinmina-bridge:docs/profile.yaml")
+		assert.Equal(t, "chinmina", owner)
+		assert.Equal(t, "chinmina-bridge", repo)
+		assert.Equal(t, "docs/profile.yaml", path)
+	})
 
-	owner, repo, path := profile.DecomposePath(profileConfig)
-	assert.Equal(t, "chinmina", owner)
-	assert.Equal(t, "chinmina-bridge", repo)
-	assert.Equal(t, "docs/profile.yaml", path)
-
-	// Example of an invalid profile triplet
-	profileConfig = "chinmina:profile.yaml"
-
-	// Test that the profile triplet is invalid (path contains missing owner/repo)
-	owner, repo, path = profile.DecomposePath(profileConfig)
-	assert.Equal(t, "", owner)
-	assert.Equal(t, "", repo)
-	assert.Equal(t, "", path)
+	// Invalid triplet test cases (failure table)
+	t.Run("invalid triplet with missing owner and repo", func(t *testing.T) {
+		owner, repo, path := profile.DecomposePath("chinmina:profile.yaml")
+		assert.Equal(t, "", owner)
+		assert.Equal(t, "", repo)
+		assert.Equal(t, "", path)
+	})
 }
 
 // Test that repository contents are handled correctly
@@ -393,8 +390,12 @@ func TestProfile(t *testing.T) {
 			require.NoError(t, err)
 
 			p, err := profileConfig.LookupProfile(tc.profileName)
-			assert.Equal(t, err == nil, tc.expectedHasProfile)
-			assert.Equal(t, p.HasRepository(tc.repositoryName), tc.expectedHasRepository)
+			if tc.expectedHasProfile {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedHasRepository, p.HasRepository(tc.repositoryName))
+			} else {
+				require.Error(t, err)
+			}
 		})
 	}
 }
@@ -418,11 +419,12 @@ func TestGetProfileFromStore(t *testing.T) {
 	t.Run("Successful retrieval of an existing profile", func(t *testing.T) {
 		retrievedProfile, err := store.GetProfileFromStore(validProfileName)
 		require.NoError(t, err)
+		// Use struct equality to verify the profile. Note: compiledMatcher is private
+		// and verified through Matches() behavior, so we use assertProfileConfigEqual pattern
 		assert.Equal(t, expectedProfile.Name, retrievedProfile.Name)
 		assert.Equal(t, expectedProfile.Match, retrievedProfile.Match)
 		assert.Equal(t, expectedProfile.Repositories, retrievedProfile.Repositories)
 		assert.Equal(t, expectedProfile.Permissions, retrievedProfile.Permissions)
-		// Note: compiledMatcher is private and verified through Matches() behavior
 	})
 
 	t.Run("Error handling when a profile is not found", func(t *testing.T) {
@@ -456,18 +458,15 @@ func TestGetProfileFromStore(t *testing.T) {
 		var mu sync.Mutex
 		accessCount := 0
 
-		for i := 0; i < numGoroutines; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
+		for range numGoroutines {
+			wg.Go(func() {
 				_, err := store.GetProfileFromStore(validProfileName)
 				assert.NoError(t, err)
 
 				mu.Lock()
 				accessCount++
 				mu.Unlock()
-			}()
+			})
 		}
 
 		wg.Wait()
@@ -494,11 +493,8 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 		finishReading := make(chan struct{})
 
 		// Launch multiple read goroutines
-		for i := 0; i < numGoroutines; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
+		for range numGoroutines {
+			wg.Go(func() {
 				// Signal that we've started reading
 				startedReading <- struct{}{}
 
@@ -508,11 +504,11 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 
 				// Wait for signal to finish
 				<-finishReading
-			}()
+			})
 		}
 
 		// Wait for all goroutines to start reading
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			select {
 			case <-startedReading:
 				// Good, goroutine started
@@ -537,10 +533,8 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 		errChan := make(chan error, numReaders+numWriters)
 
 		// Launch concurrent readers
-		for i := 0; i < numReaders; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range numReaders {
+			wg.Go(func() {
 				// Multiple reads should all succeed
 				_, err := store.GetProfileFromStore("test-profile")
 				if err != nil {
@@ -550,19 +544,17 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 				if err != nil {
 					errChan <- err
 				}
-			}()
+			})
 		}
 
 		// Launch concurrent writers
-		for i := 0; i < numWriters; i++ {
-			wg.Add(1)
-			go func(idx int) {
-				defer wg.Done()
+		for range numWriters {
+			wg.Go(func() {
 				newConfig := profile.NewTestProfileConfig(
 					profile.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
 				)
 				store.Update(&newConfig)
-			}(i)
+			})
 		}
 
 		wg.Wait()
@@ -819,60 +811,83 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	// Verify we have all expected profiles
 	assert.Len(t, profileConfig.Organization.Profiles, 4)
 
-	// Test profile with exact match rule
-	productionDeploy, err := profileConfig.LookupProfile("production-deploy")
-	require.NoError(t, err)
-	assert.Equal(t, "production-deploy", productionDeploy.Name)
-	assert.Equal(t, []profile.MatchRule{
+	testCases := []struct {
+		name            string
+		profileName     string
+		expectedProfile profile.Profile
+	}{
 		{
-			Claim: "pipeline_slug",
-			Value: "silk-prod",
+			name:        "exact match rule",
+			profileName: "production-deploy",
+			expectedProfile: profile.Profile{
+				Name: "production-deploy",
+				Match: []profile.MatchRule{
+					{
+						Claim: "pipeline_slug",
+						Value: "silk-prod",
+					},
+				},
+				Repositories: []string{"acme/silk"},
+				Permissions:  []string{"contents:write"},
+			},
 		},
-	}, productionDeploy.Match)
-	assert.Equal(t, []string{"acme/silk"}, productionDeploy.Repositories)
-	assert.Equal(t, []string{"contents:write"}, productionDeploy.Permissions)
-	// Note: compiledMatcher verified through ValidateProfile and can be tested via Matches()
+		{
+			name:        "regex pattern match",
+			profileName: "staging-deploy",
+			expectedProfile: profile.Profile{
+				Name: "staging-deploy",
+				Match: []profile.MatchRule{
+					{
+						Claim:        "pipeline_slug",
+						ValuePattern: "(silk|cotton)-(staging|stg)",
+					},
+				},
+				Repositories: []string{"acme/silk", "acme/cotton"},
+				Permissions:  []string{"contents:write"},
+			},
+		},
+		{
+			name:        "multiple match rules (AND logic)",
+			profileName: "production-silk-only",
+			expectedProfile: profile.Profile{
+				Name: "production-silk-only",
+				Match: []profile.MatchRule{
+					{
+						Claim:        "pipeline_slug",
+						ValuePattern: "silk-.*",
+					},
+					{
+						Claim: "build_branch",
+						Value: "main",
+					},
+				},
+				Repositories: []string{"acme/silk"},
+				Permissions:  []string{"contents:write"},
+			},
+		},
+		{
+			name:        "no match rules (empty array)",
+			profileName: "shared-utilities-read",
+			expectedProfile: profile.Profile{
+				Name:         "shared-utilities-read",
+				Match:        []profile.MatchRule{},
+				Repositories: []string{"acme/shared-utilities"},
+				Permissions:  []string{"contents:read"},
+			},
+		},
+	}
 
-	// Test profile with regex pattern match
-	stagingDeploy, err := profileConfig.LookupProfile("staging-deploy")
-	require.NoError(t, err)
-	assert.Equal(t, "staging-deploy", stagingDeploy.Name)
-	assert.Equal(t, []profile.MatchRule{
-		{
-			Claim:        "pipeline_slug",
-			ValuePattern: "(silk|cotton)-(staging|stg)",
-		},
-	}, stagingDeploy.Match)
-	assert.Equal(t, []string{"acme/silk", "acme/cotton"}, stagingDeploy.Repositories)
-	assert.Equal(t, []string{"contents:write"}, stagingDeploy.Permissions)
-	// Note: compiledMatcher verified through ValidateProfile and can be tested via Matches()
-
-	// Test profile with multiple match rules (AND logic)
-	productionSilkOnly, err := profileConfig.LookupProfile("production-silk-only")
-	require.NoError(t, err)
-	assert.Equal(t, "production-silk-only", productionSilkOnly.Name)
-	assert.Equal(t, []profile.MatchRule{
-		{
-			Claim:        "pipeline_slug",
-			ValuePattern: "silk-.*",
-		},
-		{
-			Claim: "build_branch",
-			Value: "main",
-		},
-	}, productionSilkOnly.Match)
-	assert.Equal(t, []string{"acme/silk"}, productionSilkOnly.Repositories)
-	assert.Equal(t, []string{"contents:write"}, productionSilkOnly.Permissions)
-	// Note: compiledMatcher verified through ValidateProfile and can be tested via Matches()
-
-	// Test profile with no match rules (empty array)
-	sharedUtilities, err := profileConfig.LookupProfile("shared-utilities-read")
-	require.NoError(t, err)
-	assert.Equal(t, "shared-utilities-read", sharedUtilities.Name)
-	assert.Equal(t, []profile.MatchRule{}, sharedUtilities.Match)
-	assert.Equal(t, []string{"acme/shared-utilities"}, sharedUtilities.Repositories)
-	assert.Equal(t, []string{"contents:read"}, sharedUtilities.Permissions)
-	// Note: compiledMatcher verified through ValidateProfile, even for empty match rules
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			retrievedProfile, err := profileConfig.LookupProfile(tc.profileName)
+			require.NoError(t, err)
+			// Compare all fields except compiledMatcher (private and verified via Matches() behavior)
+			assert.Equal(t, tc.expectedProfile.Name, retrievedProfile.Name)
+			assert.Equal(t, tc.expectedProfile.Match, retrievedProfile.Match)
+			assert.Equal(t, tc.expectedProfile.Repositories, retrievedProfile.Repositories)
+			assert.Equal(t, tc.expectedProfile.Permissions, retrievedProfile.Permissions)
+		})
+	}
 }
 
 // TestGracefulDegradation verifies that profile validation implements graceful degradation:
@@ -1091,14 +1106,13 @@ func TestProfileMatches(t *testing.T) {
 			require.NoError(t, err)
 
 			result := prof.Matches(tc.claims)
-			if tc.expectMatch {
-				assert.True(t, result.Matched, "match should succeed")
-				assert.Nil(t, result.Err, "should have no error")
-			} else {
-				assert.False(t, result.Matched, "match should fail")
-				assert.NotNil(t, result.Attempt, "should have attempt details")
-			}
+			assert.Equal(t, tc.expectMatch, result.Matched)
 			assert.Len(t, result.Matches, tc.expectMatches, "number of matches mismatch")
+			if tc.expectMatch {
+				assert.Nil(t, result.Err, "successful match should have no error")
+			} else {
+				assert.NotNil(t, result.Attempt, "failed match should have attempt details")
+			}
 		})
 	}
 }
@@ -1115,68 +1129,43 @@ func (m mockClaims) Lookup(claim string) (string, error) {
 }
 
 func TestProfileErrorTypes(t *testing.T) {
-	testCases := []struct {
-		name         string
-		err          error
-		expectedMsg  string
-		errorType    string
-		checkUnwrap  bool
-		unwrappedErr error
-	}{
-		{
-			name:        "ProfileNotFoundError with name",
-			err:         profile.ProfileNotFoundError{Name: "test-profile"},
-			expectedMsg: `profile "test-profile" not found`,
-			errorType:   "ProfileNotFoundError",
-		},
-		{
-			name: "ProfileUnavailableError with name and cause",
-			err: profile.ProfileUnavailableError{
-				Name:  "invalid-profile",
-				Cause: errors.New("invalid regex pattern"),
-			},
-			expectedMsg:  `profile "invalid-profile" unavailable: validation failed`,
-			errorType:    "ProfileUnavailableError",
-			checkUnwrap:  true,
-			unwrappedErr: errors.New("invalid regex pattern"),
-		},
-		{
-			name:        "ProfileMatchFailedError with name",
-			err:         profile.ProfileMatchFailedError{Name: "restricted-profile"},
-			expectedMsg: `profile "restricted-profile" match conditions not met`,
-			errorType:   "ProfileMatchFailedError",
-		},
-	}
+	t.Run("ProfileNotFoundError", func(t *testing.T) {
+		err := profile.ProfileNotFoundError{Name: "test-profile"}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Test error message
-			assert.Equal(t, tc.expectedMsg, tc.err.Error())
+		assert.Equal(t, `profile "test-profile" not found`, err.Error())
 
-			// Test type assertion
-			switch tc.errorType {
-			case "ProfileNotFoundError":
-				var notFoundErr profile.ProfileNotFoundError
-				require.ErrorAs(t, tc.err, &notFoundErr)
-				assert.Equal(t, "test-profile", notFoundErr.Name)
-			case "ProfileUnavailableError":
-				var unavailableErr profile.ProfileUnavailableError
-				require.ErrorAs(t, tc.err, &unavailableErr)
-				assert.Equal(t, "invalid-profile", unavailableErr.Name)
-				assert.NotNil(t, unavailableErr.Cause)
-			case "ProfileMatchFailedError":
-				var matchFailedErr profile.ProfileMatchFailedError
-				require.ErrorAs(t, tc.err, &matchFailedErr)
-				assert.Equal(t, "restricted-profile", matchFailedErr.Name)
-			}
+		var notFoundErr profile.ProfileNotFoundError
+		require.ErrorAs(t, err, &notFoundErr)
+		assert.Equal(t, "test-profile", notFoundErr.Name)
+	})
 
-			// Test Unwrap if applicable
-			if tc.checkUnwrap {
-				unwrapper, ok := tc.err.(interface{ Unwrap() error })
-				require.True(t, ok, "error should implement Unwrap")
-				unwrappedErr := unwrapper.Unwrap()
-				assert.Equal(t, tc.unwrappedErr.Error(), unwrappedErr.Error())
-			}
-		})
-	}
+	t.Run("ProfileUnavailableError", func(t *testing.T) {
+		cause := errors.New("invalid regex pattern")
+		var err error = profile.ProfileUnavailableError{
+			Name:  "invalid-profile",
+			Cause: cause,
+		}
+
+		assert.Equal(t, `profile "invalid-profile" unavailable: validation failed`, err.Error())
+
+		var unavailableErr profile.ProfileUnavailableError
+		require.ErrorAs(t, err, &unavailableErr)
+		assert.Equal(t, "invalid-profile", unavailableErr.Name)
+		assert.NotNil(t, unavailableErr.Cause)
+
+		unwrapper, ok := err.(interface{ Unwrap() error })
+		require.True(t, ok, "error should implement Unwrap")
+		unwrappedErr := unwrapper.Unwrap()
+		assert.Equal(t, cause.Error(), unwrappedErr.Error())
+	})
+
+	t.Run("ProfileMatchFailedError", func(t *testing.T) {
+		err := profile.ProfileMatchFailedError{Name: "restricted-profile"}
+
+		assert.Equal(t, `profile "restricted-profile" match conditions not met`, err.Error())
+
+		var matchFailedErr profile.ProfileMatchFailedError
+		require.ErrorAs(t, err, &matchFailedErr)
+		assert.Equal(t, "restricted-profile", matchFailedErr.Name)
+	})
 }

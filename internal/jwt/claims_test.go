@@ -9,55 +9,73 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildkiteClaims_Validate(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		claims := &BuildkiteClaims{
-			OrganizationSlug:         "org",
-			PipelineSlug:             "pipeline",
-			PipelineID:               "pipeline_uuid",
-			BuildNumber:              123,
-			BuildBranch:              "main",
-			BuildCommit:              "abc123",
-			StepKey:                  "step1",
-			JobId:                    "job1",
-			AgentId:                  "agent1",
-			expectedOrganizationSlug: "org",
-		}
+func TestBuildkiteClaims_Validate_Success(t *testing.T) {
+	cases := []struct {
+		name   string
+		claims *BuildkiteClaims
+	}{
+		{
+			name: "valid",
+			claims: &BuildkiteClaims{
+				OrganizationSlug:         "org",
+				PipelineSlug:             "pipeline",
+				PipelineID:               "pipeline_uuid",
+				BuildNumber:              123,
+				BuildBranch:              "main",
+				BuildCommit:              "abc123",
+				StepKey:                  "step1",
+				JobId:                    "job1",
+				AgentId:                  "agent1",
+				expectedOrganizationSlug: "org",
+			},
+		},
+	}
 
-		err := claims.Validate(context.Background())
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.claims.Validate(context.Background())
+			assert.NoError(t, err)
+		})
+	}
+}
 
-		assert.NoError(t, err)
-	})
+func TestBuildkiteClaims_Validate_Failure(t *testing.T) {
+	cases := []struct {
+		name              string
+		claims            *BuildkiteClaims
+		expectedErrorText string
+	}{
+		{
+			name:              "missing claims",
+			claims:            &BuildkiteClaims{},
+			expectedErrorText: "missing expected claim(s)",
+		},
+		{
+			name: "wrong org",
+			claims: &BuildkiteClaims{
+				PipelineSlug: "pipeline",
+				PipelineID:   "pipeline_uuid",
+				BuildNumber:  123,
+				BuildBranch:  "main",
+				BuildCommit:  "abc123",
+				StepKey:      "step1",
+				JobId:        "job1",
+				AgentId:      "agent1",
 
-	t.Run("missing claims", func(t *testing.T) {
-		claims := &BuildkiteClaims{}
+				OrganizationSlug:         "wrong",
+				expectedOrganizationSlug: "right",
+			},
+			expectedErrorText: "expecting token issued for organization",
+		},
+	}
 
-		err := claims.Validate(context.Background())
-
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "missing expected claim(s)")
-	})
-
-	t.Run("wrong org", func(t *testing.T) {
-		claims := &BuildkiteClaims{
-			PipelineSlug: "pipeline",
-			PipelineID:   "pipeline_uuid",
-			BuildNumber:  123,
-			BuildBranch:  "main",
-			BuildCommit:  "abc123",
-			StepKey:      "step1",
-			JobId:        "job1",
-			AgentId:      "agent1",
-
-			OrganizationSlug:         "wrong",
-			expectedOrganizationSlug: "right",
-		}
-
-		err := claims.Validate(context.Background())
-
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "expecting token issued for organization")
-	})
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.claims.Validate(context.Background())
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.expectedErrorText)
+		})
+	}
 }
 
 func TestBuildkiteClaims_NewFields(t *testing.T) {

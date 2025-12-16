@@ -375,79 +375,59 @@ func TestMaxRequestSizeMiddleware(t *testing.T) {
 	assert.Equal(t, "", respBody)
 }
 
-func TestHandlePostToken_ProfileMatchFailedError(t *testing.T) {
-	tokenVendor := tvFails(profile.ProfileMatchFailedError{Name: "test-profile"})
+func TestHandlePostToken_ProfileErrors(t *testing.T) {
+	cases := []struct {
+		name           string
+		vendorErr      error
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name:           "ProfileMatchFailedError",
+			vendorErr:      profile.ProfileMatchFailedError{Name: "test-profile"},
+			expectedStatus: http.StatusForbidden,
+			expectedError:  "access denied: profile match conditions not met",
+		},
+		{
+			name:           "ProfileNotFoundError",
+			vendorErr:      profile.ProfileNotFoundError{Name: "test-profile"},
+			expectedStatus: http.StatusNotFound,
+			expectedError:  "profile not found",
+		},
+		{
+			name:           "ProfileUnavailableError",
+			vendorErr:      profile.ProfileUnavailableError{Name: "test-profile", Cause: errors.New("validation failed")},
+			expectedStatus: http.StatusNotFound,
+			expectedError:  "profile unavailable: validation failed",
+		},
+	}
 
-	ctx := claimsContext()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tokenVendor := tvFails(tc.vendorErr)
 
-	req, err := http.NewRequest("POST", "/token", nil)
-	require.NoError(t, err)
+			ctx := claimsContext()
 
-	req = req.WithContext(ctx)
-	rr := httptest.NewRecorder()
+			req, err := http.NewRequest("POST", "/token", nil)
+			require.NoError(t, err)
 
-	// act
-	handler := handlePostToken(tokenVendor)
-	handler.ServeHTTP(rr, req)
+			req = req.WithContext(ctx)
+			rr := httptest.NewRecorder()
 
-	// assert
-	assert.Equal(t, http.StatusForbidden, rr.Code)
-	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+			// act
+			handler := handlePostToken(tokenVendor)
+			handler.ServeHTTP(rr, req)
 
-	var respBody ErrorResponse
-	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
-	require.NoError(t, err)
-	assert.Equal(t, ErrorResponse{Error: "access denied: profile match conditions not met"}, respBody)
-}
+			// assert
+			assert.Equal(t, tc.expectedStatus, rr.Code)
+			assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 
-func TestHandlePostToken_ProfileNotFoundError(t *testing.T) {
-	tokenVendor := tvFails(profile.ProfileNotFoundError{Name: "test-profile"})
-
-	ctx := claimsContext()
-
-	req, err := http.NewRequest("POST", "/token", nil)
-	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
-	rr := httptest.NewRecorder()
-
-	// act
-	handler := handlePostToken(tokenVendor)
-	handler.ServeHTTP(rr, req)
-
-	// assert
-	assert.Equal(t, http.StatusNotFound, rr.Code)
-	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-
-	var respBody ErrorResponse
-	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
-	require.NoError(t, err)
-	assert.Equal(t, ErrorResponse{Error: "profile not found"}, respBody)
-}
-
-func TestHandlePostToken_ProfileUnavailableError(t *testing.T) {
-	tokenVendor := tvFails(profile.ProfileUnavailableError{Name: "test-profile", Cause: errors.New("validation failed")})
-
-	ctx := claimsContext()
-
-	req, err := http.NewRequest("POST", "/token", nil)
-	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
-	rr := httptest.NewRecorder()
-
-	// act
-	handler := handlePostToken(tokenVendor)
-	handler.ServeHTTP(rr, req)
-
-	// assert
-	assert.Equal(t, http.StatusNotFound, rr.Code)
-	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-
-	var respBody ErrorResponse
-	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
-	require.NoError(t, err)
-	assert.Equal(t, ErrorResponse{Error: "profile unavailable: validation failed"}, respBody)
+			var respBody ErrorResponse
+			err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+			require.NoError(t, err)
+			assert.Equal(t, ErrorResponse{Error: tc.expectedError}, respBody)
+		})
+	}
 }
 
 func TestHandlePostToken_ClaimValidationError(t *testing.T) {

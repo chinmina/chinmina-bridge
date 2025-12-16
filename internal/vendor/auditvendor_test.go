@@ -40,9 +40,15 @@ func TestAuditor_Success(t *testing.T) {
 	assert.Equal(t, "https://example.com/repo", token.RequestedRepositoryURL)
 
 	entry := audit.Log(ctx)
-	assert.Empty(t, entry.Error)
-	assert.Equal(t, []string{"https://example.com/repo"}, entry.Repositories)
-	assert.Equal(t, []string{"contents:read"}, entry.Permissions)
+	expected := audit.Entry{
+		Error:       "",
+		Repositories: []string{"https://example.com/repo"},
+		Permissions: []string{"contents:read"},
+	}
+	// ExpirySecs is dynamic based on current time, so check separately
+	assert.Equal(t, expected.Error, entry.Error)
+	assert.Equal(t, expected.Repositories, entry.Repositories)
+	assert.Equal(t, expected.Permissions, entry.Permissions)
 	assert.NotZero(t, entry.ExpirySecs)
 
 	ref2 := profile.ProfileRef{
@@ -58,9 +64,15 @@ func TestAuditor_Success(t *testing.T) {
 	assert.Equal(t, "https://example.com/repo", token.RequestedRepositoryURL)
 
 	entry = audit.Log(ctx)
-	assert.Empty(t, entry.Error)
-	assert.Equal(t, []string{"https://example.com/repo"}, entry.Repositories)
-	assert.Equal(t, []string{"contents:read"}, entry.Permissions)
+	expected = audit.Entry{
+		Error:       "",
+		Repositories: []string{"https://example.com/repo"},
+		Permissions: []string{"contents:read"},
+	}
+	// ExpirySecs is dynamic based on current time, so check separately
+	assert.Equal(t, expected.Error, entry.Error)
+	assert.Equal(t, expected.Repositories, entry.Repositories)
+	assert.Equal(t, expected.Permissions, entry.Permissions)
 	assert.NotZero(t, entry.ExpirySecs)
 
 }
@@ -87,10 +99,13 @@ func TestAuditor_Mismatch(t *testing.T) {
 	assert.Nil(t, token)
 
 	entry := audit.Log(ctx)
-	assert.Equal(t, "repository mismatch, no token vended", entry.Error)
-	assert.Empty(t, entry.Repositories)
-	assert.Empty(t, entry.Permissions)
-	assert.Zero(t, entry.ExpirySecs)
+	expected := audit.Entry{
+		Error:       "repository mismatch, no token vended",
+		Repositories: nil,
+		Permissions: nil,
+		ExpirySecs:  0,
+	}
+	assert.Equal(t, expected, *entry)
 }
 
 func TestAuditor_Failure(t *testing.T) {
@@ -114,10 +129,13 @@ func TestAuditor_Failure(t *testing.T) {
 	assert.Nil(t, token)
 
 	entry := audit.Log(ctx)
-	assert.Equal(t, "vendor failure: vendor error", entry.Error)
-	assert.Empty(t, entry.Repositories)
-	assert.Empty(t, entry.Permissions)
-	assert.Zero(t, entry.ExpirySecs)
+	expected := audit.Entry{
+		Error:       "vendor failure: vendor error",
+		Repositories: nil,
+		Permissions: nil,
+		ExpirySecs:  0,
+	}
+	assert.Equal(t, expected, *entry)
 }
 func TestAuditor_ProfileAuditing(t *testing.T) {
 	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
@@ -152,8 +170,12 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	assert.NoError(t, err)
 
 	entry := audit.Log(ctx)
-	assert.Empty(t, entry.Error)
-	assert.Equal(t, "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default", entry.RequestedProfile)
+	expected := audit.Entry{
+		Error:            "",
+		RequestedProfile: "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default",
+	}
+	assert.Equal(t, expected.Error, entry.Error)
+	assert.Equal(t, expected.RequestedProfile, entry.RequestedProfile)
 
 	ref2 := profile.ProfileRef{
 		Organization: "org",
@@ -167,8 +189,12 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	assert.NoError(t, err)
 
 	entry = audit.Log(ctx)
-	assert.Empty(t, entry.Error)
-	assert.Equal(t, "profile://organization/org/profile/test-profile", entry.RequestedProfile)
+	expected = audit.Entry{
+		Error:            "",
+		RequestedProfile: "profile://organization/org/profile/test-profile",
+	}
+	assert.Equal(t, expected.Error, entry.Error)
+	assert.Equal(t, expected.RequestedProfile, entry.RequestedProfile)
 }
 
 func TestAuditor_SuccessfulMatch(t *testing.T) {

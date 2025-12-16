@@ -210,15 +210,17 @@ organization:
 		tok, err := v(ctx, ref, "")
 		require.NoError(t, err)
 		require.NotNil(t, tok)
-		assert.Equal(t, "test-token", tok.Token)
 
 		// Verify match result is captured for audit logging
-		assert.True(t, tok.MatchResult.Matched, "match should be successful")
-		assert.Equal(t, []profile.ClaimMatch{
-			{Claim: "pipeline_slug", Value: "silk-prod"},
-		}, tok.MatchResult.Matches)
-		assert.Nil(t, tok.MatchResult.Attempt)
-		assert.NoError(t, tok.MatchResult.Err)
+		assert.Equal(t, profile.MatchResult{
+			Matched: true,
+			Matches: []profile.ClaimMatch{
+				{Claim: "pipeline_slug", Value: "silk-prod"},
+			},
+			Attempt: nil,
+			Err:     nil,
+		}, tok.MatchResult)
+		assert.Equal(t, "test-token", tok.Token)
 	})
 
 	t.Run("match failure with wrong value", func(t *testing.T) {
@@ -255,16 +257,18 @@ organization:
 		tok, err := v(ctx, ref, "")
 		require.NoError(t, err)
 		require.NotNil(t, tok)
-		assert.Equal(t, "test-token", tok.Token)
 
 		// Verify all match conditions are captured
-		assert.True(t, tok.MatchResult.Matched, "match should be successful")
-		assert.Equal(t, []profile.ClaimMatch{
-			{Claim: "pipeline_slug", Value: "silk-staging"},
-			{Claim: "build_branch", Value: "main"},
-		}, tok.MatchResult.Matches)
-		assert.Nil(t, tok.MatchResult.Attempt)
-		assert.NoError(t, tok.MatchResult.Err)
+		assert.Equal(t, profile.MatchResult{
+			Matched: true,
+			Matches: []profile.ClaimMatch{
+				{Claim: "pipeline_slug", Value: "silk-staging"},
+				{Claim: "build_branch", Value: "main"},
+			},
+			Attempt: nil,
+			Err:     nil,
+		}, tok.MatchResult)
+		assert.Equal(t, "test-token", tok.Token)
 	})
 
 	t.Run("match failure with multiple rules - one fails", func(t *testing.T) {

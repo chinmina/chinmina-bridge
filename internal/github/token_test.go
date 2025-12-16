@@ -224,80 +224,108 @@ func TestTransportOptions(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestGetRepoNames_Succeed(t *testing.T) {
-	repositoryURLs := []string{"https://github.com/organization/valid-repository", "https://github.com/organization/another-valid-repository"}
-
-	expectedRepoNames := []string{"valid-repository", "another-valid-repository"}
-
-	actualRepoNames, err := github.GetRepoNames(repositoryURLs)
-	assert.Equal(t, expectedRepoNames, actualRepoNames)
-	assert.NoError(t, err)
-}
-
-func TestGetRepoNames_Fail_On_Invalid_URLs(t *testing.T) {
-	repositoryURLs := []string{"sch_eme://invalid_url/", "https://totally-not-malware.com"}
-
-	_, err := github.GetRepoNames(repositoryURLs)
-
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "no valid repository URLs found")
-}
-
-func TestGetRepoNames_Succeed_If_Some_Valid(t *testing.T) {
-	repositoryURLs := []string{"https://github.com/only-org-mentioned", "https://dodgey.com", "https://github.com/super-cool-org/super-cool-repo"}
-
-	expectedRepoNames := []string{"super-cool-repo"}
-
-	actualRepoNames, err := github.GetRepoNames(repositoryURLs)
-
-	assert.Equal(t, expectedRepoNames, actualRepoNames)
-	assert.NoError(t, err)
-}
-
-func TestScopesToPermissions_Succeed(t *testing.T) {
-	scopes := []string{
-		"contents:read",
-		"packages:write",
-	}
-	expectedPermissions := &api.InstallationPermissions{
-		Contents: api.Ptr("read"),
-		Packages: api.Ptr("write"),
+func TestGetRepoNames_Succeeds(t *testing.T) {
+	tests := []struct {
+		name           string
+		repositoryURLs []string
+		expected       []string
+	}{
+		{
+			name:           "valid URLs",
+			repositoryURLs: []string{"https://github.com/organization/valid-repository", "https://github.com/organization/another-valid-repository"},
+			expected:       []string{"valid-repository", "another-valid-repository"},
+		},
+		{
+			name:           "some valid URLs",
+			repositoryURLs: []string{"https://github.com/only-org-mentioned", "https://dodgey.com", "https://github.com/super-cool-org/super-cool-repo"},
+			expected:       []string{"super-cool-repo"},
+		},
 	}
 
-	actualPermissions, err := github.ScopesToPermissions(scopes)
-	assert.Equal(t, expectedPermissions, actualPermissions)
-	assert.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualRepoNames, err := github.GetRepoNames(tt.repositoryURLs)
+			assert.Equal(t, tt.expected, actualRepoNames)
+			assert.NoError(t, err)
+		})
+	}
 }
 
-func TestScopesToPermissions_Fail_On_Invalid_Permissions(t *testing.T) {
-	scopes := []string{
-		"nonsense",
-		"contents:",
-		"invalid:read",
-		"contents:invalid",
+func TestGetRepoNames_Fails(t *testing.T) {
+	tests := []struct {
+		name           string
+		repositoryURLs []string
+		expectedError  string
+	}{
+		{
+			name:           "invalid URLs",
+			repositoryURLs: []string{"sch_eme://invalid_url/", "https://totally-not-malware.com"},
+			expectedError:  "no valid repository URLs found",
+		},
 	}
-	expectedPermissions := &api.InstallationPermissions{}
 
-	actualPermissions, err := github.ScopesToPermissions(scopes)
-	assert.Equal(t, expectedPermissions, actualPermissions)
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "no valid permissions found")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := github.GetRepoNames(tt.repositoryURLs)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, tt.expectedError)
+		})
+	}
 }
 
-func TestScopesToPermissions_Succeed_If_Some_Valid(t *testing.T) {
-	scopes := []string{
-		"blah",
-		"pull_requests:write",
-		"invalid:read",
-		"actions:admin",
-	}
-	expectedPermissions := &api.InstallationPermissions{
-		PullRequests: api.Ptr("write"),
+func TestScopesToPermissions_Succeeds(t *testing.T) {
+	tests := []struct {
+		name     string
+		scopes   []string
+		expected *api.InstallationPermissions
+	}{
+		{
+			name:   "valid scopes",
+			scopes: []string{"contents:read", "packages:write"},
+			expected: &api.InstallationPermissions{
+				Contents: api.Ptr("read"),
+				Packages: api.Ptr("write"),
+			},
+		},
+		{
+			name:   "some valid scopes",
+			scopes: []string{"blah", "pull_requests:write", "invalid:read", "actions:admin"},
+			expected: &api.InstallationPermissions{
+				PullRequests: api.Ptr("write"),
+			},
+		},
 	}
 
-	actualPermissions, err := github.ScopesToPermissions(scopes)
-	assert.Equal(t, expectedPermissions, actualPermissions)
-	assert.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualPermissions, err := github.ScopesToPermissions(tt.scopes)
+			assert.Equal(t, tt.expected, actualPermissions)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestScopesToPermissions_Fails(t *testing.T) {
+	tests := []struct {
+		name          string
+		scopes        []string
+		expectedError string
+	}{
+		{
+			name:          "invalid permissions",
+			scopes:        []string{"nonsense", "contents:", "invalid:read", "contents:invalid"},
+			expectedError: "no valid permissions found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualPermissions, err := github.ScopesToPermissions(tt.scopes)
+			assert.Equal(t, &api.InstallationPermissions{}, actualPermissions)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, tt.expectedError)
+		})
+	}
 }
 
 func JSON(w http.ResponseWriter, payload any) {
