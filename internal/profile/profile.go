@@ -336,8 +336,22 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 	// Compile matchers for each profile (graceful degradation)
 	validProfiles := make([]Profile, 0, len(profileConfig.Organization.Profiles))
 	invalidProfiles := make(map[string]error)
+	seenNames := make(map[string]bool)
 
 	for _, prof := range profileConfig.Organization.Profiles {
+		// Check for duplicate profile names
+		if seenNames[prof.Name] {
+			err := fmt.Errorf("duplicate profile name: %q", prof.Name)
+			invalidProfiles[prof.Name] = err
+
+			log.Warn().
+				Err(err).
+				Str("profile", prof.Name).
+				Msg("profile validation failed, profile unavailable")
+			continue
+		}
+		seenNames[prof.Name] = true
+
 		matcher, err := CompileMatchRules(prof.Match)
 		if err != nil {
 			invalidProfiles[prof.Name] = err

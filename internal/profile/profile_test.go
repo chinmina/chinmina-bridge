@@ -42,6 +42,9 @@ var profileWithMatchRules string
 //go:embed testdata/profile/profile_with_mixed_validation.yaml
 var profileWithMixedValidation string
 
+//go:embed testdata/profile/profile_with_duplicate_names.yaml
+var profileWithDuplicateNames string
+
 // JSON writes a JSON response for testing HTTP handlers
 func JSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -916,6 +919,34 @@ func TestGracefulDegradation(t *testing.T) {
 	validProd, _ := profileConfig.LookupProfile("valid-production")
 	assert.Equal(t, "valid-production", validProd.Name)
 	assert.Equal(t, []string{"acme/silk"}, validProd.Repositories)
+}
+
+func TestDuplicateProfileNames(t *testing.T) {
+	ctx := context.Background()
+
+	profileConfig, err := profile.ValidateProfile(ctx, profileWithDuplicateNames)
+	require.NoError(t, err, "ValidateProfile should not return an error even with duplicate names")
+
+	// We should have 1 invalid profile (the duplicate)
+	assert.Len(t, profileConfig.Organization.InvalidProfiles, 1, "expected 1 invalid profile")
+
+	// Verify the duplicate profile is tracked with an error
+	assert.Contains(t, profileConfig.Organization.InvalidProfiles, "production")
+	assert.ErrorContains(t, profileConfig.Organization.InvalidProfiles["production"], "duplicate profile name")
+
+	// Only the first occurrence should be valid
+	assert.Len(t, profileConfig.Organization.Profiles, 2, "expected 2 valid profiles")
+
+	// Verify the first "production" profile is accessible
+	prod, err := profileConfig.LookupProfile("production")
+	assert.NoError(t, err, "first production profile should be accessible")
+	assert.Equal(t, "production", prod.Name)
+	assert.Equal(t, []string{"acme/silk"}, prod.Repositories)
+
+	// Verify "staging" profile is accessible
+	staging, err := profileConfig.LookupProfile("staging")
+	assert.NoError(t, err, "staging profile should be accessible")
+	assert.Equal(t, "staging", staging.Name)
 }
 
 func TestProfileMatches(t *testing.T) {
