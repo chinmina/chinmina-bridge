@@ -51,7 +51,7 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 			switch {
 			case errors.As(err, &matchFailedErr):
 				log.Info().Msgf("profile match failed: %v", err)
-				writeJSONError(w, http.StatusForbidden, "access denied: profile match conditions not met")
+				writeJSONError(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
 			case errors.As(err, &notFoundErr):
 				log.Info().Msgf("profile not found: %v", err)
 				writeJSONError(w, http.StatusNotFound, "profile not found")
@@ -59,8 +59,8 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 				log.Info().Msgf("profile unavailable: %v", err)
 				writeJSONError(w, http.StatusNotFound, "profile unavailable: validation failed")
 			case errors.As(err, &claimValidationErr):
-				log.Warn().Msgf("invalid JWT claims: %v", err)
-				writeJSONError(w, http.StatusBadRequest, "invalid JWT claims")
+				log.Warn().Msgf("claim validation failed: %v", err)
+				writeJSONError(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
 			default:
 				log.Info().Msgf("token creation failed %v\n", err)
 				requestError(w, http.StatusInternalServerError)
@@ -123,7 +123,7 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 			switch {
 			case errors.As(err, &matchFailedErr):
 				log.Info().Msgf("profile match failed: %v", err)
-				writeJSONError(w, http.StatusForbidden, "access denied: profile match conditions not met")
+				writeJSONError(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
 			case errors.As(err, &notFoundErr):
 				log.Info().Msgf("profile not found: %v", err)
 				writeJSONError(w, http.StatusNotFound, "profile not found")
@@ -131,8 +131,8 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 				log.Info().Msgf("profile unavailable: %v", err)
 				writeJSONError(w, http.StatusNotFound, "profile unavailable: validation failed")
 			case errors.As(err, &claimValidationErr):
-				log.Warn().Msgf("invalid JWT claims: %v", err)
-				writeJSONError(w, http.StatusBadRequest, "invalid JWT claims")
+				log.Warn().Msgf("claim validation failed: %v", err)
+				writeJSONError(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
 			default:
 				log.Info().Msgf("token creation failed %v\n", err)
 				requestError(w, http.StatusInternalServerError)

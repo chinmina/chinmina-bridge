@@ -386,7 +386,7 @@ func TestHandlePostToken_ProfileErrors(t *testing.T) {
 			name:           "ProfileMatchFailedError",
 			vendorErr:      profile.ProfileMatchFailedError{Name: "test-profile"},
 			expectedStatus: http.StatusForbidden,
-			expectedError:  "access denied: profile match conditions not met",
+			expectedError:  "Forbidden",
 		},
 		{
 			name:           "ProfileNotFoundError",
@@ -450,13 +450,13 @@ func TestHandlePostToken_ClaimValidationError(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	// assert
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
 	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 
 	var respBody ErrorResponse
 	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
 	require.NoError(t, err)
-	assert.Equal(t, ErrorResponse{Error: "invalid JWT claims"}, respBody)
+	assert.Equal(t, ErrorResponse{Error: "Forbidden"}, respBody)
 }
 
 func TestHandlePostGitCredentials_ClaimValidationError(t *testing.T) {
@@ -482,13 +482,13 @@ func TestHandlePostGitCredentials_ClaimValidationError(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	// assert
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
 	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 
 	var respBody ErrorResponse
 	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
 	require.NoError(t, err)
-	assert.Equal(t, ErrorResponse{Error: "invalid JWT claims"}, respBody)
+	assert.Equal(t, ErrorResponse{Error: "Forbidden"}, respBody)
 }
 
 func TestWriteJSONError_Success(t *testing.T) {

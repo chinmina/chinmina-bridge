@@ -41,9 +41,9 @@ func TestAuditor_Success(t *testing.T) {
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
-		Error:       "",
+		Error:        "",
 		Repositories: []string{"https://example.com/repo"},
-		Permissions: []string{"contents:read"},
+		Permissions:  []string{"contents:read"},
 	}
 	// ExpirySecs is dynamic based on current time, so check separately
 	assert.Equal(t, expected.Error, entry.Error)
@@ -65,9 +65,9 @@ func TestAuditor_Success(t *testing.T) {
 
 	entry = audit.Log(ctx)
 	expected = audit.Entry{
-		Error:       "",
+		Error:        "",
 		Repositories: []string{"https://example.com/repo"},
-		Permissions: []string{"contents:read"},
+		Permissions:  []string{"contents:read"},
 	}
 	// ExpirySecs is dynamic based on current time, so check separately
 	assert.Equal(t, expected.Error, entry.Error)
@@ -100,10 +100,12 @@ func TestAuditor_Mismatch(t *testing.T) {
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
-		Error:       "repository mismatch, no token vended",
-		Repositories: nil,
-		Permissions: nil,
-		ExpirySecs:  0,
+		Error:               "no token vended",
+		Repositories:        nil,
+		Permissions:         nil,
+		ExpirySecs:          0,
+		RequestedProfile:    "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default",
+		RequestedRepository: "example-repo",
 	}
 	assert.Equal(t, expected, *entry)
 }
@@ -130,10 +132,12 @@ func TestAuditor_Failure(t *testing.T) {
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
-		Error:       "vendor failure: vendor error",
-		Repositories: nil,
-		Permissions: nil,
-		ExpirySecs:  0,
+		Error:               "vendor failure: vendor error",
+		Repositories:        nil,
+		Permissions:         nil,
+		ExpirySecs:          0,
+		RequestedProfile:    "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default",
+		RequestedRepository: "example-repo",
 	}
 	assert.Equal(t, expected, *entry)
 }
@@ -197,41 +201,32 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	assert.Equal(t, expected.RequestedProfile, entry.RequestedProfile)
 }
 
-func TestAuditor_SuccessfulMatch(t *testing.T) {
-	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
-		return &vendor.ProfileToken{
-			Repositories:           []string{"https://example.com/repo"},
-			Permissions:            []string{"contents:read"},
-			RequestedRepositoryURL: "https://example.com/repo",
-			Expiry:                 time.Now().Add(1 * time.Hour),
-			MatchResult: profile.MatchResult{
-				Matched: true,
-				Matches: []profile.ClaimMatch{
-					{Claim: "pipeline_slug", Value: "my-pipeline"},
-					{Claim: "build_branch", Value: "main"},
-				},
-			},
-		}, nil
-	}
-	auditedVendor := vendor.Auditor(successfulVendor)
-
+func TestAuditingMatcher_SuccessfulMatch(t *testing.T) {
 	ctx, _ := audit.Context(context.Background())
-	repo := "example-repo"
 
-	ref := profile.ProfileRef{
-		Organization: "org",
-		Name:         "default",
-		Type:         profile.ProfileTypeRepo,
-		PipelineID:   "pipeline-id",
-		PipelineSlug: "my-pipeline",
+	// Create a mock matcher that returns a successful match
+	mockMatcher := func(claims profile.ClaimValueLookup) profile.MatchResult {
+		return profile.MatchResult{
+			Matched: true,
+			Matches: []profile.ClaimMatch{
+				{Claim: "pipeline_slug", Value: "my-pipeline"},
+				{Claim: "build_branch", Value: "main"},
+			},
+		}
 	}
-	token, err := auditedVendor(ctx, ref, repo)
 
-	assert.NoError(t, err)
-	assert.NotNil(t, token)
+	// Wrap with AuditingMatcher
+	auditingMatcher := vendor.AuditingMatcher(ctx, mockMatcher)
 
+	// Call the matcher (claims value doesn't matter since mock ignores it)
+	result := auditingMatcher(nil)
+
+	// Verify the result is returned unchanged
+	assert.True(t, result.Matched)
+	assert.Len(t, result.Matches, 2)
+
+	// Verify audit log was populated
 	entry := audit.Log(ctx)
-	assert.Empty(t, entry.Error)
 	expected := []audit.ClaimMatch{
 		{Claim: "pipeline_slug", Value: "my-pipeline"},
 		{Claim: "build_branch", Value: "main"},
@@ -240,42 +235,33 @@ func TestAuditor_SuccessfulMatch(t *testing.T) {
 	assert.Nil(t, entry.ClaimsFailed)
 }
 
-func TestAuditor_FailedMatch(t *testing.T) {
-	failedVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
-		return &vendor.ProfileToken{
-			Repositories:           []string{"https://example.com/repo"},
-			Permissions:            []string{"contents:read"},
-			RequestedRepositoryURL: "https://example.com/repo",
-			Expiry:                 time.Now().Add(1 * time.Hour),
-			MatchResult: profile.MatchResult{
-				Matched: false,
-				Attempt: &profile.MatchAttempt{
-					Claim:       "pipeline_slug",
-					Pattern:     ".*-release",
-					ActualValue: "my-pipeline",
-				},
-			},
-		}, nil
-	}
-	auditedVendor := vendor.Auditor(failedVendor)
-
+func TestAuditingMatcher_FailedMatch(t *testing.T) {
 	ctx, _ := audit.Context(context.Background())
-	repo := "example-repo"
 
-	ref := profile.ProfileRef{
-		Organization: "org",
-		Name:         "default",
-		Type:         profile.ProfileTypeRepo,
-		PipelineID:   "pipeline-id",
-		PipelineSlug: "my-pipeline",
+	// Create a mock matcher that returns a failed match
+	mockMatcher := func(claims profile.ClaimValueLookup) profile.MatchResult {
+		return profile.MatchResult{
+			Matched: false,
+			Attempt: &profile.MatchAttempt{
+				Claim:       "pipeline_slug",
+				Pattern:     ".*-release",
+				ActualValue: "my-pipeline",
+			},
+		}
 	}
-	token, err := auditedVendor(ctx, ref, repo)
 
-	assert.NoError(t, err)
-	assert.NotNil(t, token)
+	// Wrap with AuditingMatcher
+	auditingMatcher := vendor.AuditingMatcher(ctx, mockMatcher)
 
+	// Call the matcher
+	result := auditingMatcher(nil)
+
+	// Verify the result is returned unchanged
+	assert.False(t, result.Matched)
+	assert.NotNil(t, result.Attempt)
+
+	// Verify audit log was populated
 	entry := audit.Log(ctx)
-	assert.Empty(t, entry.Error)
 	expected := []audit.ClaimFailure{
 		{
 			Claim:   "pipeline_slug",
@@ -287,80 +273,63 @@ func TestAuditor_FailedMatch(t *testing.T) {
 	assert.Nil(t, entry.ClaimsMatched)
 }
 
-func TestAuditor_EmptyMatchRules(t *testing.T) {
-	emptyRulesVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
-		return &vendor.ProfileToken{
-			Repositories:           []string{"https://example.com/repo"},
-			Permissions:            []string{"contents:read"},
-			RequestedRepositoryURL: "https://example.com/repo",
-			Expiry:                 time.Now().Add(1 * time.Hour),
-			MatchResult: profile.MatchResult{
-				Matched: true,
-				Matches: []profile.ClaimMatch{},
-			},
-		}, nil
-	}
-	auditedVendor := vendor.Auditor(emptyRulesVendor)
-
+func TestAuditingMatcher_EmptyMatchRules(t *testing.T) {
 	ctx, _ := audit.Context(context.Background())
-	repo := "example-repo"
 
-	ref := profile.ProfileRef{
-		Organization: "org",
-		Name:         "default",
-		Type:         profile.ProfileTypeRepo,
-		PipelineID:   "pipeline-id",
-		PipelineSlug: "my-pipeline",
+	// Create a mock matcher that returns success with empty match rules
+	mockMatcher := func(claims profile.ClaimValueLookup) profile.MatchResult {
+		return profile.MatchResult{
+			Matched: true,
+			Matches: []profile.ClaimMatch{},
+		}
 	}
-	token, err := auditedVendor(ctx, ref, repo)
 
-	assert.NoError(t, err)
-	assert.NotNil(t, token)
+	// Wrap with AuditingMatcher
+	auditingMatcher := vendor.AuditingMatcher(ctx, mockMatcher)
 
+	// Call the matcher
+	result := auditingMatcher(nil)
+
+	// Verify the result is returned unchanged
+	assert.True(t, result.Matched)
+	assert.Empty(t, result.Matches)
+
+	// Verify audit log was populated with empty slice (not nil)
 	entry := audit.Log(ctx)
-	assert.Empty(t, entry.Error)
 	assert.NotNil(t, entry.ClaimsMatched)
 	assert.Empty(t, entry.ClaimsMatched)
 	assert.Nil(t, entry.ClaimsFailed)
 }
 
-func TestAuditor_ValidationError(t *testing.T) {
-	validationErrorVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
-		return &vendor.ProfileToken{
-			Repositories:           []string{"https://example.com/repo"},
-			Permissions:            []string{"contents:read"},
-			RequestedRepositoryURL: "https://example.com/repo",
-			Expiry:                 time.Now().Add(1 * time.Hour),
-			MatchResult: profile.MatchResult{
-				Matched: false,
-				Err:     errors.New("claim validation failed: claim value contains invalid characters"),
-				Attempt: &profile.MatchAttempt{
-					Claim:       "pipeline_slug",
-					Pattern:     ".*-release",
-					ActualValue: "my-pipeline\x00",
-				},
-			},
-		}, nil
-	}
-	auditedVendor := vendor.Auditor(validationErrorVendor)
-
+func TestAuditingMatcher_ValidationError(t *testing.T) {
 	ctx, _ := audit.Context(context.Background())
-	repo := "example-repo"
 
-	ref := profile.ProfileRef{
-		Organization: "org",
-		Name:         "default",
-		Type:         profile.ProfileTypeRepo,
-		PipelineID:   "pipeline-id",
-		PipelineSlug: "my-pipeline",
+	// Create a mock matcher that returns a validation error
+	mockMatcher := func(claims profile.ClaimValueLookup) profile.MatchResult {
+		return profile.MatchResult{
+			Matched: false,
+			Err:     errors.New("claim validation failed: claim value contains invalid characters"),
+			Attempt: &profile.MatchAttempt{
+				Claim:       "pipeline_slug",
+				Pattern:     ".*-release",
+				ActualValue: "my-pipeline\x00",
+			},
+		}
 	}
-	token, err := auditedVendor(ctx, ref, repo)
 
-	assert.NoError(t, err)
-	assert.NotNil(t, token)
+	// Wrap with AuditingMatcher
+	auditingMatcher := vendor.AuditingMatcher(ctx, mockMatcher)
 
+	// Call the matcher
+	result := auditingMatcher(nil)
+
+	// Verify the result is returned unchanged
+	assert.False(t, result.Matched)
+	assert.NotNil(t, result.Err)
+	assert.NotNil(t, result.Attempt)
+
+	// Verify audit log was populated with failure details
 	entry := audit.Log(ctx)
-	assert.Empty(t, entry.Error)
 	expected := []audit.ClaimFailure{
 		{
 			Claim:   "pipeline_slug",
