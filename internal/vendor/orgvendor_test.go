@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/github/githubtest"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
+	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +28,7 @@ func createTestClaimsContext() context.Context {
 }
 
 func TestOrgVendor_FailsWithWrongProfileType(t *testing.T) {
-	v := vendor.NewOrgVendor(githubtest.CreateTestProfileStore(), nil)
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), nil)
 
 	ref := profile.ProfileRef{
 		Organization: "org",
@@ -43,7 +43,7 @@ func TestOrgVendor_FailsWithWrongProfileType(t *testing.T) {
 }
 
 func TestOrgVendor_FailWhenProfileNotFound(t *testing.T) {
-	v := vendor.NewOrgVendor(githubtest.CreateTestProfileStore(), nil)
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -55,7 +55,7 @@ func TestOrgVendor_FailWhenProfileNotFound(t *testing.T) {
 }
 
 func TestOrgVendor_FailWhenURLInvalid(t *testing.T) {
-	v := vendor.NewOrgVendor(githubtest.CreateTestProfileStore(), nil)
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -69,7 +69,7 @@ func TestOrgVendor_FailWhenURLInvalid(t *testing.T) {
 }
 
 func TestOrgVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
-	v := vendor.NewOrgVendor(githubtest.CreateTestProfileStore(), nil)
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -87,7 +87,7 @@ func TestOrgVendor_FailWhenTokenVendorFails(t *testing.T) {
 		return "", time.Time{}, errors.New("token vendor failed")
 	})
 
-	v := vendor.NewOrgVendor(githubtest.CreateTestProfileStore(), tokenVendor)
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -105,7 +105,7 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
 		return "non-default-token-value", vendedDate, nil
 	})
-	v := vendor.NewOrgVendor(githubtest.CreateTestProfileStore(), tokenVendor)
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), tokenVendor)
 
 	tests := []struct {
 		name         string
@@ -188,7 +188,7 @@ organization:
 		}
 
 		store := profile.NewProfileStore()
-		store.Update(&profileConfig)
+		store.Update(profileConfig)
 		return store
 	}
 

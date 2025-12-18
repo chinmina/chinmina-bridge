@@ -1,4 +1,4 @@
-package githubtest
+package profiletest
 
 import (
 	"github.com/chinmina/chinmina-bridge/internal/profile"
@@ -17,7 +17,7 @@ func createTestProfile() profile.ProfileConfig {
 func CreateTestProfileStore() *profile.ProfileStore {
 	testProfile := createTestProfile()
 	store := profile.NewProfileStore()
-	store.Update(&testProfile)
+	store.Update(testProfile)
 
 	return store
 }
