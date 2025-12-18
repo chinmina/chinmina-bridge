@@ -14,6 +14,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// HTTPStatuser provides HTTP status information for errors
+type HTTPStatuser interface {
+	Status() (int, string)
+}
+
 // buildProfileRef constructs a ProfileRef from the request context and path.
 // Returns an error if the profile parameter is invalid. Panics if Buildkite
 // claims are missing (via jwt.RequireBuildkiteClaimsFromContext), which should
@@ -42,29 +47,9 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 
 		tokenResponse, err := tokenVendor(r.Context(), ref, "")
 		if err != nil {
-			// Check for profile-specific errors and map to appropriate HTTP status
-			var matchFailedErr profile.ProfileMatchFailedError
-			var notFoundErr profile.ProfileNotFoundError
-			var unavailableErr profile.ProfileUnavailableError
-			var claimValidationErr profile.ClaimValidationError
-
-			switch {
-			case errors.As(err, &matchFailedErr):
-				log.Info().Msgf("profile match failed: %v", err)
-				writeJSONError(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
-			case errors.As(err, &notFoundErr):
-				log.Info().Msgf("profile not found: %v", err)
-				writeJSONError(w, http.StatusNotFound, "profile not found")
-			case errors.As(err, &unavailableErr):
-				log.Info().Msgf("profile unavailable: %v", err)
-				writeJSONError(w, http.StatusNotFound, "profile unavailable: validation failed")
-			case errors.As(err, &claimValidationErr):
-				log.Warn().Msgf("claim validation failed: %v", err)
-				writeJSONError(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
-			default:
-				log.Info().Msgf("token creation failed %v\n", err)
-				requestError(w, http.StatusInternalServerError)
-			}
+			status, message := errorStatus(err)
+			log.Info().Msgf("token creation failed: %v", err)
+			writeJSONError(w, status, message)
 			return
 		}
 
@@ -114,29 +99,9 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 
 		tokenResponse, err := tokenVendor(r.Context(), ref, requestedRepoURL)
 		if err != nil {
-			// Check for profile-specific errors and map to appropriate HTTP status
-			var matchFailedErr profile.ProfileMatchFailedError
-			var notFoundErr profile.ProfileNotFoundError
-			var unavailableErr profile.ProfileUnavailableError
-			var claimValidationErr profile.ClaimValidationError
-
-			switch {
-			case errors.As(err, &matchFailedErr):
-				log.Info().Msgf("profile match failed: %v", err)
-				writeJSONError(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
-			case errors.As(err, &notFoundErr):
-				log.Info().Msgf("profile not found: %v", err)
-				writeJSONError(w, http.StatusNotFound, "profile not found")
-			case errors.As(err, &unavailableErr):
-				log.Info().Msgf("profile unavailable: %v", err)
-				writeJSONError(w, http.StatusNotFound, "profile unavailable: validation failed")
-			case errors.As(err, &claimValidationErr):
-				log.Warn().Msgf("claim validation failed: %v", err)
-				writeJSONError(w, http.StatusForbidden, http.StatusText(http.StatusForbidden))
-			default:
-				log.Info().Msgf("token creation failed %v\n", err)
-				requestError(w, http.StatusInternalServerError)
-			}
+			status, message := errorStatus(err)
+			log.Info().Msgf("token creation failed: %v", err)
+			writeTextError(w, status, message)
 			return
 		}
 
@@ -209,6 +174,23 @@ func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
 		// At this point the status code has been written, so we can only log
 		log.Info().Msgf("failed to write JSON error response: %v", err)
 	}
+}
+
+// errorStatus extracts HTTP status code and message from an error.
+// Returns (StatusInternalServerError, StatusText) for errors that don't implement HTTPStatuser.
+func errorStatus(err error) (int, string) {
+	var statuser HTTPStatuser
+	if errors.As(err, &statuser) {
+		return statuser.Status()
+	}
+	return http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError)
+}
+
+// writeTextError writes a text/plain error response with custom header
+func writeTextError(w http.ResponseWriter, statusCode int, message string) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Chinmina-Denied", message)
+	w.WriteHeader(statusCode)
 }
 
 func requestError(w http.ResponseWriter, statusCode int) {

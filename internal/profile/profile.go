@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -35,6 +36,10 @@ func (e ClaimValidationError) Error() string {
 
 func (e ClaimValidationError) Unwrap() error {
 	return e.Err
+}
+
+func (e ClaimValidationError) Status() (int, string) {
+	return http.StatusForbidden, http.StatusText(http.StatusForbidden)
 }
 
 type ProfileStore struct {
@@ -169,6 +174,10 @@ func (e ProfileUnavailableError) Unwrap() error {
 	return e.Cause
 }
 
+func (e ProfileUnavailableError) Status() (int, string) {
+	return http.StatusNotFound, "profile unavailable: validation failed"
+}
+
 // ProfileNotFoundError indicates a profile was not found in the store
 type ProfileNotFoundError struct {
 	Name string
@@ -178,6 +187,10 @@ func (e ProfileNotFoundError) Error() string {
 	return fmt.Sprintf("profile %q not found", e.Name)
 }
 
+func (e ProfileNotFoundError) Status() (int, string) {
+	return http.StatusNotFound, "profile not found"
+}
+
 // ProfileMatchFailedError indicates a profile's match conditions were not met
 type ProfileMatchFailedError struct {
 	Name string
@@ -185,6 +198,10 @@ type ProfileMatchFailedError struct {
 
 func (e ProfileMatchFailedError) Error() string {
 	return fmt.Sprintf("profile %q match conditions not met", e.Name)
+}
+
+func (e ProfileMatchFailedError) Status() (int, string) {
+	return http.StatusForbidden, http.StatusText(http.StatusForbidden)
 }
 
 // ValidateMatchRule validates that a match rule is well-formed:

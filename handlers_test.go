@@ -99,8 +99,12 @@ func TestHandlePostToken_ReturnsFailureOnVendorFailure(t *testing.T) {
 
 	// assert
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
-	// important to know that internal details aren't part of the error response
-	assert.Equal(t, "Internal Server Error\n", rr.Body.String())
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "Internal Server Error"}, respBody)
 }
 
 func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
@@ -245,8 +249,9 @@ func TestHandlePostGitCredentials_ReturnsFailureOnVendorFailure(t *testing.T) {
 
 	// assert
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
-	// important to know that internal details aren't part of the error response
-	assert.Equal(t, "Internal Server Error\n", rr.Body.String())
+	assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "Internal Server Error", rr.Header().Get("Chinmina-Denied"))
+	assert.Empty(t, rr.Body.String())
 }
 
 func TestHandleHealthCheck_Success(t *testing.T) {
@@ -481,12 +486,9 @@ func TestHandlePostGitCredentials_ClaimValidationError(t *testing.T) {
 
 	// assert
 	assert.Equal(t, http.StatusForbidden, rr.Code)
-	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-
-	var respBody ErrorResponse
-	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
-	require.NoError(t, err)
-	assert.Equal(t, ErrorResponse{Error: "Forbidden"}, respBody)
+	assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "Forbidden", rr.Header().Get("Chinmina-Denied"))
+	assert.Empty(t, rr.Body.String())
 }
 
 func TestWriteJSONError_Success(t *testing.T) {
