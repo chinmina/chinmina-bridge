@@ -65,7 +65,7 @@ func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
 }
 
 // Update the currently stored organization profile
-func (p *ProfileStore) Update(profile *ProfileConfig) {
+func (p *ProfileStore) Update(profile ProfileConfig) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

@@ -346,7 +346,7 @@ func TestFetchProfile(t *testing.T) {
 	orgProfile, err = profile.FetchOrganizationProfile(context.Background(), profileConfig, gh)
 	require.NoError(t, err)
 
-	profileStore.Update(&orgProfile)
+	profileStore.Update(orgProfile)
 	loadedProfile, err := profileStore.GetOrganization()
 	require.NoError(t, err)
 	assertProfileConfigEqual(t, validatedProfile, loadedProfile)
@@ -404,7 +404,7 @@ func TestGetProfileFromStore(t *testing.T) {
 	require.NoError(t, err)
 
 	store := profile.NewProfileStore()
-	store.Update(&profileConfig)
+	store.Update(profileConfig)
 
 	validProfileName := "simple-profile"
 	invalidProfileName := "glizzy"
@@ -441,7 +441,7 @@ func TestGetProfileFromStore(t *testing.T) {
 		require.NoError(t, err)
 
 		storeWithInvalid := profile.NewProfileStore()
-		storeWithInvalid.Update(&invalidProfileConfig)
+		storeWithInvalid.Update(invalidProfileConfig)
 
 		// Try to lookup an invalid profile
 		_, err = storeWithInvalid.GetProfileFromStore("invalid-regex-pattern")
@@ -481,7 +481,7 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 	profileConfig := profile.NewTestProfileConfig(
 		profile.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
 	)
-	store.Update(&profileConfig)
+	store.Update(profileConfig)
 
 	t.Run("Concurrent reads can execute in parallel", func(t *testing.T) {
 		const numGoroutines = 10
@@ -553,7 +553,7 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 				newConfig := profile.NewTestProfileConfig(
 					profile.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
 				)
-				store.Update(&newConfig)
+				store.Update(newConfig)
 			})
 		}
 

@@ -17,7 +17,7 @@ func createProfileStoreWithPermissions(permissions []string) *profile.ProfileSto
 	config := profile.ProfileConfig{}
 	config.Organization.Defaults.Permissions = permissions
 	config.Organization.Profiles = []profile.Profile{{Name: "default"}}
-	ps.Update(&config)
+	ps.Update(config)
 	return ps
 }
 

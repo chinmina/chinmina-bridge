@@ -217,7 +217,7 @@ func refreshOrgProfile(ctx context.Context, profileStore *profile.ProfileStore, 
 		} else {
 			// only update the profile if retrieval succeeded
 			// invalid profiles are already logged during FetchOrganizationProfile
-			profileStore.Update(&profileConfig)
+			profileStore.Update(profileConfig)
 		}
 
 		select {
