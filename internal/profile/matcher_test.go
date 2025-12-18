@@ -623,9 +623,9 @@ func TestValidatingLookup_ErrorPropagation(t *testing.T) {
 // TestMatcher_ValidationError tests that matchers propagate validation errors.
 func TestMatcher_ValidationError(t *testing.T) {
 	tests := []struct {
-		name       string
-		matcher    func() (profile.Matcher, error)
-		claims     map[string]string
+		name          string
+		matcher       func() (profile.Matcher, error)
+		claims        map[string]string
 		expectedClaim string
 	}{
 		{

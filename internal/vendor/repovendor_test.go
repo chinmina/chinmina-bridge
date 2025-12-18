@@ -160,13 +160,13 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url")
 	assert.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "vended-token-value",
-		Repositories:           []string{"repo-url"},
-		Permissions:            []string{"contents:read"},
-		Profile:                "repo:default",
-		Expiry:                 vendedDate,
-		OrganizationSlug:       "organization-slug",
-		RequestedRepositoryURL: "https://github.com/org/repo-url",
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url",
 	}, tok)
 }
 
@@ -197,13 +197,13 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 	tok, err := v(context.Background(), ref, "")
 	assert.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "vended-token-value",
-		Repositories:           []string{"pipeline-repo"},
-		Permissions:            []string{"contents:read"},
-		Profile:                "repo:default",
-		Expiry:                 vendedDate,
-		OrganizationSlug:       "organization-slug",
-		RequestedRepositoryURL: "https://github.com/org/pipeline-repo",
+		Token:               "vended-token-value",
+		Repositories:        []string{"pipeline-repo"},
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/pipeline-repo",
 	}, tok)
 }
 
@@ -232,13 +232,13 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url.git")
 	assert.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "vended-token-value",
-		Repositories:           []string{"repo-url"},
-		Permissions:            []string{"contents:read"},
-		Profile:                "repo:default",
-		Expiry:                 vendedDate,
-		OrganizationSlug:       "organization-slug",
-		RequestedRepositoryURL: "https://github.com/org/repo-url.git",
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url.git",
 	}, tok)
 }
 
@@ -269,13 +269,13 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 	tok, err := v(context.Background(), ref, "")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "vended-token-value",
-		Repositories:           []string{"repo-url"},
-		Permissions:            configuredPermissions,
-		Profile:                "repo:default",
-		Expiry:                 vendedDate,
-		OrganizationSlug:       "organization-slug",
-		RequestedRepositoryURL: "https://github.com/org/repo-url.git",
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         configuredPermissions,
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url.git",
 	}, tok)
 	// Verify configured permissions were used in token vendor call
 	assert.Equal(t, configuredPermissions, capturedPermissions)

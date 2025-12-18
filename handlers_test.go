@@ -275,11 +275,11 @@ func TestHandleHealthCheck_Success(t *testing.T) {
 func tv(token string) vendor.ProfileTokenVendor {
 	return vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string) (*vendor.ProfileToken, error) {
 		return &vendor.ProfileToken{
-			Token:                  token,
-			Expiry:                 defaultExpiry,
-			Profile:                ref.ShortString(),
-			OrganizationSlug:       ref.Organization,
-			RequestedRepositoryURL: repoUrl,
+			Token:               token,
+			Expiry:              defaultExpiry,
+			Profile:             ref.ShortString(),
+			OrganizationSlug:    ref.Organization,
+			VendedRepositoryURL: repoUrl,
 		}, nil
 	})
 }

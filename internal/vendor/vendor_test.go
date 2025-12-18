@@ -42,7 +42,7 @@ func TestProfileToken_URL(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			token := vendor.ProfileToken{RequestedRepositoryURL: tc.repositoryURL}
+			token := vendor.ProfileToken{VendedRepositoryURL: tc.repositoryURL}
 			url, err := token.URL()
 
 			if tc.expectedError != "" {

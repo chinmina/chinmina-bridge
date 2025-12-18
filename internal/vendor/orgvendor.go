@@ -33,11 +33,17 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			return nil, fmt.Errorf("could not find profile %s: %w", ref.Name, err)
 		}
 
-		// Evaluate match conditions against JWT claims
-		// Wrap claims with ValidatingLookup to add validation
-		claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
-		validatingClaims := profile.NewValidatingLookup(claims)
-		result := profileConf.Matches(validatingClaims)
+		profileMatcher := AuditingMatcher(ctx, profileConf.Matches)
+
+		// Evaluate match conditions against JWT claims, validating as we go
+		claims := profile.NewValidatingLookup(
+			jwt.RequireBuildkiteClaimsFromContext(ctx),
+		)
+		result := profileMatcher(claims)
+
+		// TODO: this needs to be double-checked: it seems pretty clunky. We need to
+		// make sure that the way this is dealt with is correct, and probably change
+		// the MatchResult so the API shows its meaning by how it's structured.
 		if result.Err != nil {
 			// Return validation errors or other errors directly
 			return nil, fmt.Errorf("profile match evaluation failed: %w", result.Err)
@@ -67,7 +73,7 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			}
 		}
 
-		// Use the github api to vend a token for the repository
+		// Use the GitHub API to vend a token for the repository
 		token, expiry, err := tokenVendor(ctx, profileConf.Repositories, profileConf.Permissions)
 		if err != nil {
 			return nil, fmt.Errorf("could not issue token for profile %s: %w", ref, err)
@@ -76,14 +82,13 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		logger.Info().Msg("profile token issued")
 
 		return &ProfileToken{
-			OrganizationSlug:       ref.Organization,
-			RequestedRepositoryURL: requestedRepoURL,
-			Repositories:           profileConf.Repositories,
-			Permissions:            profileConf.Permissions,
-			Profile:                ref.ShortString(),
-			Token:                  token,
-			Expiry:                 expiry,
-			MatchResult:            result,
+			OrganizationSlug:    ref.Organization,
+			VendedRepositoryURL: requestedRepoURL,
+			Repositories:        profileConf.Repositories,
+			Permissions:         profileConf.Permissions,
+			Profile:             ref.ShortString(),
+			Token:               token,
+			Expiry:              expiry,
 		}, nil
 	}
 }

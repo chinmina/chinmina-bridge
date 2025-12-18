@@ -15,10 +15,10 @@ import (
 func TestAuditor_Success(t *testing.T) {
 	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
 		return &vendor.ProfileToken{
-			Repositories:           []string{"https://example.com/repo"},
-			Permissions:            []string{"contents:read"},
-			RequestedRepositoryURL: "https://example.com/repo",
-			Expiry:                 time.Now().Add(1 * time.Hour),
+			Repositories:        []string{"https://example.com/repo"},
+			Permissions:         []string{"contents:read"},
+			VendedRepositoryURL: "https://example.com/repo",
+			Expiry:              time.Now().Add(1 * time.Hour),
 		}, nil
 	}
 	auditedVendor := vendor.Auditor(successfulVendor)
@@ -37,16 +37,18 @@ func TestAuditor_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, token)
-	assert.Equal(t, "https://example.com/repo", token.RequestedRepositoryURL)
+	assert.Equal(t, "https://example.com/repo", token.VendedRepositoryURL)
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
-		Error:        "",
-		Repositories: []string{"https://example.com/repo"},
-		Permissions:  []string{"contents:read"},
+		Error:            "",
+		VendedRepository: "https://example.com/repo",
+		Repositories:     []string{"https://example.com/repo"},
+		Permissions:      []string{"contents:read"},
 	}
 	// ExpirySecs is dynamic based on current time, so check separately
 	assert.Equal(t, expected.Error, entry.Error)
+	assert.Equal(t, expected.VendedRepository, entry.VendedRepository)
 	assert.Equal(t, expected.Repositories, entry.Repositories)
 	assert.Equal(t, expected.Permissions, entry.Permissions)
 	assert.NotZero(t, entry.ExpirySecs)
@@ -61,16 +63,18 @@ func TestAuditor_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, token)
-	assert.Equal(t, "https://example.com/repo", token.RequestedRepositoryURL)
+	assert.Equal(t, "https://example.com/repo", token.VendedRepositoryURL)
 
 	entry = audit.Log(ctx)
 	expected = audit.Entry{
-		Error:        "",
-		Repositories: []string{"https://example.com/repo"},
-		Permissions:  []string{"contents:read"},
+		Error:            "",
+		VendedRepository: "https://example.com/repo",
+		Repositories:     []string{"https://example.com/repo"},
+		Permissions:      []string{"contents:read"},
 	}
 	// ExpirySecs is dynamic based on current time, so check separately
 	assert.Equal(t, expected.Error, entry.Error)
+	assert.Equal(t, expected.VendedRepository, entry.VendedRepository)
 	assert.Equal(t, expected.Repositories, entry.Repositories)
 	assert.Equal(t, expected.Permissions, entry.Permissions)
 	assert.NotZero(t, entry.ExpirySecs)
@@ -106,6 +110,7 @@ func TestAuditor_Mismatch(t *testing.T) {
 		ExpirySecs:          0,
 		RequestedProfile:    "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default",
 		RequestedRepository: "example-repo",
+		VendedRepository:    "",
 	}
 	assert.Equal(t, expected, *entry)
 }
@@ -138,17 +143,18 @@ func TestAuditor_Failure(t *testing.T) {
 		ExpirySecs:          0,
 		RequestedProfile:    "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default",
 		RequestedRepository: "example-repo",
+		VendedRepository:    "",
 	}
 	assert.Equal(t, expected, *entry)
 }
 func TestAuditor_ProfileAuditing(t *testing.T) {
 	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
 		return &vendor.ProfileToken{
-			Repositories:           []string{"https://example.com/repo"},
-			Permissions:            []string{"contents:read"},
-			RequestedRepositoryURL: "https://example.com/repo",
-			Profile:                ref.ShortString(),
-			Expiry:                 time.Now().Add(1 * time.Hour),
+			Repositories:        []string{"https://example.com/repo"},
+			Permissions:         []string{"contents:read"},
+			VendedRepositoryURL: "https://example.com/repo",
+			Profile:             ref.ShortString(),
+			Expiry:              time.Now().Add(1 * time.Hour),
 		}, nil
 	}
 	// Testing auditing over the cache layer as there

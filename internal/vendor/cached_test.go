@@ -29,9 +29,9 @@ func TestCacheMissOnFirstRequest(t *testing.T) {
 	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 }
 
@@ -53,9 +53,9 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 
 	// second call misses and returns nil
@@ -87,22 +87,22 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "org:read-plugins",
-		Repositories:           []string{"any-repo", "another-secret-repo"},
-		Permissions:            []string{"contents:read", "packages:read"},
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "org:read-plugins",
+		Repositories:        []string{"any-repo", "another-secret-repo"},
+		Permissions:         []string{"contents:read", "packages:read"},
 	}, token)
 
 	// second call hits (even though it's for a different pipeline), return first value
 	token, err = v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "org:read-plugins",
-		Repositories:           []string{"any-repo", "another-secret-repo"},
-		Permissions:            []string{"contents:read", "packages:read"},
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "org:read-plugins",
+		Repositories:        []string{"any-repo", "another-secret-repo"},
+		Permissions:         []string{"contents:read", "packages:read"},
 	}, token)
 }
 
@@ -124,18 +124,18 @@ func TestCacheHitOnSecondRequest(t *testing.T) {
 	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 
 	// second call hits, return first value
 	token, err = v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 }
 
@@ -159,18 +159,18 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 
 	// second call hits, but repo changes so causes a miss
 	token, err = v(context.Background(), ref, "different-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "second-call",
-		RequestedRepositoryURL: "different-repo",
-		Profile:                "repo:default",
+		Token:               "second-call",
+		VendedRepositoryURL: "different-repo",
+		Profile:             "repo:default",
 	}, token)
 
 	// third call hits, returns second result after cache reset
@@ -178,9 +178,9 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "second-call",
-		RequestedRepositoryURL: "different-repo",
-		Profile:                "repo:default",
+		Token:               "second-call",
+		VendedRepositoryURL: "different-repo",
+		Profile:             "repo:default",
 	}, token)
 }
 
@@ -202,9 +202,9 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	token, err := v(context.Background(), ref1, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 
 	ref2 := profile.ProfileRef{
@@ -217,18 +217,18 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	token, err = v(context.Background(), ref2, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "second-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "second-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 
 	// third call hits, returns second result after cache reset
 	token, err = v(context.Background(), ref2, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "second-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "second-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 }
 
@@ -250,9 +250,9 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 
 	// expiry routine runs once per second
@@ -262,9 +262,9 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 	token, err = v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "second-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "second-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 }
 
@@ -285,21 +285,21 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 	token, err := v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "org:shared-profile",
-		Repositories:           []string{"any-repo", "different-repo"},
-		Permissions:            []string{"read", "write"},
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "org:shared-profile",
+		Repositories:        []string{"any-repo", "different-repo"},
+		Permissions:         []string{"read", "write"},
 	}, token)
 	// second call hits, but repo changes, so token content is the same but repo is different
 	token, err = v(context.Background(), ref, "different-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "first-call",
-		RequestedRepositoryURL: "different-repo",
-		Profile:                "org:shared-profile",
-		Repositories:           []string{"any-repo", "different-repo"},
-		Permissions:            []string{"read", "write"},
+		Token:               "first-call",
+		VendedRepositoryURL: "different-repo",
+		Profile:             "org:shared-profile",
+		Repositories:        []string{"any-repo", "different-repo"},
+		Permissions:         []string{"read", "write"},
 	}, token)
 }
 
@@ -352,9 +352,9 @@ func TestCacheMissWithNilVendorResponse(t *testing.T) {
 	token, err = v(context.Background(), ref, "any-repo")
 	require.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "second-call",
-		RequestedRepositoryURL: "any-repo",
-		Profile:                "repo:default",
+		Token:               "second-call",
+		VendedRepositoryURL: "any-repo",
+		Profile:             "repo:default",
 	}, token)
 }
 
@@ -418,18 +418,18 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		case string:
 			if ref.Name == "default" {
 				token = &vendor.ProfileToken{
-					Token:                  v,
-					RequestedRepositoryURL: repo,
-					Profile:                ref.ShortString(),
+					Token:               v,
+					VendedRepositoryURL: repo,
+					Profile:             ref.ShortString(),
 				}
 			} else {
 				orgProfile, _ := testProfile.LookupProfile(ref.ShortString())
 				token = &vendor.ProfileToken{
-					Token:                  v,
-					Repositories:           orgProfile.Repositories,
-					Permissions:            orgProfile.Permissions,
-					RequestedRepositoryURL: repo,
-					Profile:                ref.ShortString(),
+					Token:               v,
+					Repositories:        orgProfile.Repositories,
+					Permissions:         orgProfile.Permissions,
+					VendedRepositoryURL: repo,
+					Profile:             ref.ShortString(),
 				}
 			}
 		case error:

@@ -131,17 +131,13 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 			tok, err := v(createTestClaimsContext(), ref, tt.requestedURL)
 			assert.NoError(t, err)
 			assert.Equal(t, &vendor.ProfileToken{
-				Token:                  "non-default-token-value",
-				Repositories:           []string{"secret-repo", "another-secret-repo"},
-				Permissions:            []string{"contents:read", "packages:read"},
-				Profile:                "org:non-default-profile",
-				Expiry:                 vendedDate,
-				OrganizationSlug:       "organization-slug",
-				RequestedRepositoryURL: tt.requestedURL,
-				MatchResult: profile.MatchResult{
-					Matched: true,
-					Matches: []profile.ClaimMatch{},
-				},
+				Token:               "non-default-token-value",
+				Repositories:        []string{"secret-repo", "another-secret-repo"},
+				Permissions:         []string{"contents:read", "packages:read"},
+				Profile:             "org:non-default-profile",
+				Expiry:              vendedDate,
+				OrganizationSlug:    "organization-slug",
+				VendedRepositoryURL: tt.requestedURL,
 			}, tok)
 		})
 	}
@@ -210,16 +206,6 @@ organization:
 		tok, err := v(ctx, ref, "")
 		require.NoError(t, err)
 		require.NotNil(t, tok)
-
-		// Verify match result is captured for audit logging
-		assert.Equal(t, profile.MatchResult{
-			Matched: true,
-			Matches: []profile.ClaimMatch{
-				{Claim: "pipeline_slug", Value: "silk-prod"},
-			},
-			Attempt: nil,
-			Err:     nil,
-		}, tok.MatchResult)
 		assert.Equal(t, "test-token", tok.Token)
 	})
 
@@ -257,17 +243,6 @@ organization:
 		tok, err := v(ctx, ref, "")
 		require.NoError(t, err)
 		require.NotNil(t, tok)
-
-		// Verify all match conditions are captured
-		assert.Equal(t, profile.MatchResult{
-			Matched: true,
-			Matches: []profile.ClaimMatch{
-				{Claim: "pipeline_slug", Value: "silk-staging"},
-				{Claim: "build_branch", Value: "main"},
-			},
-			Attempt: nil,
-			Err:     nil,
-		}, tok.MatchResult)
 		assert.Equal(t, "test-token", tok.Token)
 	})
 

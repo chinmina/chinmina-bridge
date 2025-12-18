@@ -12,57 +12,74 @@ import (
 // of vending a token to the audit log.
 func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
 	return func(ctx context.Context, ref profile.ProfileRef, repo string) (*ProfileToken, error) {
+		entry := audit.Log(ctx)
+		entry.RequestedProfile = ref.String()
+		entry.RequestedRepository = repo
+
 		token, err := vendor(ctx, ref, repo)
 
-		entry := audit.Log(ctx)
 		if err != nil {
 			entry.Error = fmt.Sprintf("vendor failure: %v", err)
 		} else if token == nil {
-			entry.Error = "repository mismatch, no token vended"
+			// this is a successful no-result: it's not an error, but we don't have credentials for the request
+			// this happens on a repository mismatch, or on a profile request where the requested repo doesn't match.
+			entry.Error = "no token vended"
 		} else {
-			entry.RequestedRepository = token.RequestedRepositoryURL
+			entry.VendedRepository = token.VendedRepositoryURL
 			entry.Repositories = token.Repositories
 			entry.Permissions = token.Permissions
-			entry.RequestedProfile = ref.String()
 			entry.ExpirySecs = token.Expiry.Unix()
-
-			// Populate match results for audit logging
-			result := token.MatchResult
-			if result.Err != nil {
-				// Validation error: populate ClaimsFailed if attempt details available
-				if result.Attempt != nil {
-					entry.ClaimsFailed = []audit.ClaimFailure{
-						{
-							Claim:   result.Attempt.Claim,
-							Pattern: result.Attempt.Pattern,
-							Value:   result.Attempt.ActualValue,
-						},
-					}
-				}
-			} else if !result.Matched {
-				// Match failed: populate ClaimsFailed with attempt details
-				if result.Attempt != nil {
-					entry.ClaimsFailed = []audit.ClaimFailure{
-						{
-							Claim:   result.Attempt.Claim,
-							Pattern: result.Attempt.Pattern,
-							Value:   result.Attempt.ActualValue,
-						},
-					}
-				}
-			} else {
-				// Successful match: populate ClaimsMatched
-				// Always initialize as empty array (not nil) to distinguish "no rules" from "not processed"
-				entry.ClaimsMatched = make([]audit.ClaimMatch, 0, len(result.Matches))
-				for _, match := range result.Matches {
-					entry.ClaimsMatched = append(entry.ClaimsMatched, audit.ClaimMatch{
-						Claim: match.Claim,
-						Value: match.Value,
-					})
-				}
-			}
 		}
 
 		return token, err
 	}
+}
+
+// AuditingMatcher wraps a profile.Matcher to record the results of profile
+// matching to the audit log in a single place.
+func AuditingMatcher(ctx context.Context, wrapped profile.Matcher) profile.Matcher {
+	return func(claims profile.ClaimValueLookup) profile.MatchResult {
+
+		result := wrapped(claims)
+
+		entry := audit.Log(ctx)
+
+		if result.Err != nil || !result.Matched {
+			// Validation error: populate ClaimsFailed if attempt details available
+			// Match failed: populate ClaimsFailed with attempt details
+			entry.ClaimsFailed = asAuditAttempts(result.Attempt)
+		} else if result.Matched {
+			// Successful match: populate ClaimsMatched
+			// Always initialize as empty array (not nil) to distinguish "no rules" from "not processed"
+			entry.ClaimsMatched = asAuditClaimMatches(result.Matches)
+		}
+
+		return result
+	}
+}
+
+func asAuditAttempts(attempt *profile.MatchAttempt) []audit.ClaimFailure {
+	if attempt == nil {
+		return nil
+	}
+
+	return []audit.ClaimFailure{
+		{
+			Claim:   attempt.Claim,
+			Pattern: attempt.Pattern,
+			Value:   attempt.ActualValue,
+		},
+	}
+}
+
+func asAuditClaimMatches(matches []profile.ClaimMatch) []audit.ClaimMatch {
+	// Always initialize as empty array (not nil) to distinguish "no rules" from "not processed"
+	auditMatches := make([]audit.ClaimMatch, 0, len(matches))
+	for _, match := range matches {
+		auditMatches = append(auditMatches, audit.ClaimMatch{
+			Claim: match.Claim,
+			Value: match.Value,
+		})
+	}
+	return auditMatches
 }

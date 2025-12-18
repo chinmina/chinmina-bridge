@@ -197,6 +197,13 @@ func TestClaimMatchSerialization(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "repository fields",
+			entry: audit.Entry{
+				RequestedRepository: "https://github.com/org/requested-repo",
+				VendedRepository:    "https://github.com/org/vended-repo",
+			},
+		},
 	}
 
 	for _, tt := range tests {

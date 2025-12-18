@@ -38,10 +38,10 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 				// was changed.
 				// 2. The token is a profile token, and was initially vended for
 				// a different repository.
-				if cachedToken.Value.RequestedRepositoryURL != repo {
+				if cachedToken.Value.VendedRepositoryURL != repo {
 					// The profile token case:
 					if slices.Contains(cachedToken.Value.Repositories, repo) {
-						cachedToken.Value.RequestedRepositoryURL = repo
+						cachedToken.Value.VendedRepositoryURL = repo
 						return &cachedToken.Value, nil
 					} else {
 						// The pipeline token case:
@@ -49,7 +49,7 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 						// Re-cache likely to happen if the pipeline's repository was changed.
 						log.Info().
 							Str("key", key).Str("expected", repo).
-							Str("actual", cachedToken.Value.RequestedRepositoryURL).
+							Str("actual", cachedToken.Value.VendedRepositoryURL).
 							Msg("invalid: cached token issued for different repository")
 
 						// the delete is required as "set" is not guaranteed to write to the cache

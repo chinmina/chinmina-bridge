@@ -21,27 +21,23 @@ type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug s
 type TokenVendor func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error)
 
 type ProfileToken struct {
-	OrganizationSlug       string    `json:"organizationSlug"`
-	Profile                string    `json:"profile"`
-	RequestedRepositoryURL string    `json:"repositoryUrl"`
-	Repositories           []string  `json:"repositories"`
-	Permissions            []string  `json:"permissions"`
-	Token                  string    `json:"token"`
-	Expiry                 time.Time `json:"expiry"`
-	// MatchResult contains the match evaluation result for audit logging.
-	// For profiles with match rules, this contains the matched claim/value pairs.
-	// For profiles without match rules (available to all), this is an empty slice.
-	MatchResult profile.MatchResult `json:"-"`
+	OrganizationSlug    string    `json:"organizationSlug"`
+	Profile             string    `json:"profile"`
+	VendedRepositoryURL string    `json:"repositoryUrl"`
+	Repositories        []string  `json:"repositories"`
+	Permissions         []string  `json:"permissions"`
+	Token               string    `json:"token"`
+	Expiry              time.Time `json:"expiry"`
 }
 
 func (t ProfileToken) URL() (*url.URL, error) {
-	url, err := url.Parse(t.RequestedRepositoryURL)
+	url, err := url.Parse(t.VendedRepositoryURL)
 	if err != nil {
 		return nil, err
 	}
 
 	if !url.IsAbs() {
-		return nil, fmt.Errorf("repository URL must be absolute: %s", t.RequestedRepositoryURL)
+		return nil, fmt.Errorf("repository URL must be absolute: %s", t.VendedRepositoryURL)
 	}
 
 	return url, nil

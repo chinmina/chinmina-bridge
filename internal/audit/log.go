@@ -57,6 +57,7 @@ type Entry struct {
 	UserAgent           string
 	RequestedProfile    string
 	RequestedRepository string
+	VendedRepository    string
 	Authorized          bool
 	AuthSubject         string
 	AuthIssuer          string
@@ -81,6 +82,7 @@ func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 		Str("userAgent", e.UserAgent).
 		Str("requestedProfile", e.RequestedProfile).
 		Str("requestedRepository", e.RequestedRepository).
+		Str("vendedRepository", e.VendedRepository).
 		Bool("authorized", e.Authorized).
 		Str("authSubject", e.AuthSubject).
 		Str("authIssuer", e.AuthIssuer).
@@ -196,7 +198,7 @@ func Middleware() func(next http.Handler) http.Handler {
 }
 
 // Get the log entry for the current request. This is safe to use even if the
-// context does not create an entry.
+// context does not create an entry: it is never nil.
 func Log(ctx context.Context) *Entry {
 	_, e := Context(ctx)
 	return e

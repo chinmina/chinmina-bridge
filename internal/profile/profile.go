@@ -57,7 +57,8 @@ func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	if len(p.config.Organization.Profiles) == 0 {
+	if len(p.config.Organization.Profiles) == 0 &&
+		len(p.config.Organization.InvalidProfiles) == 0 {
 		return p.config, errors.New("organization profile not loaded")
 	}
 
@@ -375,6 +376,17 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 	// Update config with only valid profiles
 	profileConfig.Organization.Profiles = validProfiles
 	profileConfig.Organization.InvalidProfiles = invalidProfiles
+
+	if len(invalidProfiles) > 0 {
+		d := zerolog.Dict()
+		for name, err := range invalidProfiles {
+			d.Str(name, err.Error())
+		}
+
+		log.Warn().
+			Dict("invalid_profiles", d).
+			Msg("organization profile: some profiles failed validation and were ignored")
+	}
 
 	return profileConfig, nil
 }
