@@ -119,10 +119,11 @@ func (c Client) GetFileContent(ctx context.Context, owner string, repo string, p
 	}
 
 	if fileContents != nil {
+		// success, return downloaded content
 		return fileContents.GetContent()
 	}
 
-	return "", err
+	return "", fmt.Errorf("path %s in repo %s/%s returned no content", path, owner, repo)
 }
 
 func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
