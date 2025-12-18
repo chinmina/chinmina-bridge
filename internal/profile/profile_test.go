@@ -153,8 +153,9 @@ func TestRepositoryContents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Load the profile
-	validProfileYAML, err = profile.GetProfile(context.Background(), gh, profileConfig)
+	loadedYAML, err := profile.GetProfile(context.Background(), gh, profileConfig)
 	require.NoError(t, err)
+	assert.Equal(t, validProfileYAML, loadedYAML)
 }
 
 func TestInvalidRepositoryContents(t *testing.T) {
