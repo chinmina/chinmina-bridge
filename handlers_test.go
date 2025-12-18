@@ -45,10 +45,8 @@ func TestHandlers_RequireClaims(t *testing.T) {
 
 			rr := httptest.NewRecorder()
 
-			handler := handlePostToken(nil)
-
 			assert.PanicsWithValue(t, "Buildkite claims not present in context, likely used outside of the JWT middleware", func() {
-				handler.ServeHTTP(rr, req)
+				tc.handler.ServeHTTP(rr, req)
 			})
 		})
 	}
