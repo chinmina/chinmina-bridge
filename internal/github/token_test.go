@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
@@ -148,7 +149,11 @@ func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	tok, _, err := gh.CreateAccessToken(context.Background(), []string{"https://github.com/org/repo"}, []string{"contents:read"})
+	tok, _, err := gh.CreateAccessToken(
+		context.Background(),
+		[]string{"https://github.com/org/repo"},
+		[]string{"contents:read"},
+	)
 
 	assert.Equal(t, "", tok)
 	require.Error(t, err)
@@ -174,38 +179,30 @@ func TestTransportOptions(t *testing.T) {
 
 	// generate valid key for testing
 	key := generateKey(t)
+	cfg := config.GithubConfig{
+		ApiURL:         svr.URL,
+		PrivateKey:     key,
+		ApplicationID:  10,
+		InstallationID: 20,
+	}
 
+	// Default transport
 	_, err := github.New(
 		context.Background(),
-		config.GithubConfig{
-			ApiURL:         svr.URL,
-			PrivateKey:     key,
-			ApplicationID:  10,
-			InstallationID: 20,
-		},
+		cfg,
 	)
 	require.NoError(t, err)
 
 	_, err = github.New(
 		context.Background(),
-		config.GithubConfig{
-			ApiURL:         svr.URL,
-			PrivateKey:     key,
-			ApplicationID:  10,
-			InstallationID: 20,
-		},
+		cfg,
 		github.WithAppTransport,
 	)
 	require.NoError(t, err)
 
 	_, err = github.New(
 		context.Background(),
-		config.GithubConfig{
-			ApiURL:         svr.URL,
-			PrivateKey:     key,
-			ApplicationID:  10,
-			InstallationID: 20,
-		},
+		cfg,
 		github.WithTokenTransport,
 	)
 	require.NoError(t, err)
@@ -221,7 +218,113 @@ func TestTransportOptions(t *testing.T) {
 		},
 		github.WithTokenTransport,
 	)
+
 	require.Error(t, err)
+}
+
+func TestGetFileContent_Succeeds(t *testing.T) {
+	router := http.NewServeMux()
+
+	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		JSON(w, &api.RepositoryContent{
+			Type:     api.Ptr("file"),
+			Content:  api.Ptr(base64.StdEncoding.EncodeToString([]byte("expected content"))),
+			Encoding: api.Ptr("base64"),
+		})
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{ApiURL: svr.URL},
+		withPlainTransport,
+	)
+	require.NoError(t, err)
+
+	content, err := gh.GetFileContent(context.Background(), "owner", "repo", "path/to/file.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "expected content", content)
+}
+
+func TestGetFileContent_Fails_On_Directory(t *testing.T) {
+	router := http.NewServeMux()
+
+	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		JSON(w, []*api.RepositoryContent{
+			{
+				Type: api.Ptr("file"),
+				Name: api.Ptr("file1.txt"),
+			},
+			{
+				Type: api.Ptr("file"),
+				Name: api.Ptr("file2.txt"),
+			},
+		})
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{ApiURL: svr.URL},
+		withPlainTransport,
+	)
+	require.NoError(t, err)
+
+	content, err := gh.GetFileContent(context.Background(), "owner", "repo", "some-directory")
+	assert.Equal(t, "", content)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "is a directory, expected a file")
+}
+
+func TestGetFileContent_Fails_On_API_Error(t *testing.T) {
+	router := http.NewServeMux()
+
+	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{ApiURL: svr.URL},
+		withPlainTransport,
+	)
+	require.NoError(t, err)
+
+	content, err := gh.GetFileContent(context.Background(), "owner", "repo", "nonexistent.txt")
+	assert.Equal(t, "", content)
+	require.Error(t, err)
+}
+
+func TestGetFileContent_Fails_On_No_Content(t *testing.T) {
+	router := http.NewServeMux()
+
+	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("null"))
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{ApiURL: svr.URL},
+		withPlainTransport,
+	)
+	require.NoError(t, err)
+
+	content, err := gh.GetFileContent(context.Background(), "owner", "repo", "empty.txt")
+	assert.Equal(t, "", content)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "returned no content")
 }
 
 func TestGetRepoNames_Succeeds(t *testing.T) {
@@ -349,4 +452,11 @@ func generateKey(t *testing.T) string {
 	key := pem.EncodeToMemory(privateKeyPEM)
 
 	return string(key)
+}
+
+// withPlainTransport creates a transport with no auth - for testing only
+func withPlainTransport(clientConfig *github.ClientConfig) {
+	clientConfig.TransportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
+		return wrapped, nil
+	}
 }
