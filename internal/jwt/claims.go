@@ -256,8 +256,13 @@ func (c BuildkiteClaims) Lookup(claim string) (string, error) {
 
 // convertValue converts any to target type T, handling JSON number conversion.
 // This function is inlined by the compiler for each concrete type T.
-func convertValue[T any](value any) (T, error) {
+func convertValue[T comparable](value any) (T, error) {
 	var zero T
+
+	// return zero value for an expclicit nil
+	if value == nil {
+		return zero, nil
+	}
 
 	// Handle JSON number (float64) to int conversion
 	switch any(zero).(type) {
@@ -278,7 +283,7 @@ func convertValue[T any](value any) (T, error) {
 
 // setField is a generic setter that converts and assigns value to target.
 // This function is inlined by the compiler for each concrete type T.
-func setField[T any](target *T, value any) error {
+func setField[T comparable](target *T, value any) error {
 	v, err := convertValue[T](value)
 	if err != nil {
 		return err

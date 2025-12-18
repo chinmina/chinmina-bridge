@@ -241,6 +241,31 @@ func TestBuildkiteClaims_UnmarshalJSON_AgentTags(t *testing.T) {
 			},
 		},
 		{
+			name: "handles explicitly null fields",
+			jsonData: `{
+				"organization_slug": "acme",
+				"pipeline_slug": "pipeline",
+				"pipeline_id": "pipeline_uuid",
+				"build_number": 123,
+				"build_branch": "main",
+				"build_commit": "abc123",
+				"job_id": "job1",
+				"agent_id": "agent1",
+				"step_key": null
+			}`,
+			expected: BuildkiteClaims{
+				OrganizationSlug: "acme",
+				PipelineSlug:     "pipeline",
+				PipelineID:       "pipeline_uuid",
+				BuildNumber:      123,
+				BuildBranch:      "main",
+				BuildCommit:      "abc123",
+				JobId:            "job1",
+				AgentId:          "agent1",
+				AgentTags:        map[string]string{},
+			},
+		},
+		{
 			name: "mixed standard fields, cluster fields, and agent tags",
 			jsonData: `{
 				"organization_slug": "acme",
