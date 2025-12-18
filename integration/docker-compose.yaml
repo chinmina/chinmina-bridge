@@ -56,7 +56,7 @@ services:
   # jaeger all in one for local OTEL tracing, using in-memory storage which is
   # not persisted.
   jaeger:
-    image: jaegertracing/all-in-one:${JAEGER_VERSION:-latest}
+    image: cr.jaegertracing.io/jaegertracing/jaeger:${JAEGER_VERSION:-latest}
     ports:
       - "16686:16686" # viewer
       - "16687:16687" # admin
