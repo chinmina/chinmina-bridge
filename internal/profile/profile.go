@@ -2,6 +2,8 @@ package profile
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,12 +72,27 @@ func (p *ProfileStore) GetOrganization() (ProfileConfig, error) {
 	return p.config, nil
 }
 
-// Update the currently stored organization profile
+// Update the currently stored organization profile. Logs at info level if the
+// profile content changed (based on digest), or at debug level if unchanged.
 func (p *ProfileStore) Update(profile ProfileConfig) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.config.Organization = profile.Organization
+	oldDigest := p.config.Digest()
+	newDigest := profile.Digest()
+
+	if oldDigest != newDigest {
+		log.Info().
+			Str("old_digest", oldDigest).
+			Str("new_digest", newDigest).
+			Msg("organization profile: content changed")
+	} else {
+		log.Debug().
+			Str("digest", newDigest).
+			Msg("organization profile: content unchanged")
+	}
+
+	p.config = profile
 }
 
 type ProfileConfig struct {
@@ -86,6 +103,16 @@ type ProfileConfig struct {
 		Profiles        []Profile        `yaml:"profiles"`
 		InvalidProfiles map[string]error `yaml:"-"`
 	} `yaml:"organization"`
+
+	// digest is the SHA256 hash of the source YAML content.
+	// Populated during profile loading, not from YAML.
+	digest string `yaml:"-"`
+}
+
+// Digest returns the SHA256 hash of the source YAML content used to create
+// this ProfileConfig.
+func (config ProfileConfig) Digest() string {
+	return config.digest
 }
 
 func (p ProfileConfig) MarshalZerologObject(e *zerolog.Event) {
@@ -351,6 +378,10 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 		return ProfileConfig{}, fmt.Errorf("organization profile file parsing failed: %w", err)
 	}
 
+	// Calculate SHA256 digest of the source YAML for change detection
+	hash := sha256.Sum256([]byte(profile))
+	digest := hex.EncodeToString(hash[:])
+
 	// Compile matchers for each profile (graceful degradation)
 	validProfiles := make([]Profile, 0, len(profileConfig.Organization.Profiles))
 	invalidProfiles := make(map[string]error)
@@ -390,9 +421,10 @@ func ValidateProfile(ctx context.Context, profile string) (ProfileConfig, error)
 		validProfiles = append(validProfiles, prof)
 	}
 
-	// Update config with only valid profiles
+	// Update config with only valid profiles and set digest
 	profileConfig.Organization.Profiles = validProfiles
 	profileConfig.Organization.InvalidProfiles = invalidProfiles
+	profileConfig.digest = digest
 
 	if len(invalidProfiles) > 0 {
 		d := zerolog.Dict()

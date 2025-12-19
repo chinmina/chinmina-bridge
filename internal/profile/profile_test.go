@@ -1170,3 +1170,34 @@ func TestProfileErrorTypes(t *testing.T) {
 		assert.Equal(t, "restricted-profile", matchFailedErr.Name)
 	})
 }
+
+func TestProfileConfigDigest(t *testing.T) {
+	t.Run("digest is populated by ValidateProfile", func(t *testing.T) {
+		config, err := profile.ValidateProfile(context.Background(), validProfileYAML)
+		require.NoError(t, err)
+
+		digest := config.Digest()
+		assert.NotEmpty(t, digest, "digest should be populated")
+		assert.Len(t, digest, 64, "SHA256 hex string should be 64 characters")
+	})
+
+	t.Run("identical YAML produces identical digests", func(t *testing.T) {
+		config1, err := profile.ValidateProfile(context.Background(), validProfileYAML)
+		require.NoError(t, err)
+
+		config2, err := profile.ValidateProfile(context.Background(), validProfileYAML)
+		require.NoError(t, err)
+
+		assert.Equal(t, config1.Digest(), config2.Digest())
+	})
+
+	t.Run("different YAML produces different digests", func(t *testing.T) {
+		config1, err := profile.ValidateProfile(context.Background(), validProfileYAML)
+		require.NoError(t, err)
+
+		config2, err := profile.ValidateProfile(context.Background(), profileWithDefaults)
+		require.NoError(t, err)
+
+		assert.NotEqual(t, config1.Digest(), config2.Digest())
+	})
+}
