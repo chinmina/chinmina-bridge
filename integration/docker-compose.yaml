@@ -6,6 +6,7 @@ x-buildkite-agent: &buildkite-agent
   environment:
     - BUILDKITE_AGENT_TOKEN
     - BUILDKITE_AGENT_TAGS
+    - TMPDIR=/tmp
   volumes:
     - "../agent/startup:/docker-entrypoint.d:ro"
     - "../agent/hooks:/buildkite/hooks:ro"

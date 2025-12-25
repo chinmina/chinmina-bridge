@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 #
 # executing this script from your infrastructure's environment agent hook will
 # configure Github App Auth for every build
@@ -7,6 +9,13 @@
 # Changing the parameters supplied will be necessary to ensure that agents can
 # connect to the service and include the correct audience.
 #
+
+# Setup a temporary directory for this job
+
+TMPDIR=$(mktemp -d)
+export TMPDIR
+echo "Using temp dir: ${TMPDIR}"
+
 BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_CHINMINA_URL="http://chinmina-bridge" \
 BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_AUDIENCE="github-app-auth:chinmina" \
 BUILDKITE_PLUGIN_CHINMINA_GIT_CREDENTIALS_PROFILES_0="repo:default" \
