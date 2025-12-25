@@ -11,7 +11,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
-type ProfileTokenVendor func(ctx context.Context, ref profile.ProfileRef, repo string) (*ProfileToken, error)
+type ProfileTokenVendor func(ctx context.Context, ref profile.ProfileRef, repo string) VendorResult
 
 // Given a pipeline, return the https version of the repository URL
 type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug string) (string, error)

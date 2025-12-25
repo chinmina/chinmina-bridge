@@ -10,8 +10,6 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // createTestClaimsContext creates a context with test Buildkite claims for tests.
@@ -36,10 +34,8 @@ func TestOrgVendor_FailsWithWrongProfileType(t *testing.T) {
 		Type:         profile.ProfileTypeRepo, // Wrong type!
 		PipelineID:   "pipeline-id",
 	}
-	_, err := v(context.Background(), ref, "repo-url")
-	require.ErrorContains(t, err, "profile type mismatch")
-	require.ErrorContains(t, err, "org")
-	require.ErrorContains(t, err, "repo")
+	result := v(context.Background(), ref, "repo-url")
+	assertVendorFailure(t, result, "profile type mismatch")
 }
 
 func TestOrgVendor_FailWhenProfileNotFound(t *testing.T) {
@@ -50,8 +46,8 @@ func TestOrgVendor_FailWhenProfileNotFound(t *testing.T) {
 		Name:         "non-existent-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	_, err := v(context.Background(), ref, "repo-url")
-	require.ErrorContains(t, err, "could not find profile")
+	result := v(context.Background(), ref, "repo-url")
+	assertVendorFailure(t, result, "could not find profile")
 }
 
 func TestOrgVendor_FailWhenURLInvalid(t *testing.T) {
@@ -62,10 +58,9 @@ func TestOrgVendor_FailWhenURLInvalid(t *testing.T) {
 		Name:         "non-default-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	tok, err := v(createTestClaimsContext(), ref, ":/invalid_")
+	result := v(createTestClaimsContext(), ref, ":/invalid_")
 
-	require.ErrorContains(t, err, "could not parse requested repo URL")
-	require.Nil(t, tok)
+	assertVendorFailure(t, result, "could not parse requested repo URL")
 }
 
 func TestOrgVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
@@ -76,10 +71,9 @@ func TestOrgVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 		Name:         "non-default-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	tok, err := v(createTestClaimsContext(), ref, "https://github.com/org/i-dont-exist")
+	result := v(createTestClaimsContext(), ref, "https://github.com/org/i-dont-exist")
 
-	assert.NoError(t, err)
-	assert.Nil(t, tok)
+	assertVendorUnmatched(t, result)
 }
 
 func TestOrgVendor_FailWhenTokenVendorFails(t *testing.T) {
@@ -94,10 +88,9 @@ func TestOrgVendor_FailWhenTokenVendorFails(t *testing.T) {
 		Name:         "non-default-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	tok, err := v(createTestClaimsContext(), ref, "https://github.com/org/secret-repo")
+	result := v(createTestClaimsContext(), ref, "https://github.com/org/secret-repo")
 
-	assert.ErrorContains(t, err, "token vendor failed")
-	assert.Nil(t, tok)
+	assertVendorFailure(t, result, "token vendor failed")
 }
 
 func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
@@ -128,9 +121,8 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 				Name:         "non-default-profile",
 				Type:         profile.ProfileTypeOrg,
 			}
-			tok, err := v(createTestClaimsContext(), ref, tt.requestedURL)
-			assert.NoError(t, err)
-			assert.Equal(t, &vendor.ProfileToken{
+			result := v(createTestClaimsContext(), ref, tt.requestedURL)
+			assertVendorSuccess(t, result, vendor.ProfileToken{
 				Token:               "non-default-token-value",
 				Repositories:        []string{"secret-repo", "another-secret-repo"},
 				Permissions:         []string{"contents:read", "packages:read"},
@@ -138,7 +130,7 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 				Expiry:              vendedDate,
 				OrganizationSlug:    "organization-slug",
 				VendedRepositoryURL: tt.requestedURL,
-			}, tok)
+			})
 		})
 	}
 }
@@ -203,10 +195,8 @@ organization:
 			Type:         profile.ProfileTypeOrg,
 		}
 
-		tok, err := v(ctx, ref, "")
-		require.NoError(t, err)
-		require.NotNil(t, tok)
-		assert.Equal(t, "test-token", tok.Token)
+		result := v(ctx, ref, "")
+		assertVendorTokenValue(t, result, "test-token")
 	})
 
 	t.Run("match failure with wrong value", func(t *testing.T) {
@@ -220,13 +210,8 @@ organization:
 			Type:         profile.ProfileTypeOrg,
 		}
 
-		tok, err := v(ctx, ref, "")
-		require.Error(t, err)
-		assert.Nil(t, tok)
-
-		var matchErr profile.ProfileMatchFailedError
-		require.ErrorAs(t, err, &matchErr)
-		assert.Equal(t, "prod-deploy", matchErr.Name)
+		result := v(ctx, ref, "")
+		assertVendorFailure(t, result, "prod-deploy")
 	})
 
 	t.Run("match success with multiple rules", func(t *testing.T) {
@@ -240,10 +225,8 @@ organization:
 			Type:         profile.ProfileTypeOrg,
 		}
 
-		tok, err := v(ctx, ref, "")
-		require.NoError(t, err)
-		require.NotNil(t, tok)
-		assert.Equal(t, "test-token", tok.Token)
+		result := v(ctx, ref, "")
+		assertVendorTokenValue(t, result, "test-token")
 	})
 
 	t.Run("match failure with multiple rules - one fails", func(t *testing.T) {
@@ -257,12 +240,7 @@ organization:
 			Type:         profile.ProfileTypeOrg,
 		}
 
-		tok, err := v(ctx, ref, "")
-		require.Error(t, err)
-		assert.Nil(t, tok)
-
-		var matchErr profile.ProfileMatchFailedError
-		require.ErrorAs(t, err, &matchErr)
-		assert.Equal(t, "staging-deploy", matchErr.Name)
+		result := v(ctx, ref, "")
+		assertVendorFailure(t, result, "staging-deploy")
 	})
 }

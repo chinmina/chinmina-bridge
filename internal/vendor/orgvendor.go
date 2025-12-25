@@ -15,10 +15,10 @@ import (
 // Used by /organization/token/{profile} and /organization/git-credentials/{profile} routes.
 // It vends tokens for a set of repositories defined in the profile configuration.
 func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) ProfileTokenVendor {
-	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) (*ProfileToken, error) {
+	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) VendorResult {
 		// Validate that this is an org-scoped profile
 		if ref.Type != profile.ProfileTypeOrg {
-			return nil, fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeOrg.String(), ref.Type.String())
+			return NewVendorFailed(fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeOrg.String(), ref.Type.String()))
 		}
 
 		logger := log.With().
@@ -30,7 +30,7 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		// Use the ProfileStore to get the requested profile and validate it
 		profileConf, err := profileStore.GetProfileFromStore(ref.Name)
 		if err != nil {
-			return nil, fmt.Errorf("could not find profile %s: %w", ref.Name, err)
+			return NewVendorFailed(fmt.Errorf("could not find profile %s: %w", ref.Name, err))
 		}
 
 		profileMatcher := AuditingMatcher(ctx, profileConf.Matches)
@@ -46,11 +46,11 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		// the MatchResult so the API shows its meaning by how it's structured.
 		if result.Err != nil {
 			// Return validation errors or other errors directly
-			return nil, fmt.Errorf("profile match evaluation failed: %w", result.Err)
+			return NewVendorFailed(fmt.Errorf("profile match evaluation failed: %w", result.Err))
 		}
 		if !result.Matched {
 			// Match conditions not met
-			return nil, profile.ProfileMatchFailedError{Name: ref.Name}
+			return NewVendorFailed(profile.ProfileMatchFailedError{Name: ref.Name})
 		}
 
 		// The repository is only supplied for the git-credentials endpoint:
@@ -59,7 +59,7 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			// Otherwise validate it against the profile.
 			repo, err := url.Parse(requestedRepoURL)
 			if err != nil {
-				return nil, fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err)
+				return NewVendorFailed(fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err))
 			}
 
 			// If the requested repository isn't in the profile, return nil. This
@@ -69,19 +69,19 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			_, repository := github.RepoForURL(*repo)
 			if !profileConf.HasRepository(repository) {
 				logger.Debug().Msg("profile doesn't support requested repository: no token vended.")
-				return nil, nil
+				return NewVendorUnmatched()
 			}
 		}
 
 		// Use the GitHub API to vend a token for the repository
 		token, expiry, err := tokenVendor(ctx, profileConf.Repositories, profileConf.Permissions)
 		if err != nil {
-			return nil, fmt.Errorf("could not issue token for profile %s: %w", ref, err)
+			return NewVendorFailed(fmt.Errorf("could not issue token for profile %s: %w", ref, err))
 		}
 
 		logger.Info().Msg("profile token issued")
 
-		return &ProfileToken{
+		return NewVendorSuccess(ProfileToken{
 			OrganizationSlug:    ref.Organization,
 			VendedRepositoryURL: requestedRepoURL,
 			Repositories:        profileConf.Repositories,
@@ -89,6 +89,6 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			Profile:             ref.ShortString(),
 			Token:               token,
 			Expiry:              expiry,
-		}, nil
+		})
 	}
 }

@@ -168,43 +168,19 @@ func TestNewVendorSuccess(t *testing.T) {
 
 	result := vendor.NewVendorSuccess(token)
 
-	// Verify Failed() returns false
-	err, failed := result.Failed()
-	assert.False(t, failed)
-	assert.Nil(t, err)
-
-	// Verify Token() returns the token and true
-	gotToken, ok := result.Token()
-	assert.True(t, ok)
-	assert.Equal(t, token, gotToken)
+	assertVendorSuccess(t, result, token)
 }
 
 func TestNewVendorUnmatched(t *testing.T) {
 	result := vendor.NewVendorUnmatched()
 
-	// Verify Failed() returns false
-	err, failed := result.Failed()
-	assert.False(t, failed)
-	assert.Nil(t, err)
-
-	// Verify Token() returns false
-	_, ok := result.Token()
-	assert.False(t, ok)
+	assertVendorUnmatched(t, result)
 }
 
 func TestNewVendorFailed(t *testing.T) {
-	testErr := assert.AnError
+	result := vendor.NewVendorFailed(assert.AnError)
 
-	result := vendor.NewVendorFailed(testErr)
-
-	// Verify Failed() returns true with the error
-	err, failed := result.Failed()
-	assert.True(t, failed)
-	assert.Equal(t, testErr, err)
-
-	// Verify Token() returns false
-	_, ok := result.Token()
-	assert.False(t, ok)
+	assertVendorFailure(t, result, "general error for testing")
 }
 
 func TestVendorResult_Failed(t *testing.T) {
