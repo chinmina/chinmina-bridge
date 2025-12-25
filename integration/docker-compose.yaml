@@ -25,7 +25,7 @@ services:
   chinmina-bridge:
     image: alpine
     depends_on:
-      - jaeger
+      - aspire
     working_dir: "/src"
     command: ["./dist/chinmina-bridge"]
     environment:
@@ -39,10 +39,9 @@ services:
       - GITHUB_APP_ID
       - GITHUB_APP_INSTALLATION_ID
       - GITHUB_ORG_PROFILE
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire:18889
       - OBSERVE_ENABLED=true
-      # Jaeger standalone doesn't support metrics
-      - OBSERVE_METRICS_ENABLED=false
+      - OBSERVE_METRICS_ENABLED=true
       - OBSERVE_TYPE=grpc
       - OBSERVE_OTEL_LOG_LEVEL=debug
       # pass through AWS credentials (allows for KMS signing to be used)
@@ -54,12 +53,12 @@ services:
     volumes:
       - "..:/src"
 
-  # jaeger all in one for local OTEL tracing, using in-memory storage which is
+  # .NET Aspire dashboard all in one for local OTEL tracing, using in-memory storage which is
   # not persisted.
-  jaeger:
-    image: cr.jaegertracing.io/jaegertracing/jaeger:${JAEGER_VERSION:-latest}
+  aspire:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
     ports:
-      - "16686:16686" # viewer
-      - "16687:16687" # admin
+      - "18888:18888" # dashboard
     environment:
+      - ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
       - LOG_LEVEL=debug
