@@ -1,0 +1,33 @@
+organization:
+  profiles:
+    # Valid profile for comparison
+    - name: "valid-profile"
+      match:
+        - claim: pipeline_slug
+          value: "test-pipeline"
+      repositories: ["acme/test"]
+      permissions: ["contents:read"]
+
+    # Invalid - empty repositories
+    - name: "empty-repositories"
+      match:
+        - claim: pipeline_slug
+          value: "test-pipeline"
+      repositories: []
+      permissions: ["contents:read"]
+
+    # Invalid - empty permissions
+    - name: "empty-permissions"
+      match:
+        - claim: pipeline_slug
+          value: "test-pipeline"
+      repositories: ["acme/test"]
+      permissions: []
+
+    # Invalid - both empty
+    - name: "both-empty"
+      match:
+        - claim: pipeline_slug
+          value: "test-pipeline"
+      repositories: []
+      permissions: []

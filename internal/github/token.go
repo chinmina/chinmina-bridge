@@ -26,19 +26,19 @@ type Client struct {
 }
 
 type ClientConfig struct {
-	transportFactory func(context.Context, config.GithubConfig, http.RoundTripper) (http.RoundTripper, error)
+	TransportFactory func(context.Context, config.GithubConfig, http.RoundTripper) (http.RoundTripper, error)
 }
 
 type ClientOption func(*ClientConfig)
 
 func WithAppTransport(clientConfig *ClientConfig) {
-	clientConfig.transportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
+	clientConfig.TransportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
 		return createAppTransport(ctx, cfg, wrapped)
 	}
 }
 
 func WithTokenTransport(clientConfig *ClientConfig) {
-	clientConfig.transportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
+	clientConfig.TransportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
 		appTransport, err := createAppTransport(ctx, cfg, wrapped)
 		if err != nil {
 			return nil, err
@@ -59,7 +59,7 @@ func New(ctx context.Context, cfg config.GithubConfig, config ...ClientOption) (
 
 	// We're calling "installation_token", which is JWT authenticated, so we use
 	// the AppsTransport.
-	authTransport, err := clientConfig.transportFactory(ctx, cfg, http.DefaultTransport)
+	authTransport, err := clientConfig.TransportFactory(ctx, cfg, http.DefaultTransport)
 	if err != nil {
 		return Client{}, fmt.Errorf("could not create GitHub transport: %w", err)
 	}
@@ -105,6 +105,25 @@ func createAppTransport(ctx context.Context, cfg config.GithubConfig, wrapped ht
 		return nil, fmt.Errorf("could not create GitHub transport: %w", err)
 	}
 	return appInstallationTransport, nil
+}
+
+func (c Client) GetFileContent(ctx context.Context, owner string, repo string, path string) (string, error) {
+	fileContents, directoryContents, _, err := c.client.Repositories.GetContents(ctx, owner, repo, path, nil)
+
+	if err != nil {
+		return "", err
+	}
+
+	if directoryContents != nil {
+		return "", fmt.Errorf("path %s in repo %s/%s is a directory, expected a file", path, owner, repo)
+	}
+
+	if fileContents != nil {
+		// success, return downloaded content
+		return fileContents.GetContent()
+	}
+
+	return "", fmt.Errorf("path %s in repo %s/%s returned no content", path, owner, repo)
 }
 
 func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {

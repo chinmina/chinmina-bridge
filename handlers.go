@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -12,6 +13,11 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/rs/zerolog/log"
 )
+
+// HTTPStatuser provides HTTP status information for errors
+type HTTPStatuser interface {
+	Status() (int, string)
+}
 
 // buildProfileRef constructs a ProfileRef from the request context and path.
 // Returns an error if the profile parameter is invalid. Panics if Buildkite
@@ -41,8 +47,9 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 
 		tokenResponse, err := tokenVendor(r.Context(), ref, "")
 		if err != nil {
-			log.Info().Msgf("token creation failed %v\n", err)
-			requestError(w, http.StatusInternalServerError)
+			status, message := errorStatus(err)
+			log.Info().Msgf("token creation failed: %v", err)
+			writeJSONError(w, status, message)
 			return
 		}
 
@@ -92,8 +99,9 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 
 		tokenResponse, err := tokenVendor(r.Context(), ref, requestedRepoURL)
 		if err != nil {
-			log.Info().Msgf("token creation failed %v\n", err)
-			requestError(w, http.StatusInternalServerError)
+			status, message := errorStatus(err)
+			log.Info().Msgf("token creation failed: %v", err)
+			writeTextError(w, status, message)
 			return
 		}
 
@@ -149,6 +157,40 @@ func maxRequestSize(limit int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.MaxBytesHandler(next, limit)
 	}
+}
+
+// ErrorResponse represents a JSON error response.
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// writeJSONError writes a JSON error response with the given status code and message.
+func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+
+	response := ErrorResponse{Error: message}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		// At this point the status code has been written, so we can only log
+		log.Info().Msgf("failed to write JSON error response: %v", err)
+	}
+}
+
+// errorStatus extracts HTTP status code and message from an error.
+// Returns (StatusInternalServerError, StatusText) for errors that don't implement HTTPStatuser.
+func errorStatus(err error) (int, string) {
+	var statuser HTTPStatuser
+	if errors.As(err, &statuser) {
+		return statuser.Status()
+	}
+	return http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError)
+}
+
+// writeTextError writes a text/plain error response with custom header
+func writeTextError(w http.ResponseWriter, statusCode int, message string) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Chinmina-Denied", message)
+	w.WriteHeader(statusCode)
 }
 
 func requestError(w http.ResponseWriter, statusCode int) {

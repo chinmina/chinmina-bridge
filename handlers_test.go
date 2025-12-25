@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,10 +45,8 @@ func TestHandlers_RequireClaims(t *testing.T) {
 
 			rr := httptest.NewRecorder()
 
-			handler := handlePostToken(nil)
-
 			assert.PanicsWithValue(t, "Buildkite claims not present in context, likely used outside of the JWT middleware", func() {
-				handler.ServeHTTP(rr, req)
+				tc.handler.ServeHTTP(rr, req)
 			})
 		})
 	}
@@ -100,8 +99,12 @@ func TestHandlePostToken_ReturnsFailureOnVendorFailure(t *testing.T) {
 
 	// assert
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
-	// important to know that internal details aren't part of the error response
-	assert.Equal(t, "Internal Server Error\n", rr.Body.String())
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "Internal Server Error"}, respBody)
 }
 
 func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
@@ -246,8 +249,9 @@ func TestHandlePostGitCredentials_ReturnsFailureOnVendorFailure(t *testing.T) {
 
 	// assert
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
-	// important to know that internal details aren't part of the error response
-	assert.Equal(t, "Internal Server Error\n", rr.Body.String())
+	assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "Internal Server Error", rr.Header().Get("Chinmina-Denied"))
+	assert.Empty(t, rr.Body.String())
 }
 
 func TestHandleHealthCheck_Success(t *testing.T) {
@@ -274,11 +278,11 @@ func TestHandleHealthCheck_Success(t *testing.T) {
 func tv(token string) vendor.ProfileTokenVendor {
 	return vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string) (*vendor.ProfileToken, error) {
 		return &vendor.ProfileToken{
-			Token:                  token,
-			Expiry:                 defaultExpiry,
-			Profile:                ref.ShortString(),
-			OrganizationSlug:       ref.Organization,
-			RequestedRepositoryURL: repoUrl,
+			Token:               token,
+			Expiry:              defaultExpiry,
+			Profile:             ref.ShortString(),
+			OrganizationSlug:    ref.Organization,
+			VendedRepositoryURL: repoUrl,
 		}, nil
 	})
 }
@@ -372,4 +376,175 @@ func TestMaxRequestSizeMiddleware(t *testing.T) {
 
 	respBody := rr.Body.String()
 	assert.Equal(t, "", respBody)
+}
+
+func TestHandlePostToken_ProfileErrors(t *testing.T) {
+	cases := []struct {
+		name           string
+		vendorErr      error
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name:           "ProfileMatchFailedError",
+			vendorErr:      profile.ProfileMatchFailedError{Name: "test-profile"},
+			expectedStatus: http.StatusForbidden,
+			expectedError:  "Forbidden",
+		},
+		{
+			name:           "ProfileNotFoundError",
+			vendorErr:      profile.ProfileNotFoundError{Name: "test-profile"},
+			expectedStatus: http.StatusNotFound,
+			expectedError:  "profile not found",
+		},
+		{
+			name:           "ProfileUnavailableError",
+			vendorErr:      profile.ProfileUnavailableError{Name: "test-profile", Cause: errors.New("validation failed")},
+			expectedStatus: http.StatusNotFound,
+			expectedError:  "profile unavailable: validation failed",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tokenVendor := tvFails(tc.vendorErr)
+
+			ctx := claimsContext()
+
+			req, err := http.NewRequest("POST", "/token", nil)
+			require.NoError(t, err)
+
+			req = req.WithContext(ctx)
+			rr := httptest.NewRecorder()
+
+			// act
+			handler := handlePostToken(tokenVendor)
+			handler.ServeHTTP(rr, req)
+
+			// assert
+			assert.Equal(t, tc.expectedStatus, rr.Code)
+			assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+			var respBody ErrorResponse
+			err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+			require.NoError(t, err)
+			assert.Equal(t, ErrorResponse{Error: tc.expectedError}, respBody)
+		})
+	}
+}
+
+func TestHandlePostToken_ClaimValidationError(t *testing.T) {
+	tokenVendor := tvFails(profile.ClaimValidationError{
+		Claim: "build_branch",
+		Value: "main\n",
+		Err:   errors.New("contains control character or whitespace"),
+	})
+
+	ctx := claimsContext()
+
+	req, err := http.NewRequest("POST", "/token", nil)
+	require.NoError(t, err)
+
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// act
+	handler := handlePostToken(tokenVendor)
+	handler.ServeHTTP(rr, req)
+
+	// assert
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "Forbidden"}, respBody)
+}
+
+func TestHandlePostGitCredentials_ClaimValidationError(t *testing.T) {
+	tokenVendor := tvFails(profile.ClaimValidationError{
+		Claim: "build_branch",
+		Value: "main\n",
+		Err:   errors.New("contains control character or whitespace"),
+	})
+
+	ctx := claimsContext()
+
+	// request body in git-credentials format
+	body := strings.NewReader("protocol=https\nhost=github.com\npath=org/repo\n\n")
+
+	req, err := http.NewRequest("POST", "/git-credentials", body)
+	require.NoError(t, err)
+
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// act
+	handler := handlePostGitCredentials(tokenVendor)
+	handler.ServeHTTP(rr, req)
+
+	// assert
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "Forbidden", rr.Header().Get("Chinmina-Denied"))
+	assert.Empty(t, rr.Body.String())
+}
+
+func TestWriteJSONError_Success(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	// act
+	writeJSONError(rr, http.StatusForbidden, "access denied: profile match conditions not met")
+
+	// assert
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var respBody ErrorResponse
+	err := json.Unmarshal(rr.Body.Bytes(), &respBody)
+	require.NoError(t, err)
+	assert.Equal(t, ErrorResponse{Error: "access denied: profile match conditions not met"}, respBody)
+}
+
+func TestWriteJSONError_MultipleStatusCodes(t *testing.T) {
+	cases := []struct {
+		name       string
+		statusCode int
+		message    string
+	}{
+		{
+			name:       "400 Bad Request",
+			statusCode: http.StatusBadRequest,
+			message:    "invalid JWT claims",
+		},
+		{
+			name:       "403 Forbidden",
+			statusCode: http.StatusForbidden,
+			message:    "access denied: profile match conditions not met",
+		},
+		{
+			name:       "404 Not Found",
+			statusCode: http.StatusNotFound,
+			message:    "profile not found",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+
+			// act
+			writeJSONError(rr, tc.statusCode, tc.message)
+
+			// assert
+			assert.Equal(t, tc.statusCode, rr.Code)
+			assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+			var respBody ErrorResponse
+			err := json.Unmarshal(rr.Body.Bytes(), &respBody)
+			require.NoError(t, err)
+			assert.Equal(t, ErrorResponse{Error: tc.message}, respBody)
+		})
+	}
 }

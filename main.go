@@ -15,6 +15,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/observe"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -22,7 +23,7 @@ import (
 	"github.com/justinas/alice"
 )
 
-func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *github.ProfileStore) (http.Handler, error) {
+func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *profile.ProfileStore) (http.Handler, error) {
 	// wrap a mux such that HTTP telemetry is configured by default
 	muxWithoutTelemetry := http.NewServeMux()
 	mux := observe.NewMux(muxWithoutTelemetry)
@@ -89,7 +90,7 @@ func main() {
 }
 
 func launchServer() error {
-	orgProfile := github.NewProfileStore()
+	orgProfile := profile.NewProfileStore()
 	ctx := context.Background()
 
 	cfg, err := config.Load(context.Background())
@@ -200,7 +201,7 @@ func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
 	return transport
 }
 
-func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, gh github.Client, orgProfileLocation string) {
+func refreshOrgProfile(ctx context.Context, profileStore *profile.ProfileStore, gh github.Client, orgProfileLocation string) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Info().Interface("recover", r).Msg("background profile refresh failed; will attempt to continue.")
@@ -208,14 +209,15 @@ func refreshOrgProfile(ctx context.Context, profileStore *github.ProfileStore, g
 	}()
 
 	for {
-		profileConfig, err := github.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
+		profileConfig, err := profile.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
 		if err != nil {
 			// log the failure to fetch, then continue. This may be transient, so we
 			// need to keep trying.
 			log.Info().Err(err).Msg("organization profile refresh failed, continuing")
 		} else {
 			// only update the profile if retrieval succeeded
-			profileStore.Update(&profileConfig)
+			// invalid profiles are already logged during FetchOrganizationProfile
+			profileStore.Update(profileConfig)
 		}
 
 		select {

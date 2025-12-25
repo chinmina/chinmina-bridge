@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
@@ -54,7 +55,7 @@ func TestCreateAccessToken_Succeeds(t *testing.T) {
 		actualInstallation = r.PathValue("installationID")
 
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -94,7 +95,7 @@ func TestCreateAccessToken_Succeeds_If_Some_URLs_Valid(t *testing.T) {
 		actualInstallation = r.PathValue("installationID")
 
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -148,7 +149,11 @@ func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	tok, _, err := gh.CreateAccessToken(context.Background(), []string{"https://github.com/org/repo"}, []string{"contents:read"})
+	tok, _, err := gh.CreateAccessToken(
+		context.Background(),
+		[]string{"https://github.com/org/repo"},
+		[]string{"contents:read"},
+	)
 
 	assert.Equal(t, "", tok)
 	require.Error(t, err)
@@ -164,7 +169,7 @@ func TestTransportOptions(t *testing.T) {
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
 
 		JSON(w, &api.InstallationToken{
-			Token:     api.String("expected-token"),
+			Token:     api.Ptr("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -174,38 +179,30 @@ func TestTransportOptions(t *testing.T) {
 
 	// generate valid key for testing
 	key := generateKey(t)
+	cfg := config.GithubConfig{
+		ApiURL:         svr.URL,
+		PrivateKey:     key,
+		ApplicationID:  10,
+		InstallationID: 20,
+	}
 
+	// Default transport
 	_, err := github.New(
 		context.Background(),
-		config.GithubConfig{
-			ApiURL:         svr.URL,
-			PrivateKey:     key,
-			ApplicationID:  10,
-			InstallationID: 20,
-		},
+		cfg,
 	)
 	require.NoError(t, err)
 
 	_, err = github.New(
 		context.Background(),
-		config.GithubConfig{
-			ApiURL:         svr.URL,
-			PrivateKey:     key,
-			ApplicationID:  10,
-			InstallationID: 20,
-		},
+		cfg,
 		github.WithAppTransport,
 	)
 	require.NoError(t, err)
 
 	_, err = github.New(
 		context.Background(),
-		config.GithubConfig{
-			ApiURL:         svr.URL,
-			PrivateKey:     key,
-			ApplicationID:  10,
-			InstallationID: 20,
-		},
+		cfg,
 		github.WithTokenTransport,
 	)
 	require.NoError(t, err)
@@ -221,83 +218,217 @@ func TestTransportOptions(t *testing.T) {
 		},
 		github.WithTokenTransport,
 	)
+
 	require.Error(t, err)
 }
 
-func TestGetRepoNames_Succeed(t *testing.T) {
-	repositoryURLs := []string{"https://github.com/organization/valid-repository", "https://github.com/organization/another-valid-repository"}
+func TestGetFileContent_Succeeds(t *testing.T) {
+	router := http.NewServeMux()
 
-	expectedRepoNames := []string{"valid-repository", "another-valid-repository"}
+	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		JSON(w, &api.RepositoryContent{
+			Type:     api.Ptr("file"),
+			Content:  api.Ptr(base64.StdEncoding.EncodeToString([]byte("expected content"))),
+			Encoding: api.Ptr("base64"),
+		})
+	})
 
-	actualRepoNames, err := github.GetRepoNames(repositoryURLs)
-	assert.Equal(t, expectedRepoNames, actualRepoNames)
-	assert.NoError(t, err)
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{ApiURL: svr.URL},
+		withPlainTransport,
+	)
+	require.NoError(t, err)
+
+	content, err := gh.GetFileContent(context.Background(), "owner", "repo", "path/to/file.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "expected content", content)
 }
 
-func TestGetRepoNames_Fail_On_Invalid_URLs(t *testing.T) {
-	repositoryURLs := []string{"sch_eme://invalid_url/", "https://totally-not-malware.com"}
+func TestGetFileContent_Fails_On_Directory(t *testing.T) {
+	router := http.NewServeMux()
 
-	_, err := github.GetRepoNames(repositoryURLs)
+	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		JSON(w, []*api.RepositoryContent{
+			{
+				Type: api.Ptr("file"),
+				Name: api.Ptr("file1.txt"),
+			},
+			{
+				Type: api.Ptr("file"),
+				Name: api.Ptr("file2.txt"),
+			},
+		})
+	})
 
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "no valid repository URLs found")
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{ApiURL: svr.URL},
+		withPlainTransport,
+	)
+	require.NoError(t, err)
+
+	content, err := gh.GetFileContent(context.Background(), "owner", "repo", "some-directory")
+	assert.Equal(t, "", content)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "is a directory, expected a file")
 }
 
-func TestGetRepoNames_Succeed_If_Some_Valid(t *testing.T) {
-	repositoryURLs := []string{"https://github.com/only-org-mentioned", "https://dodgey.com", "https://github.com/super-cool-org/super-cool-repo"}
+func TestGetFileContent_Fails_On_API_Error(t *testing.T) {
+	router := http.NewServeMux()
 
-	expectedRepoNames := []string{"super-cool-repo"}
+	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
 
-	actualRepoNames, err := github.GetRepoNames(repositoryURLs)
+	svr := httptest.NewServer(router)
+	defer svr.Close()
 
-	assert.Equal(t, expectedRepoNames, actualRepoNames)
-	assert.NoError(t, err)
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{ApiURL: svr.URL},
+		withPlainTransport,
+	)
+	require.NoError(t, err)
+
+	content, err := gh.GetFileContent(context.Background(), "owner", "repo", "nonexistent.txt")
+	assert.Equal(t, "", content)
+	require.Error(t, err)
 }
 
-func TestScopesToPermissions_Succeed(t *testing.T) {
-	scopes := []string{
-		"contents:read",
-		"packages:write",
-	}
-	expectedPermissions := &api.InstallationPermissions{
-		Contents: api.String("read"),
-		Packages: api.String("write"),
-	}
+func TestGetFileContent_Fails_On_No_Content(t *testing.T) {
+	router := http.NewServeMux()
 
-	actualPermissions, err := github.ScopesToPermissions(scopes)
-	assert.Equal(t, expectedPermissions, actualPermissions)
-	assert.NoError(t, err)
+	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("null"))
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{ApiURL: svr.URL},
+		withPlainTransport,
+	)
+	require.NoError(t, err)
+
+	content, err := gh.GetFileContent(context.Background(), "owner", "repo", "empty.txt")
+	assert.Equal(t, "", content)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "returned no content")
 }
 
-func TestScopesToPermissions_Fail_On_Invalid_Permissions(t *testing.T) {
-	scopes := []string{
-		"nonsense",
-		"contents:",
-		"invalid:read",
-		"contents:invalid",
+func TestGetRepoNames_Succeeds(t *testing.T) {
+	tests := []struct {
+		name           string
+		repositoryURLs []string
+		expected       []string
+	}{
+		{
+			name:           "valid URLs",
+			repositoryURLs: []string{"https://github.com/organization/valid-repository", "https://github.com/organization/another-valid-repository"},
+			expected:       []string{"valid-repository", "another-valid-repository"},
+		},
+		{
+			name:           "some valid URLs",
+			repositoryURLs: []string{"https://github.com/only-org-mentioned", "https://dodgey.com", "https://github.com/super-cool-org/super-cool-repo"},
+			expected:       []string{"super-cool-repo"},
+		},
 	}
-	expectedPermissions := &api.InstallationPermissions{}
 
-	actualPermissions, err := github.ScopesToPermissions(scopes)
-	assert.Equal(t, expectedPermissions, actualPermissions)
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "no valid permissions found")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualRepoNames, err := github.GetRepoNames(tt.repositoryURLs)
+			assert.Equal(t, tt.expected, actualRepoNames)
+			assert.NoError(t, err)
+		})
+	}
 }
 
-func TestScopesToPermissions_Succeed_If_Some_Valid(t *testing.T) {
-	scopes := []string{
-		"blah",
-		"pull_requests:write",
-		"invalid:read",
-		"actions:admin",
-	}
-	expectedPermissions := &api.InstallationPermissions{
-		PullRequests: api.String("write"),
+func TestGetRepoNames_Fails(t *testing.T) {
+	tests := []struct {
+		name           string
+		repositoryURLs []string
+		expectedError  string
+	}{
+		{
+			name:           "invalid URLs",
+			repositoryURLs: []string{"sch_eme://invalid_url/", "https://totally-not-malware.com"},
+			expectedError:  "no valid repository URLs found",
+		},
 	}
 
-	actualPermissions, err := github.ScopesToPermissions(scopes)
-	assert.Equal(t, expectedPermissions, actualPermissions)
-	assert.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := github.GetRepoNames(tt.repositoryURLs)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, tt.expectedError)
+		})
+	}
+}
+
+func TestScopesToPermissions_Succeeds(t *testing.T) {
+	tests := []struct {
+		name     string
+		scopes   []string
+		expected *api.InstallationPermissions
+	}{
+		{
+			name:   "valid scopes",
+			scopes: []string{"contents:read", "packages:write"},
+			expected: &api.InstallationPermissions{
+				Contents: api.Ptr("read"),
+				Packages: api.Ptr("write"),
+			},
+		},
+		{
+			name:   "some valid scopes",
+			scopes: []string{"blah", "pull_requests:write", "invalid:read", "actions:admin"},
+			expected: &api.InstallationPermissions{
+				PullRequests: api.Ptr("write"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualPermissions, err := github.ScopesToPermissions(tt.scopes)
+			assert.Equal(t, tt.expected, actualPermissions)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestScopesToPermissions_Fails(t *testing.T) {
+	tests := []struct {
+		name          string
+		scopes        []string
+		expectedError string
+	}{
+		{
+			name:          "invalid permissions",
+			scopes:        []string{"nonsense", "contents:", "invalid:read", "contents:invalid"},
+			expectedError: "no valid permissions found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualPermissions, err := github.ScopesToPermissions(tt.scopes)
+			assert.Equal(t, &api.InstallationPermissions{}, actualPermissions)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, tt.expectedError)
+		})
+	}
 }
 
 func JSON(w http.ResponseWriter, payload any) {
@@ -321,4 +452,11 @@ func generateKey(t *testing.T) string {
 	key := pem.EncodeToMemory(privateKeyPEM)
 
 	return string(key)
+}
+
+// withPlainTransport creates a transport with no auth - for testing only
+func withPlainTransport(clientConfig *github.ClientConfig) {
+	clientConfig.TransportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
+		return wrapped, nil
+	}
 }

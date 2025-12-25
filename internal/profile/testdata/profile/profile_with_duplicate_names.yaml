@@ -1,0 +1,23 @@
+organization:
+  profiles:
+    - name: "production"
+      match:
+        - claim: pipeline_slug
+          value: "silk-prod"
+      repositories: ["acme/silk"]
+      permissions: ["contents:write"]
+
+    - name: "staging"
+      match:
+        - claim: pipeline_slug
+          value: "silk-staging"
+      repositories: ["acme/silk"]
+      permissions: ["contents:write"]
+
+    # Duplicate name - should be marked as invalid
+    - name: "production"
+      match:
+        - claim: pipeline_slug
+          value: "cotton-prod"
+      repositories: ["acme/cotton"]
+      permissions: ["contents:read"]

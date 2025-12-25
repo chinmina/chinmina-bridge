@@ -25,6 +25,29 @@ var (
 	logKey = key{}
 )
 
+// ClaimMatch represents a successful claim match for audit logging.
+type ClaimMatch struct {
+	Claim string
+	Value string
+}
+
+// MarshalZerologObject implements zerolog.LogObjectMarshaler for ClaimMatch.
+func (cm ClaimMatch) MarshalZerologObject(e *zerolog.Event) {
+	e.Str("claim", cm.Claim).Str("value", cm.Value)
+}
+
+// ClaimFailure represents a failed claim match attempt for audit logging.
+type ClaimFailure struct {
+	Claim   string
+	Pattern string
+	Value   string
+}
+
+// MarshalZerologObject implements zerolog.LogObjectMarshaler for ClaimFailure.
+func (cf ClaimFailure) MarshalZerologObject(e *zerolog.Event) {
+	e.Str("claim", cf.Claim).Str("pattern", cf.Pattern).Str("value", cf.Value)
+}
+
 // Entry is an audit log entry for the current request.
 type Entry struct {
 	Method              string
@@ -34,6 +57,7 @@ type Entry struct {
 	UserAgent           string
 	RequestedProfile    string
 	RequestedRepository string
+	VendedRepository    string
 	Authorized          bool
 	AuthSubject         string
 	AuthIssuer          string
@@ -43,6 +67,8 @@ type Entry struct {
 	Repositories        []string
 	Permissions         []string
 	ExpirySecs          int64
+	ClaimsMatched       []ClaimMatch
+	ClaimsFailed        []ClaimFailure
 }
 
 // MarshalZerologObject implements zerolog.LogObjectMarshaler. This avoids the
@@ -56,6 +82,7 @@ func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 		Str("userAgent", e.UserAgent).
 		Str("requestedProfile", e.RequestedProfile).
 		Str("requestedRepository", e.RequestedRepository).
+		Str("vendedRepository", e.VendedRepository).
 		Bool("authorized", e.Authorized).
 		Str("authSubject", e.AuthSubject).
 		Str("authIssuer", e.AuthIssuer).
@@ -86,6 +113,22 @@ func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 
 	if len(e.Permissions) > 0 {
 		event.Strs("permissions", e.Permissions)
+	}
+
+	if e.ClaimsMatched != nil {
+		arr := zerolog.Arr()
+		for _, match := range e.ClaimsMatched {
+			arr.Object(match)
+		}
+		event.Array("matches", arr)
+	}
+
+	if e.ClaimsFailed != nil {
+		arr := zerolog.Arr()
+		for _, failure := range e.ClaimsFailed {
+			arr.Object(failure)
+		}
+		event.Array("attemptedPatterns", arr)
 	}
 }
 
@@ -155,7 +198,7 @@ func Middleware() func(next http.Handler) http.Handler {
 }
 
 // Get the log entry for the current request. This is safe to use even if the
-// context does not create an entry.
+// context does not create an entry: it is never nil.
 func Log(ctx context.Context) *Entry {
 	_, e := Context(ctx)
 	return e

@@ -13,7 +13,7 @@ import (
 // Used by /token and /git-credentials routes.
 // It uses the Buildkite API to find the pipeline's repository and vends
 // tokens for that specific repository.
-func NewRepoVendor(profileStore *github.ProfileStore, repoLookup RepositoryLookup, tokenVendor TokenVendor) ProfileTokenVendor {
+func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLookup, tokenVendor TokenVendor) ProfileTokenVendor {
 	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) (*ProfileToken, error) {
 		// Validate that this is a repo-scoped profile
 		if ref.Type != profile.ProfileTypeRepo {
@@ -37,7 +37,8 @@ func NewRepoVendor(profileStore *github.ProfileStore, repoLookup RepositoryLooku
 			Str("repo", pipelineRepoURL).
 			Logger()
 
-		// Allow HTTPS credentials if the pipeline is configured for an equivalent SSH URL
+		// The pipeline itself may be configured for SSH, and changed by the agent.
+		// For comparison purposes here it has to be an HTTPS URL.
 		pipelineRepoURL = TranslateSSHToHTTPS(pipelineRepoURL)
 
 		if requestedRepoURL != "" && pipelineRepoURL != requestedRepoURL {
@@ -58,11 +59,11 @@ func NewRepoVendor(profileStore *github.ProfileStore, repoLookup RepositoryLooku
 			return nil, fmt.Errorf("no valid repository names found for URL: %s", pipelineRepoURL)
 		}
 
-		// Get default permissions from organization config
 		permissions := []string{"contents:read"} // fallback default
+		// Get default permissions from organization config
 		orgConfig, err := profileStore.GetOrganization()
 		if err != nil {
-			logger.Warn().Err(err).Msg("could not load organization config, using fallback permissions")
+			logger.Warn().Err(err).Msg("organization configuration not available, using fallback default permissions for repository token")
 		} else {
 			permissions = orgConfig.GetDefaultPermissions()
 		}
@@ -74,13 +75,13 @@ func NewRepoVendor(profileStore *github.ProfileStore, repoLookup RepositoryLooku
 		}
 
 		return &ProfileToken{
-			OrganizationSlug:       ref.Organization,
-			RequestedRepositoryURL: pipelineRepoURL,
-			Repositories:           allowedRepoNames,
-			Permissions:            permissions,
-			Profile:                ref.ShortString(),
-			Token:                  token,
-			Expiry:                 expiry,
+			OrganizationSlug:    ref.Organization,
+			VendedRepositoryURL: pipelineRepoURL,
+			Repositories:        allowedRepoNames,
+			Permissions:         permissions,
+			Profile:             ref.ShortString(),
+			Token:               token,
+			Expiry:              expiry,
 		}, nil
 	}
 }

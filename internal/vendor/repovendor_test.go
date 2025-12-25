@@ -6,24 +6,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func createProfileStoreWithPermissions(permissions []string) *github.ProfileStore {
-	ps := github.NewProfileStore()
-	config := github.ProfileConfig{}
+func createProfileStoreWithPermissions(permissions []string) *profile.ProfileStore {
+	ps := profile.NewProfileStore()
+	config := profile.ProfileConfig{}
 	config.Organization.Defaults.Permissions = permissions
-	config.Organization.Profiles = []github.Profile{{Name: "default"}}
-	ps.Update(&config)
+	config.Organization.Profiles = []profile.Profile{{Name: "default"}}
+	ps.Update(config)
 	return ps
 }
 
-func createProfileStoreWithError() *github.ProfileStore {
-	return github.NewProfileStore()
+func createProfileStoreWithError() *profile.ProfileStore {
+	return profile.NewProfileStore()
 }
 
 func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
@@ -161,13 +160,13 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url")
 	assert.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "vended-token-value",
-		Repositories:           []string{"repo-url"},
-		Permissions:            []string{"contents:read"},
-		Profile:                "repo:default",
-		Expiry:                 vendedDate,
-		OrganizationSlug:       "organization-slug",
-		RequestedRepositoryURL: "https://github.com/org/repo-url",
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url",
 	}, tok)
 }
 
@@ -198,13 +197,13 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 	tok, err := v(context.Background(), ref, "")
 	assert.NoError(t, err)
 	assert.Equal(t, &vendor.ProfileToken{
-		Token:                  "vended-token-value",
-		Repositories:           []string{"pipeline-repo"},
-		Permissions:            []string{"contents:read"},
-		Profile:                "repo:default",
-		Expiry:                 vendedDate,
-		OrganizationSlug:       "organization-slug",
-		RequestedRepositoryURL: "https://github.com/org/pipeline-repo",
+		Token:               "vended-token-value",
+		Repositories:        []string{"pipeline-repo"},
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/pipeline-repo",
 	}, tok)
 }
 
@@ -232,8 +231,15 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 	// Request with HTTPS URL should match after translation
 	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url.git")
 	assert.NoError(t, err)
-	assert.NotNil(t, tok)
-	assert.Equal(t, "https://github.com/org/repo-url.git", tok.RequestedRepositoryURL)
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url.git",
+	}, tok)
 }
 
 func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
@@ -262,12 +268,17 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 
 	tok, err := v(context.Background(), ref, "")
 	require.NoError(t, err)
-	require.NotNil(t, tok)
-
+	assert.Equal(t, &vendor.ProfileToken{
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         configuredPermissions,
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url.git",
+	}, tok)
 	// Verify configured permissions were used in token vendor call
 	assert.Equal(t, configuredPermissions, capturedPermissions)
-	// Verify returned token has configured permissions
-	assert.Equal(t, configuredPermissions, tok.Permissions)
 }
 
 func TestRepoVendor_FallbackPermissionsOnProfileStoreError(t *testing.T) {
@@ -332,7 +343,6 @@ func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
 
 	// Verify all permissions are included and order is maintained
 	assert.Equal(t, multiplePermissions, tok.Permissions)
-	assert.Len(t, tok.Permissions, 4)
 }
 
 func TestRepoVendor_EmptyDefaultPermissionsUsesFallback(t *testing.T) {
