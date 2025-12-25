@@ -81,15 +81,11 @@ func (p *ProfileStore) Update(profile ProfileConfig) {
 	oldDigest := p.config.Digest()
 	newDigest := profile.Digest()
 
+	// by default, only log when the source has actually changed content
 	if oldDigest != newDigest {
-		log.Info().
-			Str("old_digest", oldDigest).
-			Str("new_digest", newDigest).
-			Msg("organization profile: content changed")
+		log.Info().Msg("organization profiles: updated")
 	} else {
-		log.Debug().
-			Str("digest", newDigest).
-			Msg("organization profile: content unchanged")
+		log.Debug().Msg("organization profiles: no changes detected")
 	}
 
 	p.config = profile
