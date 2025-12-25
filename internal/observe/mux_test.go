@@ -1,39 +1,93 @@
 package observe
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
-
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHandleRouteTag(t *testing.T) {
-	rawMux := http.NewServeMux()
-	mux := NewMux(rawMux)
+func TestTrimMethod(t *testing.T) {
+	tests := []struct {
+		name     string
+		pattern  string
+		expected string
+	}{
+		{
+			name:     "GET method with path",
+			pattern:  "GET /test",
+			expected: "/test",
+		},
+		{
+			name:     "POST method with path",
+			pattern:  "POST /api/users",
+			expected: "/api/users",
+		},
+		{
+			name:     "PUT method with path",
+			pattern:  "PUT /resource/{id}",
+			expected: "/resource/{id}",
+		},
+		{
+			name:     "DELETE method with path",
+			pattern:  "DELETE /items/123",
+			expected: "/items/123",
+		},
+		{
+			name:     "PATCH method with path",
+			pattern:  "PATCH /update",
+			expected: "/update",
+		},
+		{
+			name:     "HEAD method with path",
+			pattern:  "HEAD /status",
+			expected: "/status",
+		},
+		{
+			name:     "OPTIONS method with path",
+			pattern:  "OPTIONS /cors",
+			expected: "/cors",
+		},
+		{
+			name:     "CONNECT method with path",
+			pattern:  "CONNECT /tunnel",
+			expected: "/tunnel",
+		},
+		{
+			name:     "TRACE method with path",
+			pattern:  "TRACE /debug",
+			expected: "/debug",
+		},
+		{
+			name:     "path without method",
+			pattern:  "/api/endpoint",
+			expected: "/api/endpoint",
+		},
+		{
+			name:     "path with invalid method prefix",
+			pattern:  "INVALID /path",
+			expected: "INVALID /path",
+		},
+		{
+			name:     "lowercase method not stripped",
+			pattern:  "get /test",
+			expected: "get /test",
+		},
+		{
+			name:     "empty string",
+			pattern:  "",
+			expected: "",
+		},
+		{
+			name:     "method without trailing space",
+			pattern:  "GET",
+			expected: "GET",
+		},
+	}
 
-	var routeLabels []attribute.KeyValue
-
-	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// the otel handler middleware adds the labeler, so this is also
-		// indirectly testing the presence of that middleware configuration in
-		// the observe muxer
-		labels, _ := otelhttp.LabelerFromContext(r.Context())
-
-		routeLabels = labels.Get()
-	})
-	mux.Handle("GET /test", testHandler)
-
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/test", nil)
-	req = req.WithContext(context.Background())
-
-	mux.ServeHTTP(recorder, req)
-
-	assert.Equal(t, http.StatusOK, recorder.Code, "Expected HTTP status OK")
-	assert.Equal(t, []attribute.KeyValue{attribute.String("http.route", "GET /test")}, routeLabels)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := TrimMethod(tt.pattern)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }

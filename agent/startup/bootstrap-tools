@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+echo "adding OpenSSL to allow for OIDC token caching"
+apk add --no-cache openssl
+
+echo "Adding GH CLI for testing GitHub API access"
+apk add --no-cache github-cli
