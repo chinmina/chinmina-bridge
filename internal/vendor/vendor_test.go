@@ -156,3 +156,133 @@ func TestTranslateSSHToHTTPS(t *testing.T) {
 		})
 	}
 }
+
+func TestNewVendorSuccess(t *testing.T) {
+	token := vendor.ProfileToken{
+		OrganizationSlug:    "test-org",
+		Profile:             "test-profile",
+		VendedRepositoryURL: "https://github.com/test/repo",
+		Token:               "test-token",
+		Expiry:              time.Date(2023, 5, 1, 12, 0, 0, 0, time.UTC),
+	}
+
+	result := vendor.NewVendorSuccess(token)
+
+	// Verify Failed() returns false
+	err, failed := result.Failed()
+	assert.False(t, failed)
+	assert.Nil(t, err)
+
+	// Verify Token() returns the token and true
+	gotToken, ok := result.Token()
+	assert.True(t, ok)
+	assert.Equal(t, token, gotToken)
+}
+
+func TestNewVendorUnmatched(t *testing.T) {
+	result := vendor.NewVendorUnmatched()
+
+	// Verify Failed() returns false
+	err, failed := result.Failed()
+	assert.False(t, failed)
+	assert.Nil(t, err)
+
+	// Verify Token() returns false
+	_, ok := result.Token()
+	assert.False(t, ok)
+}
+
+func TestNewVendorFailed(t *testing.T) {
+	testErr := assert.AnError
+
+	result := vendor.NewVendorFailed(testErr)
+
+	// Verify Failed() returns true with the error
+	err, failed := result.Failed()
+	assert.True(t, failed)
+	assert.Equal(t, testErr, err)
+
+	// Verify Token() returns false
+	_, ok := result.Token()
+	assert.False(t, ok)
+}
+
+func TestVendorResult_Failed(t *testing.T) {
+	testCases := []struct {
+		name         string
+		result       vendor.VendorResult
+		expectFailed bool
+		expectError  error
+	}{
+		{
+			name:         "success returns not failed",
+			result:       vendor.NewVendorSuccess(vendor.ProfileToken{}),
+			expectFailed: false,
+			expectError:  nil,
+		},
+		{
+			name:         "unmatched returns not failed",
+			result:       vendor.NewVendorUnmatched(),
+			expectFailed: false,
+			expectError:  nil,
+		},
+		{
+			name:         "failed returns failed with error",
+			result:       vendor.NewVendorFailed(assert.AnError),
+			expectFailed: true,
+			expectError:  assert.AnError,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err, failed := tc.result.Failed()
+			assert.Equal(t, tc.expectFailed, failed)
+			assert.Equal(t, tc.expectError, err)
+		})
+	}
+}
+
+func TestVendorResult_Token(t *testing.T) {
+	testToken := vendor.ProfileToken{
+		OrganizationSlug:    "test-org",
+		Profile:             "test-profile",
+		VendedRepositoryURL: "https://github.com/test/repo",
+		Token:               "test-token",
+		Expiry:              time.Date(2023, 5, 1, 12, 0, 0, 0, time.UTC),
+	}
+
+	testCases := []struct {
+		name        string
+		result      vendor.VendorResult
+		expectOk    bool
+		expectToken vendor.ProfileToken
+	}{
+		{
+			name:        "success returns token and true",
+			result:      vendor.NewVendorSuccess(testToken),
+			expectOk:    true,
+			expectToken: testToken,
+		},
+		{
+			name:        "unmatched returns false",
+			result:      vendor.NewVendorUnmatched(),
+			expectOk:    false,
+			expectToken: vendor.ProfileToken{},
+		},
+		{
+			name:        "failed returns false",
+			result:      vendor.NewVendorFailed(assert.AnError),
+			expectOk:    false,
+			expectToken: vendor.ProfileToken{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			token, ok := tc.result.Token()
+			assert.Equal(t, tc.expectOk, ok)
+			assert.Equal(t, tc.expectToken, token)
+		})
+	}
+}
