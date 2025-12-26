@@ -30,11 +30,11 @@ func TestHandlers_RequireClaims(t *testing.T) {
 	}{
 		{
 			name:    "postToken",
-			handler: handlePostToken(nil),
+			handler: handlePostToken(nil, profile.ProfileTypeRepo),
 		},
 		{
 			name:    "postGitCredentials",
-			handler: handlePostGitCredentials(nil),
+			handler: handlePostGitCredentials(nil, profile.ProfileTypeRepo),
 		},
 	}
 
@@ -64,7 +64,7 @@ func TestHandlePostToken_ReturnsTokenOnSuccess(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostToken(tokenVendor)
+	handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -94,7 +94,7 @@ func TestHandlePostToken_ReturnsFailureOnVendorFailure(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostToken(tokenVendor)
+	handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -126,7 +126,7 @@ func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor)
+	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -158,7 +158,7 @@ func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor)
+	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -184,7 +184,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnInvalidRequest(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor)
+	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -215,7 +215,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnReadFailure(t *testing.T) {
 	// act
 	handler := maxRequestSize(1)(
 		// use the request size limit to force an error in the credentials handler
-		handlePostGitCredentials(tokenVendor),
+		handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo),
 	)
 	handler.ServeHTTP(rr, req)
 
@@ -244,7 +244,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnVendorFailure(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor)
+	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -302,11 +302,12 @@ func TestHandlePostGitCredentialsWithProfile_ReturnsTokenOnSuccess(t *testing.T)
 	req, err := http.NewRequest("POST", "/organization/git-credentials/test-profile", body)
 	require.NoError(t, err)
 
+	req.SetPathValue("profile", "test-profile")
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor)
+	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeOrg)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -418,7 +419,7 @@ func TestHandlePostToken_ProfileErrors(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// act
-			handler := handlePostToken(tokenVendor)
+			handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
 			handler.ServeHTTP(rr, req)
 
 			// assert
@@ -449,7 +450,7 @@ func TestHandlePostToken_ClaimValidationError(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostToken(tokenVendor)
+	handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -481,7 +482,7 @@ func TestHandlePostGitCredentials_ClaimValidationError(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor)
+	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
