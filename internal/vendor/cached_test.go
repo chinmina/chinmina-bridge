@@ -29,6 +29,7 @@ func TestCacheMissOnFirstRequest(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 }
@@ -52,6 +53,7 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 
@@ -119,6 +121,7 @@ func TestCacheHitOnSecondRequest(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 
@@ -127,11 +130,46 @@ func TestCacheHitOnSecondRequest(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 }
 
 var defaultTTL = 60 * time.Minute
+
+func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
+	wrapped := sequenceVendor("first-call", "second-call")
+
+	c, err := vendor.Cached(defaultTTL)
+	require.NoError(t, err)
+
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+	// first call misses cache, vends with repository
+	result := v(context.Background(), ref, "any-repo")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
+		Profile:             "repo:default",
+	})
+
+	// second call hits with empty repo parameter (non-Git credentials request)
+	// should return cached token even though it was vended for a specific repo
+	result = v(context.Background(), ref, "")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "first-call",
+		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
+		Profile:             "repo:default",
+	})
+}
 
 func TestCacheMissWithRepoChange(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
@@ -152,6 +190,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 
@@ -160,6 +199,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "different-repo",
+		Repositories:        []string{"different-repo"},
 		Profile:             "repo:default",
 	})
 
@@ -168,6 +208,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "different-repo",
+		Repositories:        []string{"different-repo"},
 		Profile:             "repo:default",
 	})
 }
@@ -191,6 +232,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 
@@ -205,6 +247,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 
@@ -213,6 +256,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 }
@@ -236,6 +280,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 
@@ -247,6 +292,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 }
@@ -331,6 +377,7 @@ func TestCacheMissWithNilVendorResponse(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "any-repo",
+		Repositories:        []string{"any-repo"},
 		Profile:             "repo:default",
 	})
 }
@@ -396,6 +443,7 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 				return vendor.NewVendorSuccess(vendor.ProfileToken{
 					Token:               v,
 					VendedRepositoryURL: repo,
+					Repositories:        []string{repo},
 					Profile:             ref.ShortString(),
 				})
 			} else {
