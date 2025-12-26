@@ -23,7 +23,7 @@ type HTTPStatuser interface {
 // Returns an error if the profile parameter is invalid. Panics if Buildkite
 // claims are missing (via jwt.RequireBuildkiteClaimsFromContext), which should
 // only occur when used outside the JWT middleware chain.
-func buildProfileRef(r *http.Request) (profile.ProfileRef, error) {
+func buildProfileRef(r *http.Request, expectedType profile.ProfileType) (profile.ProfileRef, error) {
 	// claims must be present from the middleware
 	claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
 
@@ -31,14 +31,14 @@ func buildProfileRef(r *http.Request) (profile.ProfileRef, error) {
 	profileStr := r.PathValue("profile")
 
 	// Construct ProfileRef from claims and profile parameter
-	return profile.NewProfileRef(claims, profileStr)
+	return profile.NewProfileRef(claims, expectedType, profileStr)
 }
 
-func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
+func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile.ProfileType) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
-		ref, err := buildProfileRef(r)
+		ref, err := buildProfileRef(r, expectedType)
 		if err != nil {
 			log.Info().Msgf("invalid profile parameter: %v\n", err)
 			requestError(w, http.StatusBadRequest)
@@ -80,11 +80,11 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 	})
 }
 
-func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handler {
+func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, expectedType profile.ProfileType) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
-		ref, err := buildProfileRef(r)
+		ref, err := buildProfileRef(r, expectedType)
 		if err != nil {
 			log.Info().Msgf("invalid profile parameter: %v\n", err)
 			requestError(w, http.StatusBadRequest)
