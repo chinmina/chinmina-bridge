@@ -11,27 +11,27 @@ import (
 // Auditor is a function that wraps a PipelineTokenVendor and records the result
 // of vending a token to the audit log.
 func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
-	return func(ctx context.Context, ref profile.ProfileRef, repo string) (*ProfileToken, error) {
+	return func(ctx context.Context, ref profile.ProfileRef, repo string) VendorResult {
 		entry := audit.Log(ctx)
 		entry.RequestedProfile = ref.String()
 		entry.RequestedRepository = repo
 
-		token, err := vendor(ctx, ref, repo)
+		result := vendor(ctx, ref, repo)
 
-		if err != nil {
+		if err, failed := result.Failed(); failed {
 			entry.Error = fmt.Sprintf("vendor failure: %v", err)
-		} else if token == nil {
-			// this is a successful no-result: it's not an error, but we don't have credentials for the request
-			// this happens on a repository mismatch, or on a profile request where the requested repo doesn't match.
-			entry.Error = "no token vended"
-		} else {
+		} else if token, tokenVended := result.Token(); tokenVended {
 			entry.VendedRepository = token.VendedRepositoryURL
 			entry.Repositories = token.Repositories
 			entry.Permissions = token.Permissions
 			entry.ExpirySecs = token.Expiry.Unix()
+		} else {
+			// this is a successful no-result: it's not an error, but we don't have credentials for the request
+			// this happens on a repository mismatch, or on a profile request where the requested repo doesn't match.
+			entry.Error = "skipped(success): profile has no credentials for requested repository"
 		}
 
-		return token, err
+		return result
 	}
 }
 

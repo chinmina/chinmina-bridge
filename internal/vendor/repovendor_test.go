@@ -9,7 +9,6 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func createProfileStoreWithPermissions(permissions []string) *profile.ProfileStore {
@@ -34,10 +33,8 @@ func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
 		Type:         profile.ProfileTypeOrg, // Wrong type!
 		PipelineSlug: "",
 	}
-	_, err := v(context.Background(), ref, "repo-url")
-	require.ErrorContains(t, err, "profile type mismatch")
-	require.ErrorContains(t, err, "repo")
-	require.ErrorContains(t, err, "org")
+	result := v(context.Background(), ref, "repo-url")
+	assertVendorFailure(t, result, "profile type mismatch")
 }
 
 func TestRepoVendor_FailsWithNonDefaultProfile(t *testing.T) {
@@ -49,9 +46,8 @@ func TestRepoVendor_FailsWithNonDefaultProfile(t *testing.T) {
 		Type:         profile.ProfileTypeRepo,
 		PipelineSlug: "my-pipeline",
 	}
-	_, err := v(context.Background(), ref, "repo-url")
-	require.ErrorContains(t, err, "unsupported profile name")
-	require.ErrorContains(t, err, "custom-profile")
+	result := v(context.Background(), ref, "repo-url")
+	assertVendorFailure(t, result, "unsupported profile name")
 }
 
 func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
@@ -68,8 +64,8 @@ func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	_, err := v(context.Background(), ref, "repo-url")
-	require.ErrorContains(t, err, "could not find repository for pipeline")
+	result := v(context.Background(), ref, "repo-url")
+	assertVendorFailure(t, result, "could not find repository for pipeline")
 }
 
 func TestRepoVendor_FailsWhenNoValidRepoNames(t *testing.T) {
@@ -87,9 +83,8 @@ func TestRepoVendor_FailsWhenNoValidRepoNames(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	_, err := v(context.Background(), ref, "")
-	require.ErrorContains(t, err, "error getting repo names")
-	require.ErrorContains(t, err, "no valid repository URLs found")
+	result := v(context.Background(), ref, "")
+	assertVendorFailure(t, result, "error getting repo names")
 }
 
 func TestRepoVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
@@ -109,9 +104,8 @@ func TestRepoVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	tok, err := v(context.Background(), ref, "https://github.com/org/other-repo")
-	assert.NoError(t, err)
-	assert.Nil(t, tok)
+	result := v(context.Background(), ref, "https://github.com/org/other-repo")
+	assertVendorUnmatched(t, result)
 }
 
 func TestRepoVendor_FailsWhenTokenVendorFails(t *testing.T) {
@@ -132,9 +126,8 @@ func TestRepoVendor_FailsWhenTokenVendorFails(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url")
-	assert.ErrorContains(t, err, "token vendor failed")
-	assert.Nil(t, tok)
+	result := v(context.Background(), ref, "https://github.com/org/repo-url")
+	assertVendorFailure(t, result, "token vendor failed")
 }
 
 func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
@@ -157,9 +150,8 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url")
-	assert.NoError(t, err)
-	assert.Equal(t, &vendor.ProfileToken{
+	result := v(context.Background(), ref, "https://github.com/org/repo-url")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
 		Permissions:         []string{"contents:read"},
@@ -167,7 +159,7 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
 		VendedRepositoryURL: "https://github.com/org/repo-url",
-	}, tok)
+	})
 }
 
 func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
@@ -194,9 +186,8 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 	}
 
 	// Empty requestedRepoURL should succeed by using pipeline repo
-	tok, err := v(context.Background(), ref, "")
-	assert.NoError(t, err)
-	assert.Equal(t, &vendor.ProfileToken{
+	result := v(context.Background(), ref, "")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"pipeline-repo"},
 		Permissions:         []string{"contents:read"},
@@ -204,7 +195,7 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
 		VendedRepositoryURL: "https://github.com/org/pipeline-repo",
-	}, tok)
+	})
 }
 
 func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
@@ -229,9 +220,8 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 	// Request with HTTPS URL should match after translation
-	tok, err := v(context.Background(), ref, "https://github.com/org/repo-url.git")
-	assert.NoError(t, err)
-	assert.Equal(t, &vendor.ProfileToken{
+	result := v(context.Background(), ref, "https://github.com/org/repo-url.git")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
 		Permissions:         []string{"contents:read"},
@@ -239,7 +229,7 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
 		VendedRepositoryURL: "https://github.com/org/repo-url.git",
-	}, tok)
+	})
 }
 
 func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
@@ -266,9 +256,8 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	tok, err := v(context.Background(), ref, "")
-	require.NoError(t, err)
-	assert.Equal(t, &vendor.ProfileToken{
+	result := v(context.Background(), ref, "")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
 		Permissions:         configuredPermissions,
@@ -276,7 +265,7 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
 		VendedRepositoryURL: "https://github.com/org/repo-url.git",
-	}, tok)
+	})
 	// Verify configured permissions were used in token vendor call
 	assert.Equal(t, configuredPermissions, capturedPermissions)
 }
@@ -305,14 +294,20 @@ func TestRepoVendor_FallbackPermissionsOnProfileStoreError(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	tok, err := v(context.Background(), ref, "")
-	require.NoError(t, err)
-	require.NotNil(t, tok)
+	result := v(context.Background(), ref, "")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url.git",
+	})
 
 	// Verify fallback permissions were used
 	fallbackPermissions := []string{"contents:read"}
 	assert.Equal(t, fallbackPermissions, capturedPermissions)
-	assert.Equal(t, fallbackPermissions, tok.Permissions)
 }
 
 func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
@@ -337,12 +332,16 @@ func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	tok, err := v(context.Background(), ref, "")
-	require.NoError(t, err)
-	require.NotNil(t, tok)
-
-	// Verify all permissions are included and order is maintained
-	assert.Equal(t, multiplePermissions, tok.Permissions)
+	result := v(context.Background(), ref, "")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         multiplePermissions,
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url.git",
+	})
 }
 
 func TestRepoVendor_EmptyDefaultPermissionsUsesFallback(t *testing.T) {
@@ -369,12 +368,18 @@ func TestRepoVendor_EmptyDefaultPermissionsUsesFallback(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	tok, err := v(context.Background(), ref, "")
-	require.NoError(t, err)
-	require.NotNil(t, tok)
+	result := v(context.Background(), ref, "")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url.git",
+	})
 
 	// Verify fallback is used when defaults are empty
 	fallbackPermissions := []string{"contents:read"}
 	assert.Equal(t, fallbackPermissions, capturedPermissions)
-	assert.Equal(t, fallbackPermissions, tok.Permissions)
 }

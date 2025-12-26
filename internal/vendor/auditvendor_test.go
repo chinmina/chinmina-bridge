@@ -13,13 +13,14 @@ import (
 )
 
 func TestAuditor_Success(t *testing.T) {
-	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
-		return &vendor.ProfileToken{
+	vendedDate := time.Date(1970, 1, 1, 0, 0, 10, 0, time.UTC)
+	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+		return vendor.NewVendorSuccess(vendor.ProfileToken{
 			Repositories:        []string{"https://example.com/repo"},
 			Permissions:         []string{"contents:read"},
 			VendedRepositoryURL: "https://example.com/repo",
-			Expiry:              time.Now().Add(1 * time.Hour),
-		}, nil
+			Expiry:              vendedDate,
+		})
 	}
 	auditedVendor := vendor.Auditor(successfulVendor)
 
@@ -33,11 +34,15 @@ func TestAuditor_Success(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	token, err := auditedVendor(ctx, ref1, repo)
+	result := auditedVendor(ctx, ref1, repo)
 
-	assert.NoError(t, err)
-	assert.NotNil(t, token)
-	assert.Equal(t, "https://example.com/repo", token.VendedRepositoryURL)
+	expectedToken := vendor.ProfileToken{
+		Repositories:        []string{"https://example.com/repo"},
+		Permissions:         []string{"contents:read"},
+		VendedRepositoryURL: "https://example.com/repo",
+		Expiry:              vendedDate,
+	}
+	assertVendorSuccess(t, result, expectedToken)
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
@@ -59,11 +64,9 @@ func TestAuditor_Success(t *testing.T) {
 		Type:         profile.ProfileTypeOrg,
 		PipelineSlug: "",
 	}
-	token, err = auditedVendor(ctx, ref2, repo)
+	result = auditedVendor(ctx, ref2, repo)
 
-	assert.NoError(t, err)
-	assert.NotNil(t, token)
-	assert.Equal(t, "https://example.com/repo", token.VendedRepositoryURL)
+	assertVendorSuccess(t, result, expectedToken)
 
 	entry = audit.Log(ctx)
 	expected = audit.Entry{
@@ -82,10 +85,10 @@ func TestAuditor_Success(t *testing.T) {
 }
 
 func TestAuditor_Mismatch(t *testing.T) {
-	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
-		return nil, nil
+	unmatchedVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+		return vendor.NewVendorUnmatched()
 	}
-	auditedVendor := vendor.Auditor(successfulVendor)
+	auditedVendor := vendor.Auditor(unmatchedVendor)
 
 	ctx, _ := audit.Context(context.Background())
 	repo := "example-repo"
@@ -97,14 +100,13 @@ func TestAuditor_Mismatch(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	token, err := auditedVendor(ctx, ref, repo)
+	result := auditedVendor(ctx, ref, repo)
 
-	assert.NoError(t, err)
-	assert.Nil(t, token)
+	assertVendorUnmatched(t, result)
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
-		Error:               "no token vended",
+		Error:               "skipped(success): profile has no credentials for requested repository",
 		Repositories:        nil,
 		Permissions:         nil,
 		ExpirySecs:          0,
@@ -116,8 +118,8 @@ func TestAuditor_Mismatch(t *testing.T) {
 }
 
 func TestAuditor_Failure(t *testing.T) {
-	failingVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
-		return nil, errors.New("vendor error")
+	failingVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+		return vendor.NewVendorFailed(errors.New("vendor error"))
 	}
 	auditedVendor := vendor.Auditor(failingVendor)
 
@@ -131,9 +133,8 @@ func TestAuditor_Failure(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	token, err := auditedVendor(ctx, ref, repo)
-	assert.Error(t, err)
-	assert.Nil(t, token)
+	result := auditedVendor(ctx, ref, repo)
+	assertVendorFailure(t, result, "vendor error")
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
@@ -148,14 +149,14 @@ func TestAuditor_Failure(t *testing.T) {
 	assert.Equal(t, expected, *entry)
 }
 func TestAuditor_ProfileAuditing(t *testing.T) {
-	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) (*vendor.ProfileToken, error) {
-		return &vendor.ProfileToken{
+	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+		return vendor.NewVendorSuccess(vendor.ProfileToken{
 			Repositories:        []string{"https://example.com/repo"},
 			Permissions:         []string{"contents:read"},
 			VendedRepositoryURL: "https://example.com/repo",
 			Profile:             ref.ShortString(),
 			Expiry:              time.Now().Add(1 * time.Hour),
-		}, nil
+		})
 	}
 	// Testing auditing over the cache layer as there
 	// are resultant changes to audit objects.
@@ -175,9 +176,10 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 	// Case 1: Test with default profile - audit log should contain full URN
-	_, err = auditedVendor(ctx, ref1, repo)
+	result := auditedVendor(ctx, ref1, repo)
 
-	assert.NoError(t, err)
+	_, failed := result.Failed()
+	assert.False(t, failed)
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
@@ -194,9 +196,10 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 		PipelineSlug: "",
 	}
 	// Case 2: Test with specified profile - audit log should contain full URN
-	_, err = auditedVendor(ctx, ref2, repo)
+	result = auditedVendor(ctx, ref2, repo)
 
-	assert.NoError(t, err)
+	_, failed = result.Failed()
+	assert.False(t, failed)
 
 	entry = audit.Log(ctx)
 	expected = audit.Entry{

@@ -22,7 +22,7 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 		Must(&otter.Options[string, ProfileToken]{MaximumSize: 10_000, StatsRecorder: counter, ExpiryCalculator: otter.ExpiryCreating[string, ProfileToken](ttl)})
 
 	return func(v ProfileTokenVendor) ProfileTokenVendor {
-		return func(ctx context.Context, ref profile.ProfileRef, repo string) (*ProfileToken, error) {
+		return func(ctx context.Context, ref profile.ProfileRef, repo string) VendorResult {
 			// Cache key is the URN format of the ProfileRef
 			key := ref.String()
 
@@ -42,7 +42,7 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 					// The profile token case:
 					if slices.Contains(cachedToken.Value.Repositories, repo) {
 						cachedToken.Value.VendedRepositoryURL = repo
-						return &cachedToken.Value, nil
+						return NewVendorSuccess(cachedToken.Value)
 					} else {
 						// The pipeline token case:
 						// Token invalid: remove from cache and fall through to reissue.
@@ -56,23 +56,19 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 						cache.Invalidate(key)
 					}
 				} else {
-					return &cachedToken.Value, nil
+					return NewVendorSuccess(cachedToken.Value)
 				}
 			}
 
 			// cache miss: request and cache
-			token, err := v(ctx, ref, repo)
-			if err != nil {
-				return nil, err
+			result := v(ctx, ref, repo)
+
+			// Only cache successful results
+			if token, tokenVended := result.Token(); tokenVended {
+				cache.Set(key, token)
 			}
 
-			// token can be nil if the vendor wishes to indicate that there's neither
-			// a token nor an error
-			if token != nil {
-				cache.Set(key, *token)
-			}
-
-			return token, nil
+			return result
 		}
 	}, nil
 }

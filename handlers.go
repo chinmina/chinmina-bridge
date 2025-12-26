@@ -45,11 +45,19 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {
 			return
 		}
 
-		tokenResponse, err := tokenVendor(r.Context(), ref, "")
-		if err != nil {
+		result := tokenVendor(r.Context(), ref, "")
+		if err, failed := result.Failed(); failed {
 			status, message := errorStatus(err)
 			log.Info().Msgf("token creation failed: %v", err)
 			writeJSONError(w, status, message)
+			return
+		}
+
+		// Check if a token was vended (success vs unmatched)
+		tokenResponse, tokenVended := result.Token()
+		if !tokenVended {
+			// No token vended (unmatched case): return 204 No Content
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -97,8 +105,8 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 			return
 		}
 
-		tokenResponse, err := tokenVendor(r.Context(), ref, requestedRepoURL)
-		if err != nil {
+		result := tokenVendor(r.Context(), ref, requestedRepoURL)
+		if err, failed := result.Failed(); failed {
 			status, message := errorStatus(err)
 			log.Info().Msgf("token creation failed: %v", err)
 			writeTextError(w, status, message)
@@ -107,14 +115,15 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor) http.Handle
 
 		w.Header().Set("Content-Type", "text/plain")
 
-		// Given repository doesn't match the pipeline: empty return this means
-		// that we understand the request but cannot fulfil it: this is a
-		// successful case for a credential helper, so we successfully return
-		// but don't offer credentials.
-		if tokenResponse == nil {
+		// Check if a token was vended (success vs unmatched)
+		tokenResponse, tokenVended := result.Token()
+		if !tokenVended {
+			// Given repository doesn't match the pipeline: empty return this means
+			// that we understand the request but cannot fulfil it: this is a
+			// successful case for a credential helper, so we successfully return
+			// but don't offer credentials.
 			w.Header().Add("Content-Length", "0")
 			w.WriteHeader(http.StatusOK)
-
 			return
 		}
 
