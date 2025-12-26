@@ -107,6 +107,58 @@ func TestHandlePostToken_ReturnsFailureOnVendorFailure(t *testing.T) {
 	assert.Equal(t, ErrorResponse{Error: "Internal Server Error"}, respBody)
 }
 
+func TestHandlePostTokenWithProfile_ReturnsTokenOnSuccess(t *testing.T) {
+	cases := []struct {
+		name            string
+		profileParam    string
+		expectedProfile string
+	}{
+		{
+			name:            "repo profile without prefix",
+			profileParam:    "my-profile",
+			expectedProfile: "repo:my-profile",
+		},
+		{
+			name:            "repo profile with prefix",
+			profileParam:    "repo:my-profile",
+			expectedProfile: "repo:my-profile",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tokenVendor := tv("expected-token-value")
+
+			ctx := claimsContext()
+
+			req, err := http.NewRequest("POST", "/token/"+tc.profileParam, nil)
+			require.NoError(t, err)
+
+			req.SetPathValue("profile", tc.profileParam)
+			req = req.WithContext(ctx)
+			rr := httptest.NewRecorder()
+
+			// act
+			handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
+			handler.ServeHTTP(rr, req)
+
+			// assert
+			assert.Equal(t, http.StatusOK, rr.Code)
+			assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+			respBody := vendor.ProfileToken{}
+			err = json.Unmarshal(rr.Body.Bytes(), &respBody)
+			require.NoError(t, err)
+			assert.Equal(t, &vendor.ProfileToken{
+				Token:            "expected-token-value",
+				Expiry:           defaultExpiry,
+				OrganizationSlug: "organization-slug",
+				Profile:          tc.expectedProfile,
+			}, &respBody)
+		})
+	}
+}
+
 func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 	tokenVendor := tv("expected-token-value")
 
@@ -252,6 +304,58 @@ func TestHandlePostGitCredentials_ReturnsFailureOnVendorFailure(t *testing.T) {
 	assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
 	assert.Equal(t, "Internal Server Error", rr.Header().Get("Chinmina-Denied"))
 	assert.Empty(t, rr.Body.String())
+}
+
+func TestHandlePostGitCredentialsWithRepoProfile_ReturnsTokenOnSuccess(t *testing.T) {
+	cases := []struct {
+		name            string
+		profileParam    string
+		expectedProfile string
+	}{
+		{
+			name:            "repo profile without prefix",
+			profileParam:    "my-profile",
+			expectedProfile: "repo:my-profile",
+		},
+		{
+			name:            "repo profile with prefix",
+			profileParam:    "repo:my-profile",
+			expectedProfile: "repo:my-profile",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tokenVendor := tv("expected-token-value")
+
+			ctx := claimsContext()
+
+			m := credentialhandler.NewMap(10)
+			m.Set("protocol", "https")
+			m.Set("host", "github.com")
+			m.Set("path", "org/repo")
+
+			body := &bytes.Buffer{}
+			credentialhandler.WriteProperties(m, body)
+			req, err := http.NewRequest("POST", "/git-credentials/"+tc.profileParam, body)
+			require.NoError(t, err)
+
+			req.SetPathValue("profile", tc.profileParam)
+			req = req.WithContext(ctx)
+			rr := httptest.NewRecorder()
+
+			// act
+			handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
+			handler.ServeHTTP(rr, req)
+
+			// assert
+			assert.Equal(t, http.StatusOK, rr.Code)
+			assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+
+			respBody := rr.Body.String()
+			assert.Equal(t, "protocol=https\nhost=github.com\npath=org/repo\nusername=x-access-token\npassword=expected-token-value\npassword_expiry_utc=1715104776\n\n", respBody)
+		})
+	}
 }
 
 func TestHandleHealthCheck_Success(t *testing.T) {

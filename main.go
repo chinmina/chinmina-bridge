@@ -60,15 +60,20 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 		return nil, fmt.Errorf("vendor cache configuration failed: %w", err)
 	}
 
-	// Build separate vendor chains for pipeline and organization profiles
+	// Pipeline routes use repoVendor (defaults to "default" profile)
+	// The bare (non-profile) routes are for backward compatibility
 	repoVendor := vendor.Auditor(vendorCache(vendor.NewRepoVendor(orgProfile, bk.RepositoryLookup, gh.CreateAccessToken)))
-	orgVendor := vendor.Auditor(vendorCache(vendor.NewOrgVendor(orgProfile, gh.CreateAccessToken)))
+	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, profile.ProfileTypeRepo))
+	mux.Handle("POST /token", pipelineTokenHandler)
+	mux.Handle("POST /token/{profile}", pipelineTokenHandler)
 
-	// Pipeline routes use repoVendor (defaults to repo:default profile)
-	mux.Handle("POST /token", authorizedRouteMiddleware.Then(handlePostToken(repoVendor, profile.ProfileTypeRepo)))
-	mux.Handle("POST /git-credentials", authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, profile.ProfileTypeRepo)))
+	pipelineGitCredentialsHandler := authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, profile.ProfileTypeRepo))
+	mux.Handle("POST /git-credentials", pipelineGitCredentialsHandler)
+	mux.Handle("POST /git-credentials/{profile}", pipelineGitCredentialsHandler)
 
 	// Organization routes use orgVendor (profile specified in path)
+	orgVendor := vendor.Auditor(vendorCache(vendor.NewOrgVendor(orgProfile, gh.CreateAccessToken)))
+
 	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, profile.ProfileTypeOrg)))
 	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, profile.ProfileTypeOrg)))
 
