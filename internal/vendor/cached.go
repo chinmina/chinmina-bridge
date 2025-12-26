@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/maypok86/otter/v2"
 	"github.com/maypok86/otter/v2/stats"
@@ -82,7 +83,16 @@ func checkTokenRepository(cachedToken ProfileToken, requestedRepository string) 
 
 	if requestedRepository == "" { // not a Git credentials request, no repo
 		return cachedToken, true
-	} else if slices.Contains(cachedToken.Repositories, requestedRepository) {
+	}
+
+	// Extract repo name from the full URL before comparing
+	repoNames, err := github.GetRepoNames([]string{requestedRepository})
+	if err != nil || len(repoNames) == 0 {
+		return ProfileToken{}, false
+	}
+	requestedRepoName := repoNames[0]
+
+	if slices.Contains(cachedToken.Repositories, requestedRepoName) {
 		cachedToken.VendedRepositoryURL = requestedRepository
 		return cachedToken, true
 	}
