@@ -19,49 +19,40 @@ import (
 func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, error) {
 	counter := stats.NewCounter()
 	cache := otter.
-		Must(&otter.Options[string, ProfileToken]{MaximumSize: 10_000, StatsRecorder: counter, ExpiryCalculator: otter.ExpiryCreating[string, ProfileToken](ttl)})
+		Must(&otter.Options[string, ProfileToken]{
+			MaximumSize:      10_000,
+			StatsRecorder:    counter,
+			ExpiryCalculator: otter.ExpiryCreating[string, ProfileToken](ttl),
+		})
 
 	return func(v ProfileTokenVendor) ProfileTokenVendor {
-		return func(ctx context.Context, ref profile.ProfileRef, repo string) VendorResult {
+		return func(ctx context.Context, ref profile.ProfileRef, requestedRepository string) VendorResult {
 			// Cache key is the URN format of the ProfileRef
 			key := ref.String()
 
-			// cache hit: return the cached token
-			if cachedToken, ok := cache.GetEntry(key); ok {
-				log.Info().Time("expiry", cachedToken.Value.Expiry).
+			if cachedEntry, ok := cache.GetEntry(key); ok {
+				cachedToken := cachedEntry.Value
+
+				log.Debug().Time("expiry", cachedToken.Expiry).
 					Str("key", key).
 					Msg("hit: existing token found for pipeline")
 
-				// There are a couple of cases where the repository may not match
-				// the requested repository:
-				// 1. The pipeline was created with a different repository, and
-				// was changed.
-				// 2. The token is a profile token, and was initially vended for
-				// a different repository.
-				if cachedToken.Value.VendedRepositoryURL != repo {
-					// The profile token case:
-					if slices.Contains(cachedToken.Value.Repositories, repo) {
-						cachedToken.Value.VendedRepositoryURL = repo
-						return NewVendorSuccess(cachedToken.Value)
-					} else {
-						// The pipeline token case:
-						// Token invalid: remove from cache and fall through to reissue.
-						// Re-cache likely to happen if the pipeline's repository was changed.
-						log.Info().
-							Str("key", key).Str("expected", repo).
-							Str("actual", cachedToken.Value.VendedRepositoryURL).
-							Msg("invalid: cached token issued for different repository")
-
-						// the delete is required as "set" is not guaranteed to write to the cache
-						cache.Invalidate(key)
-					}
-				} else {
-					return NewVendorSuccess(cachedToken.Value)
+				if token, ok := checkTokenRepository(cachedToken, requestedRepository); ok {
+					return NewVendorSuccess(token)
 				}
+
+				log.Debug().
+					Time("expiry", cachedToken.Expiry).
+					Str("key", key).
+					Str("requestedRepository", requestedRepository).
+					Msg("dropping cached token due to repository mismatch: will request new token")
+
+					// the delete is required as "set" is not guaranteed to write to the cache
+				cache.Invalidate(key)
 			}
 
 			// cache miss: request and cache
-			result := v(ctx, ref, repo)
+			result := v(ctx, ref, requestedRepository)
 
 			// Only cache successful results
 			if token, tokenVended := result.Token(); tokenVended {
@@ -71,4 +62,30 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 			return result
 		}
 	}, nil
+}
+
+func checkTokenRepository(cachedToken ProfileToken, requestedRepository string) (ProfileToken, bool) {
+
+	//
+	// Note that the requested repository is only valued for Git credentials
+	// requests.
+	//
+
+	// There is a small chance that a pipeline's repository could change, leading
+	// to a cached token for the wrong repository. We reduce the chance of this
+	// for Git credentials requests by checking the repository and invalidating
+	// the cache when it's not valid.
+	//
+	// For non-Git credentials requests, we always return the cached token until
+	// it expires. There is an impedance mismatch here between what the cache
+	// stores (a token for a repository) vs what's authenticated (the pipeline).
+
+	if requestedRepository == "" { // not a Git credentials request, no repo
+		return cachedToken, true
+	} else if slices.Contains(cachedToken.Repositories, requestedRepository) {
+		cachedToken.VendedRepositoryURL = requestedRepository
+		return cachedToken, true
+	}
+
+	return ProfileToken{}, false
 }
