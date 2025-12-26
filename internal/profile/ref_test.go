@@ -13,16 +13,18 @@ func TestNewProfileRef_Success(t *testing.T) {
 	tests := []struct {
 		name          string
 		claims        jwt.BuildkiteClaims
+		expectedType  profile.ProfileType
 		profileString string
 		expected      profile.ProfileRef
 	}{
 		{
-			name: "RepoProfile",
+			name: "RepoProfileWithTypePrefix",
 			claims: jwt.BuildkiteClaims{
 				OrganizationSlug: "acme-corp",
 				PipelineID:       "abc123",
 				PipelineSlug:     "my-pipeline",
 			},
+			expectedType:  profile.ProfileTypeRepo,
 			profileString: "repo:default",
 			expected: profile.ProfileRef{
 				Organization: "acme-corp",
@@ -33,13 +35,48 @@ func TestNewProfileRef_Success(t *testing.T) {
 			},
 		},
 		{
-			name: "OrgProfile",
+			name: "RepoProfileWithoutTypePrefix",
 			claims: jwt.BuildkiteClaims{
 				OrganizationSlug: "acme-corp",
 				PipelineID:       "abc123",
 				PipelineSlug:     "my-pipeline",
 			},
+			expectedType:  profile.ProfileTypeRepo,
+			profileString: "custom-profile",
+			expected: profile.ProfileRef{
+				Organization: "acme-corp",
+				Type:         profile.ProfileTypeRepo,
+				Name:         "custom-profile",
+				PipelineID:   "abc123",
+				PipelineSlug: "my-pipeline",
+			},
+		},
+		{
+			name: "OrgProfileWithTypePrefix",
+			claims: jwt.BuildkiteClaims{
+				OrganizationSlug: "acme-corp",
+				PipelineID:       "abc123",
+				PipelineSlug:     "my-pipeline",
+			},
+			expectedType:  profile.ProfileTypeOrg,
 			profileString: "org:write-packages",
+			expected: profile.ProfileRef{
+				Organization: "acme-corp",
+				Type:         profile.ProfileTypeOrg,
+				Name:         "write-packages",
+				PipelineID:   "",
+				PipelineSlug: "",
+			},
+		},
+		{
+			name: "OrgProfileWithoutTypePrefix",
+			claims: jwt.BuildkiteClaims{
+				OrganizationSlug: "acme-corp",
+				PipelineID:       "abc123",
+				PipelineSlug:     "my-pipeline",
+			},
+			expectedType:  profile.ProfileTypeOrg,
+			profileString: "write-packages",
 			expected: profile.ProfileRef{
 				Organization: "acme-corp",
 				Type:         profile.ProfileTypeOrg,
@@ -55,6 +92,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 				PipelineID:       "abc123",
 				PipelineSlug:     "my-pipeline",
 			},
+			expectedType:  profile.ProfileTypeRepo,
 			profileString: "",
 			expected: profile.ProfileRef{
 				Organization: "acme-corp",
@@ -71,6 +109,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 				PipelineID:       "abc123",
 				PipelineSlug:     "my-pipeline",
 			},
+			expectedType:  profile.ProfileTypeOrg,
 			profileString: "org:write-packages-v2",
 			expected: profile.ProfileRef{
 				Organization: "acme-corp",
@@ -87,6 +126,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 				PipelineID:       "abc123",
 				PipelineSlug:     "my-pipeline",
 			},
+			expectedType:  profile.ProfileTypeRepo,
 			profileString: "repo:default",
 			expected: profile.ProfileRef{
 				Organization: "",
@@ -100,7 +140,7 @@ func TestNewProfileRef_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ref, err := profile.NewProfileRef(tt.claims, tt.profileString)
+			ref, err := profile.NewProfileRef(tt.claims, tt.expectedType, tt.profileString)
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, ref)
@@ -111,39 +151,57 @@ func TestNewProfileRef_Success(t *testing.T) {
 func TestNewProfileRef_InvalidFormats(t *testing.T) {
 	tests := []struct {
 		name           string
+		expectedType   profile.ProfileType
 		profileString  string
 		expectedErrMsg string
 	}{
 		{
-			name:           "MissingColon",
-			profileString:  "invalid-no-colon",
-			expectedErrMsg: "invalid profile format",
+			name:           "EmptyOrgProfile",
+			expectedType:   profile.ProfileTypeOrg,
+			profileString:  "",
+			expectedErrMsg: "organization profiles have no default",
 		},
 		{
 			name:           "MissingType",
+			expectedType:   profile.ProfileTypeRepo,
 			profileString:  ":profile-name",
 			expectedErrMsg: "invalid profile format",
 		},
 		{
 			name:           "MissingName",
+			expectedType:   profile.ProfileTypeRepo,
 			profileString:  "repo:",
 			expectedErrMsg: "invalid profile format",
 		},
 		{
 			name:           "InvalidProfileType",
+			expectedType:   profile.ProfileTypeRepo,
 			profileString:  "invalid:profile",
 			expectedErrMsg: "invalid profile type",
+		},
+		{
+			name:           "TypeMismatchRepoExpectedOrgGiven",
+			expectedType:   profile.ProfileTypeRepo,
+			profileString:  "org:profile-name",
+			expectedErrMsg: "profile type mismatch",
+		},
+		{
+			name:           "TypeMismatchOrgExpectedRepoGiven",
+			expectedType:   profile.ProfileTypeOrg,
+			profileString:  "repo:profile-name",
+			expectedErrMsg: "profile type mismatch",
 		},
 	}
 
 	claims := jwt.BuildkiteClaims{
 		OrganizationSlug: "acme-corp",
 		PipelineID:       "abc123",
+		PipelineSlug:     "my-pipeline",
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := profile.NewProfileRef(claims, tt.profileString)
+			_, err := profile.NewProfileRef(claims, tt.expectedType, tt.profileString)
 
 			require.Error(t, err)
 			assert.ErrorContains(t, err, tt.expectedErrMsg)

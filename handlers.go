@@ -31,7 +31,8 @@ func buildProfileRef(r *http.Request) (profile.ProfileRef, error) {
 	profileStr := r.PathValue("profile")
 
 	// Construct ProfileRef from claims and profile parameter
-	return profile.NewProfileRef(claims, profileStr)
+	// TODO: Extract expected type from routing in cb-o0b
+	return profile.NewProfileRef(claims, profile.ProfileTypeRepo, profileStr)
 }
 
 func handlePostToken(tokenVendor vendor.ProfileTokenVendor) http.Handler {

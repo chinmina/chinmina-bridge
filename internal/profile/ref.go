@@ -40,30 +40,15 @@ type ProfileRef struct {
 	PipelineSlug string      // Only set for ProfileTypeRepo
 }
 
-// NewProfileRef constructs a ProfileRef from Buildkite claims and a profile string.
-// If profileStr is empty, it defaults to "repo:default".
-// The profile string must be in the format "type:name" where type is "repo" or "org".
-func NewProfileRef(claims jwt.BuildkiteClaims, profileStr string) (ProfileRef, error) {
-	// Default to repo:default if no profile specified
-	if profileStr == "" {
-		profileStr = "repo:default"
-	}
-
-	// Split on colon to extract type and name
-	profileTypeStr, profileName, found := strings.Cut(profileStr, ":")
-	if !found || profileTypeStr == "" || profileName == "" {
-		return ProfileRef{}, fmt.Errorf("invalid profile format: expected 'type:name', got '%s'", profileStr)
-	}
-
-	// Determine profile type
-	var profileType ProfileType
-	switch profileTypeStr {
-	case "repo":
-		profileType = ProfileTypeRepo
-	case "org":
-		profileType = ProfileTypeOrg
-	default:
-		return ProfileRef{}, fmt.Errorf("invalid profile type '%s': expected 'repo' or 'org'", profileTypeStr)
+// NewProfileRef constructs a ProfileRef from Buildkite claims, an expected profile type, and a profile string.
+// If profileStr is empty and expectedType is ProfileTypeRepo, it defaults to "default".
+// If profileStr is empty and expectedType is ProfileTypeOrg, it returns an error.
+// If profileStr contains a colon, it must be in the format "type:name" and the type must match expectedType.
+// If profileStr does not contain a colon, it uses expectedType with profileStr as the name.
+func NewProfileRef(claims jwt.BuildkiteClaims, expectedType ProfileType, profileStr string) (ProfileRef, error) {
+	profileType, profileName, err := resolveProfileTypeAndName(expectedType, profileStr)
+	if err != nil {
+		return ProfileRef{}, err
 	}
 
 	// Build the reference
@@ -80,6 +65,55 @@ func NewProfileRef(claims jwt.BuildkiteClaims, profileStr string) (ProfileRef, e
 	}
 
 	return ref, nil
+}
+
+// resolveProfileTypeAndName determines the profile type and name from the input parameters.
+// Returns the resolved type, name, and any error encountered during resolution.
+func resolveProfileTypeAndName(expectedType ProfileType, profileStr string) (ProfileType, string, error) {
+	if profileStr == "" {
+		return handleEmptyProfileString(expectedType)
+	}
+
+	profileTypeStr, name, hasTypePrefix := strings.Cut(profileStr, ":")
+	if !hasTypePrefix {
+		return expectedType, profileStr, nil
+	}
+
+	if profileTypeStr == "" || name == "" {
+		return 0, "", fmt.Errorf("invalid profile format: expected 'type:name', got '%s'", profileStr)
+	}
+
+	parsedType, err := parseProfileType(profileTypeStr)
+	if err != nil {
+		return 0, "", err
+	}
+
+	if parsedType != expectedType {
+		return 0, "", fmt.Errorf("profile type mismatch: expected '%s' but got '%s'", expectedType.String(), parsedType.String())
+	}
+
+	return parsedType, name, nil
+}
+
+// handleEmptyProfileString handles the case where no profile string is provided.
+// Repo profiles default to "default", org profiles return an error.
+func handleEmptyProfileString(expectedType ProfileType) (ProfileType, string, error) {
+	if expectedType == ProfileTypeOrg {
+		return 0, "", fmt.Errorf("organization profiles have no default: profile name required")
+	}
+	return expectedType, ProfileNameDefault, nil
+}
+
+// parseProfileType converts a string to a ProfileType.
+func parseProfileType(typeStr string) (ProfileType, error) {
+	switch typeStr {
+	case "repo":
+		return ProfileTypeRepo, nil
+	case "org":
+		return ProfileTypeOrg, nil
+	default:
+		return 0, fmt.Errorf("invalid profile type '%s': expected 'repo' or 'org'", typeStr)
+	}
 }
 
 // String returns the canonical URN format for this ProfileRef.
