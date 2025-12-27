@@ -1,26 +1,46 @@
 package profile
 
-import "sync"
-
-// ProfileStoreOf provides type-safe storage and retrieval of authorized profiles.
+// ProfileStoreOf provides immutable type-safe storage and retrieval of authorized profiles.
 // The generic parameter T constrains the type of profile attributes stored.
+// Once created, ProfileStoreOf cannot be modified.
 type ProfileStoreOf[T any] struct {
-	mu       sync.RWMutex
-	profiles map[string]AuthorizedProfile[T]
+	profiles        map[string]AuthorizedProfile[T]
+	invalidProfiles map[string]error
 }
 
-// NewProfileStoreOf creates a new ProfileStoreOf instance.
-func NewProfileStoreOf[T any]() *ProfileStoreOf[T] {
-	return &ProfileStoreOf[T]{
-		profiles: make(map[string]AuthorizedProfile[T]),
+// NewProfileStoreOf creates a new immutable ProfileStoreOf instance with the given profiles.
+// Invalid profiles are tracked separately and returned as ProfileUnavailableError on Get().
+// The maps are copied to ensure immutability.
+func NewProfileStoreOf[T any](profiles map[string]AuthorizedProfile[T], invalidProfiles map[string]error) ProfileStoreOf[T] {
+	// Copy the profiles map to ensure immutability
+	profilesCopy := make(map[string]AuthorizedProfile[T], len(profiles))
+	for k, v := range profiles {
+		profilesCopy[k] = v
+	}
+
+	// Copy the invalidProfiles map to ensure immutability
+	invalidProfilesCopy := make(map[string]error, len(invalidProfiles))
+	for k, v := range invalidProfiles {
+		invalidProfilesCopy[k] = v
+	}
+
+	return ProfileStoreOf[T]{
+		profiles:        profilesCopy,
+		invalidProfiles: invalidProfilesCopy,
 	}
 }
 
 // Get retrieves an authorized profile by name.
+// Returns ProfileUnavailableError if the profile failed validation.
 // Returns ProfileNotFoundError if the profile does not exist.
-func (ps *ProfileStoreOf[T]) Get(name string) (AuthorizedProfile[T], error) {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
+func (ps ProfileStoreOf[T]) Get(name string) (AuthorizedProfile[T], error) {
+	// Check invalid profiles first
+	if err, found := ps.invalidProfiles[name]; found {
+		return AuthorizedProfile[T]{}, ProfileUnavailableError{
+			Name:  name,
+			Cause: err,
+		}
+	}
 
 	profile, found := ps.profiles[name]
 	if !found {
@@ -30,10 +50,66 @@ func (ps *ProfileStoreOf[T]) Get(name string) (AuthorizedProfile[T], error) {
 	return profile, nil
 }
 
-// Update stores or updates an authorized profile.
-func (ps *ProfileStoreOf[T]) Update(name string, profile AuthorizedProfile[T]) {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+// Profiles holds compiled runtime profiles for organization-level configuration.
+// It combines organization profiles with pipeline defaults and a content digest.
+// Once created, Profiles is immutable.
+type Profiles struct {
+	orgProfiles      ProfileStoreOf[OrganizationProfileAttr]
+	pipelineDefaults []string
+	digest           string
+}
 
-	ps.profiles[name] = profile
+// NewProfiles creates a new Profiles instance.
+// The pipelineDefaults slice is copied to ensure immutability.
+func NewProfiles(
+	orgProfiles ProfileStoreOf[OrganizationProfileAttr],
+	pipelineDefaults []string,
+	digest string,
+) Profiles {
+	// Copy pipelineDefaults to ensure immutability
+	defaultsCopy := make([]string, len(pipelineDefaults))
+	copy(defaultsCopy, pipelineDefaults)
+
+	return Profiles{
+		orgProfiles:      orgProfiles,
+		pipelineDefaults: defaultsCopy,
+		digest:           digest,
+	}
+}
+
+// GetOrgProfile retrieves an organization profile by name.
+// Returns ProfileStoreNotLoadedError if profiles have not been loaded.
+func (p Profiles) GetOrgProfile(name string) (AuthorizedProfile[OrganizationProfileAttr], error) {
+	if !p.IsLoaded() {
+		return AuthorizedProfile[OrganizationProfileAttr]{}, ProfileStoreNotLoadedError{}
+	}
+	return p.orgProfiles.Get(name)
+}
+
+// GetPipelineDefaults returns the default permissions for pipelines.
+// Falls back to ["contents:read"] if not configured.
+// Returns ProfileStoreNotLoadedError if profiles have not been loaded.
+func (p Profiles) GetPipelineDefaults() ([]string, error) {
+	if !p.IsLoaded() {
+		return nil, ProfileStoreNotLoadedError{}
+	}
+
+	if len(p.pipelineDefaults) == 0 {
+		return []string{"contents:read"}, nil
+	}
+
+	// Return a copy to preserve immutability
+	result := make([]string, len(p.pipelineDefaults))
+	copy(result, p.pipelineDefaults)
+	return result, nil
+}
+
+// Digest returns the content digest of the profile configuration.
+func (p Profiles) Digest() string {
+	return p.digest
+}
+
+// IsLoaded returns true if profiles have been successfully loaded.
+func (p Profiles) IsLoaded() bool {
+	return p.orgProfiles.profiles != nil
 }
