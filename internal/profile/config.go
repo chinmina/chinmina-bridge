@@ -179,6 +179,17 @@ func (e ProfileMatchFailedError) Status() (int, string) {
 	return http.StatusForbidden, http.StatusText(http.StatusForbidden)
 }
 
+// ProfileStoreNotLoadedError indicates the profile store has not been loaded
+type ProfileStoreNotLoadedError struct{}
+
+func (e ProfileStoreNotLoadedError) Error() string {
+	return "organization profile not loaded"
+}
+
+func (e ProfileStoreNotLoadedError) Status() (int, string) {
+	return http.StatusServiceUnavailable, "organization profile not loaded"
+}
+
 // ValidateMatchRule validates that a match rule is well-formed:
 // - Exactly one of value or valuePattern must be specified
 // - The claim must be in the allowed list
@@ -262,26 +273,26 @@ func IsAllowedClaim(claim string) bool {
 	return false
 }
 
-func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh github.Client) (ProfileConfig, error) {
-	profile, err := LoadProfile(ctx, gh, orgProfileLocation)
+func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh github.Client) (Profiles, error) {
+	profiles, err := LoadProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
-		return ProfileConfig{}, err
+		return Profiles{}, err
 	}
 
-	return profile, nil
+	return profiles, nil
 }
 
-func LoadProfile(ctx context.Context, gh github.Client, orgProfileLocation string) (ProfileConfig, error) {
+func LoadProfile(ctx context.Context, gh github.Client, orgProfileLocation string) (Profiles, error) {
 	// get the profile
 	profile, err := GetProfile(ctx, gh, orgProfileLocation)
 	if err != nil {
-		return ProfileConfig{}, err
+		return Profiles{}, err
 	}
 
 	// validate the profile and compile matchers
 	profileConfig, err := ValidateProfile(ctx, profile)
 	if err != nil {
-		return ProfileConfig{}, err
+		return Profiles{}, err
 	}
 
 	validCount := len(profileConfig.Organization.Profiles)
@@ -297,7 +308,8 @@ func LoadProfile(ctx context.Context, gh github.Client, orgProfileLocation strin
 		Int("invalid_profiles", invalidCount).
 		Msg("loaded organization profile configuration")
 
-	return profileConfig, nil
+	// Compile to runtime format
+	return CompileProfiles(profileConfig), nil
 }
 
 func GetProfile(ctx context.Context, gh github.Client, orgProfileLocation string) (string, error) {
@@ -435,4 +447,45 @@ func NewTestProfileConfig(profiles ...Profile) ProfileConfig {
 			InvalidProfiles: make(map[string]error),
 		},
 	}
+}
+
+// CompileProfiles converts a ProfileConfig (serialization format) into Profiles (runtime format).
+// It transforms Profile structs into AuthorizedProfile instances with matcher closures,
+// extracts default permissions, and preserves invalid profile information.
+func CompileProfiles(config ProfileConfig) Profiles {
+	// Build maps for ProfileStoreOf
+	validProfiles := make(map[string]AuthorizedProfile[OrganizationProfileAttr])
+	invalidProfiles := make(map[string]error)
+
+	// Convert valid profiles to AuthorizedProfile format
+	for _, profile := range config.Organization.Profiles {
+		// Create matcher closure that wraps Profile.Matches()
+		// Capture profile by value in the closure to avoid issues with loop variables
+		p := profile
+		matcher := func(claims ClaimValueLookup) MatchResult {
+			return p.Matches(claims)
+		}
+
+		// Convert to runtime format
+		attrs := OrganizationProfileAttr{
+			Repositories: p.Repositories,
+			Permissions:  p.Permissions,
+		}
+
+		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
+	}
+
+	// Copy invalid profiles
+	for name, err := range config.Organization.InvalidProfiles {
+		invalidProfiles[name] = err
+	}
+
+	// Create ProfileStoreOf
+	orgProfiles := NewProfileStoreOf(validProfiles, invalidProfiles)
+
+	// Extract pipeline defaults
+	pipelineDefaults := config.GetDefaultPermissions()
+
+	// Create and return Profiles
+	return NewProfiles(orgProfiles, pipelineDefaults, config.Digest())
 }

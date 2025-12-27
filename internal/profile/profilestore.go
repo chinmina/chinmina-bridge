@@ -51,3 +51,67 @@ func (ps ProfileStoreOf[T]) Get(name string) (AuthorizedProfile[T], error) {
 
 	return profile, nil
 }
+
+// Profiles holds compiled runtime profiles for organization-level configuration.
+// It combines organization profiles with pipeline defaults and a content digest.
+// Once created, Profiles is immutable.
+type Profiles struct {
+	orgProfiles      ProfileStoreOf[OrganizationProfileAttr]
+	pipelineDefaults []string
+	digest           string
+}
+
+// NewProfiles creates a new Profiles instance.
+// The pipelineDefaults slice is copied to ensure immutability.
+func NewProfiles(
+	orgProfiles ProfileStoreOf[OrganizationProfileAttr],
+	pipelineDefaults []string,
+	digest string,
+) Profiles {
+	// Copy pipelineDefaults to ensure immutability
+	defaultsCopy := make([]string, len(pipelineDefaults))
+	copy(defaultsCopy, pipelineDefaults)
+
+	return Profiles{
+		orgProfiles:      orgProfiles,
+		pipelineDefaults: defaultsCopy,
+		digest:           digest,
+	}
+}
+
+// GetOrgProfile retrieves an organization profile by name.
+// Returns ProfileStoreNotLoadedError if profiles have not been loaded.
+func (p Profiles) GetOrgProfile(name string) (AuthorizedProfile[OrganizationProfileAttr], error) {
+	if !p.IsLoaded() {
+		return AuthorizedProfile[OrganizationProfileAttr]{}, ProfileStoreNotLoadedError{}
+	}
+	return p.orgProfiles.Get(name)
+}
+
+// GetPipelineDefaults returns the default permissions for pipelines.
+// Falls back to ["contents:read"] if not configured.
+// Returns ProfileStoreNotLoadedError if profiles have not been loaded.
+func (p Profiles) GetPipelineDefaults() ([]string, error) {
+	if !p.IsLoaded() {
+		return nil, ProfileStoreNotLoadedError{}
+	}
+
+	if len(p.pipelineDefaults) == 0 {
+		return []string{"contents:read"}, nil
+	}
+
+	// Return a copy to preserve immutability
+	result := make([]string, len(p.pipelineDefaults))
+	copy(result, p.pipelineDefaults)
+	return result, nil
+}
+
+// Digest returns the content digest of the profile configuration.
+func (p Profiles) Digest() string {
+	return p.digest
+}
+
+// IsLoaded returns true if profiles have been successfully loaded.
+func (p Profiles) IsLoaded() bool {
+	return p.orgProfiles.profiles != nil
+}
