@@ -176,7 +176,8 @@ organization:
 		}
 
 		store := profile.NewProfileStore()
-		store.Update(profileConfig)
+		profiles := profile.CompileProfiles(profileConfig)
+		store.Update(profiles)
 		return store
 	}
 

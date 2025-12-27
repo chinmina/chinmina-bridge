@@ -257,26 +257,27 @@ func TestLoadProfile(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	validProfile, _ := profile.ValidateProfile(context.Background(), validProfileYAML)
+	validProfileConfig, _ := profile.ValidateProfile(context.Background(), validProfileYAML)
+	expectedDigest := validProfileConfig.Digest()
 
 	testCases := []struct {
 		config         string
-		expectedConfig profile.ProfileConfig
+		expectedDigest string
 		errorAssertion assert.ErrorAssertionFunc
 	}{
 		{
 			config:         "chinmina:chinmina-bridge:docs/profile.yaml",
-			expectedConfig: validProfile,
+			expectedDigest: expectedDigest,
 			errorAssertion: assert.NoError,
 		},
 		{
 			config:         "chinmina:non-existent-profile.yaml",
-			expectedConfig: profile.ProfileConfig{},
+			expectedDigest: "",
 			errorAssertion: assert.Error,
 		},
 		{
 			config:         "chinmina:chinmina-bridge:docs/invalid-profile.yaml",
-			expectedConfig: profile.ProfileConfig{},
+			expectedDigest: "",
 			errorAssertion: assert.Error,
 		},
 	}
@@ -286,7 +287,8 @@ func TestLoadProfile(t *testing.T) {
 			result, err := profile.LoadProfile(context.Background(), gh, tc.config)
 			tc.errorAssertion(t, err)
 			if err == nil {
-				assertProfileConfigEqual(t, tc.expectedConfig, result)
+				assert.Equal(t, tc.expectedDigest, result.Digest())
+				assert.True(t, result.IsLoaded())
 			}
 		})
 	}
@@ -966,5 +968,222 @@ func TestProfileConfigDigest(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.NotEqual(t, config1.Digest(), config2.Digest())
+	})
+}
+
+// testClaimLookup implements ClaimValueLookup for testing CompileProfiles.
+type testClaimLookup struct {
+	claims map[string]string
+}
+
+func (t testClaimLookup) Lookup(claim string) (string, error) {
+	if t.claims == nil {
+		return "", jwt.ErrClaimNotFound
+	}
+	value, found := t.claims[claim]
+	if !found {
+		return "", jwt.ErrClaimNotFound
+	}
+	return value, nil
+}
+
+func TestCompileProfiles(t *testing.T) {
+	t.Run("converts valid profiles to runtime format", func(t *testing.T) {
+		// Create a ProfileConfig with valid profiles
+		config, err := profile.ValidateProfile(context.Background(), `
+organization:
+  profiles:
+    - name: test-profile
+      match:
+        - claim: pipeline_slug
+          value: my-pipeline
+      repositories:
+        - chinmina/chinmina-bridge
+      permissions:
+        - contents:read
+`)
+		require.NoError(t, err)
+
+		// Compile to runtime format
+		profiles := profile.CompileProfiles(config)
+
+		// Verify the profile was converted
+		assert.True(t, profiles.IsLoaded())
+		assert.NotEmpty(t, profiles.Digest())
+
+		// Verify we can retrieve the profile
+		authProfile, err := profiles.GetOrgProfile("test-profile")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"chinmina/chinmina-bridge"}, authProfile.Attrs.Repositories)
+		assert.Equal(t, []string{"contents:read"}, authProfile.Attrs.Permissions)
+
+		// Verify the matcher works
+		claims := testClaimLookup{
+			claims: map[string]string{
+				"pipeline_slug": "my-pipeline",
+			},
+		}
+		result := authProfile.Match(claims)
+		assert.True(t, result.Matched)
+	})
+
+	t.Run("preserves invalid profiles", func(t *testing.T) {
+		// Create a ProfileConfig with invalid profiles
+		config, err := profile.ValidateProfile(context.Background(), `
+organization:
+  profiles:
+    - name: valid-profile
+      match:
+        - claim: pipeline_slug
+          value: my-pipeline
+      repositories:
+        - chinmina/chinmina-bridge
+      permissions:
+        - contents:read
+    - name: invalid-profile
+      match:
+        - claim: pipeline_slug
+          value: foo
+          valuePattern: bar
+      repositories:
+        - chinmina/other-repo
+      permissions:
+        - contents:read
+`)
+		require.NoError(t, err)
+
+		// Compile to runtime format
+		profiles := profile.CompileProfiles(config)
+
+		// Verify valid profile works
+		_, err = profiles.GetOrgProfile("valid-profile")
+		require.NoError(t, err)
+
+		// Verify invalid profile returns ProfileUnavailableError
+		_, err = profiles.GetOrgProfile("invalid-profile")
+		require.Error(t, err)
+		var unavailableErr profile.ProfileUnavailableError
+		require.ErrorAs(t, err, &unavailableErr)
+		assert.Equal(t, "invalid-profile", unavailableErr.Name)
+	})
+
+	t.Run("extracts pipeline defaults", func(t *testing.T) {
+		config, err := profile.ValidateProfile(context.Background(), `
+organization:
+  defaults:
+    permissions:
+      - contents:read
+      - metadata:read
+  profiles:
+    - name: test-profile
+      match:
+        - claim: pipeline_slug
+          value: my-pipeline
+      repositories:
+        - chinmina/chinmina-bridge
+      permissions:
+        - contents:read
+`)
+		require.NoError(t, err)
+
+		profiles := profile.CompileProfiles(config)
+
+		defaults, err := profiles.GetPipelineDefaults()
+		require.NoError(t, err)
+		assert.Equal(t, []string{"contents:read", "metadata:read"}, defaults)
+	})
+
+	t.Run("falls back to default permissions when not configured", func(t *testing.T) {
+		config, err := profile.ValidateProfile(context.Background(), `
+organization:
+  profiles:
+    - name: test-profile
+      match:
+        - claim: pipeline_slug
+          value: my-pipeline
+      repositories:
+        - chinmina/chinmina-bridge
+      permissions:
+        - contents:read
+`)
+		require.NoError(t, err)
+
+		profiles := profile.CompileProfiles(config)
+
+		defaults, err := profiles.GetPipelineDefaults()
+		require.NoError(t, err)
+		assert.Equal(t, []string{"contents:read"}, defaults)
+	})
+
+	t.Run("preserves digest", func(t *testing.T) {
+		config, err := profile.ValidateProfile(context.Background(), `
+organization:
+  profiles:
+    - name: test-profile
+      match:
+        - claim: pipeline_slug
+          value: my-pipeline
+      repositories:
+        - chinmina/chinmina-bridge
+      permissions:
+        - contents:read
+`)
+		require.NoError(t, err)
+
+		profiles := profile.CompileProfiles(config)
+
+		assert.Equal(t, config.Digest(), profiles.Digest())
+	})
+
+	t.Run("matcher closure captures profile correctly", func(t *testing.T) {
+		// This test ensures the closure captures the profile by value,
+		// not by reference, which could cause issues with loop variables
+		config, err := profile.ValidateProfile(context.Background(), `
+organization:
+  profiles:
+    - name: profile-1
+      match:
+        - claim: pipeline_slug
+          value: pipeline-1
+      repositories:
+        - chinmina/repo-1
+      permissions:
+        - contents:read
+    - name: profile-2
+      match:
+        - claim: pipeline_slug
+          value: pipeline-2
+      repositories:
+        - chinmina/repo-2
+      permissions:
+        - packages:write
+`)
+		require.NoError(t, err)
+
+		profiles := profile.CompileProfiles(config)
+
+		// Verify profile-1 matcher
+		profile1, err := profiles.GetOrgProfile("profile-1")
+		require.NoError(t, err)
+		result1 := profile1.Match(testClaimLookup{
+			claims: map[string]string{"pipeline_slug": "pipeline-1"},
+		})
+		assert.True(t, result1.Matched)
+		assert.Equal(t, []string{"chinmina/repo-1"}, profile1.Attrs.Repositories)
+
+		// Verify profile-2 matcher
+		profile2, err := profiles.GetOrgProfile("profile-2")
+		require.NoError(t, err)
+		result2 := profile2.Match(testClaimLookup{
+			claims: map[string]string{"pipeline_slug": "pipeline-2"},
+		})
+		assert.True(t, result2.Matched)
+		assert.Equal(t, []string{"chinmina/repo-2"}, profile2.Attrs.Repositories)
+
+		// Verify profile-1 doesn't match profile-2's claims
+		result1Wrong := profile1.Match(testClaimLookup{
+			claims: map[string]string{"pipeline_slug": "pipeline-2"},
+		})
+		assert.False(t, result1Wrong.Matched)
 	})
 }
