@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
@@ -28,12 +29,12 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			Logger()
 
 		// Use the ProfileStore to get the requested profile and validate it
-		profileConf, err := profileStore.GetProfileFromStore(ref.Name)
+		authProfile, err := profileStore.GetOrganizationProfile(ref.Name)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not find profile %s: %w", ref.Name, err))
 		}
 
-		profileMatcher := AuditingMatcher(ctx, profileConf.Matches)
+		profileMatcher := AuditingMatcher(ctx, authProfile.Match)
 
 		// Evaluate match conditions against JWT claims, validating as we go
 		claims := profile.NewValidatingLookup(
@@ -67,14 +68,14 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			// response. This allows Git (for example) to try a different provider in
 			// its credentials chain.
 			_, repository := github.RepoForURL(*repo)
-			if !profileConf.HasRepository(repository) {
+			if !slices.Contains(authProfile.Attrs.Repositories, repository) {
 				logger.Debug().Msg("profile doesn't support requested repository: no token vended.")
 				return NewVendorUnmatched()
 			}
 		}
 
 		// Use the GitHub API to vend a token for the repository
-		token, expiry, err := tokenVendor(ctx, profileConf.Repositories, profileConf.Permissions)
+		token, expiry, err := tokenVendor(ctx, authProfile.Attrs.Repositories, authProfile.Attrs.Permissions)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not issue token for profile %s: %w", ref, err))
 		}
@@ -84,8 +85,8 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		return NewVendorSuccess(ProfileToken{
 			OrganizationSlug:    ref.Organization,
 			VendedRepositoryURL: requestedRepoURL,
-			Repositories:        profileConf.Repositories,
-			Permissions:         profileConf.Permissions,
+			Repositories:        authProfile.Attrs.Repositories,
+			Permissions:         authProfile.Attrs.Permissions,
 			Profile:             ref.ShortString(),
 			Token:               token,
 			Expiry:              expiry,
