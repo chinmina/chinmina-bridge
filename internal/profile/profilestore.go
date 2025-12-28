@@ -38,7 +38,12 @@ func NewProfileStoreOf[T any](profiles map[string]AuthorizedProfile[T], invalidP
 // Returns ProfileUnavailableError if the profile failed validation.
 // Returns ProfileNotFoundError if the profile does not exist.
 func (ps ProfileStoreOf[T]) Get(name string) (AuthorizedProfile[T], error) {
-	// Check invalid profiles first
+	if profile, found := ps.profiles[name]; found {
+		return profile, nil
+	}
+
+	// in a stable configuration, valid profiles are the common case. Check for
+	// invalidity second to avoid a mostly wasted map lookup.
 	if err, found := ps.invalidProfiles[name]; found {
 		return AuthorizedProfile[T]{}, ProfileUnavailableError{
 			Name:  name,
@@ -46,12 +51,7 @@ func (ps ProfileStoreOf[T]) Get(name string) (AuthorizedProfile[T], error) {
 		}
 	}
 
-	profile, found := ps.profiles[name]
-	if !found {
-		return AuthorizedProfile[T]{}, ProfileNotFoundError{Name: name}
-	}
-
-	return profile, nil
+	return AuthorizedProfile[T]{}, ProfileNotFoundError{Name: name}
 }
 
 // Profiles holds compiled runtime profiles for organization-level configuration.
@@ -85,6 +85,8 @@ func NewProfiles(
 // Returns ProfileStoreNotLoadedError if profiles have not been loaded.
 func (p Profiles) GetOrgProfile(name string) (AuthorizedProfile[OrganizationProfileAttr], error) {
 	if !p.IsLoaded() {
+		// Or profiles can only be defined in configuration. If a profile is requested
+		// before loading, it indicates that the service has not been able to load profiles.
 		return AuthorizedProfile[OrganizationProfileAttr]{}, ProfileStoreNotLoadedError{}
 	}
 	return p.orgProfiles.Get(name)

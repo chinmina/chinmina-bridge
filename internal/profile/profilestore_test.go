@@ -105,37 +105,6 @@ func TestProfileStoreOf_Get_InvalidProfile(t *testing.T) {
 	assert.ErrorIs(t, unavailableErr, validationErr)
 }
 
-// TestProfileStoreOf_Get_InvalidProfileTakesPrecedence verifies that invalid profiles are checked before valid profiles.
-func TestProfileStoreOf_Get_InvalidProfileTakesPrecedence(t *testing.T) {
-	validationErr := errors.New("profile failed validation")
-
-	// Create a profile with the same name in both maps
-	matcher := profile.ExactMatcher("pipeline_slug", "my-pipeline")
-	attrs := profile.OrganizationProfileAttr{
-		Repositories: []string{"chinmina/chinmina-bridge"},
-		Permissions:  []string{"contents:read"},
-	}
-	authProfile := profile.NewAuthorizedProfile(matcher, attrs)
-
-	profiles := map[string]profile.AuthorizedProfile[profile.OrganizationProfileAttr]{
-		"test-profile": authProfile,
-	}
-	invalidProfiles := map[string]error{
-		"test-profile": validationErr,
-	}
-
-	store := profile.NewProfileStoreOf(profiles, invalidProfiles)
-
-	// Invalid should take precedence
-	_, err := store.Get("test-profile")
-
-	require.Error(t, err)
-	var unavailableErr profile.ProfileUnavailableError
-	require.ErrorAs(t, err, &unavailableErr)
-	assert.Equal(t, "test-profile", unavailableErr.Name)
-	assert.ErrorIs(t, unavailableErr, validationErr)
-}
-
 // TestProfileStoreOf_Immutable verifies that ProfileStoreOf is immutable after creation.
 func TestProfileStoreOf_Immutable(t *testing.T) {
 	matcher := profile.ExactMatcher("pipeline_slug", "my-pipeline")
