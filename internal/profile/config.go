@@ -12,8 +12,6 @@ import (
 	"net/http"
 	"strings"
 
-	"slices"
-
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -112,23 +110,6 @@ type Profile struct {
 	// compiledMatcher is the compiled matcher from Match rules.
 	// Populated during profile loading, not from YAML.
 	compiledMatcher Matcher `yaml:"-"`
-}
-
-func (config Profile) HasRepository(repo string) bool {
-	return slices.Contains(config.Repositories, repo)
-}
-
-// Matches evaluates the profile's match conditions against the provided claims.
-// Returns a MatchResult containing:
-// - Success: Matched=true, Matches populated
-// - Pattern mismatch: Matched=false, Attempt populated
-// - Validation error: Err populated
-// Panics if compiledMatcher is nil (indicates profile wasn't properly loaded).
-func (p Profile) Matches(claims ClaimValueLookup) MatchResult {
-	if p.compiledMatcher == nil {
-		panic("profile matcher not compiled - profile must be loaded via LoadProfile")
-	}
-	return p.compiledMatcher(claims)
 }
 
 type MatchRule struct {

@@ -294,51 +294,6 @@ func TestLoadProfile(t *testing.T) {
 	}
 }
 
-// Test the case where the profile is inconsistent with the request made to Chinmina
-// In this case, the target repository is not included in the targeted profile
-func TestProfile(t *testing.T) {
-	testCases := []struct {
-		profileName           string
-		repositoryName        string
-		expectedHasProfile    bool
-		expectedHasRepository bool
-	}{
-		{
-			profileName:           "buildkite-plugin",
-			repositoryName:        "fake-repo",
-			expectedHasProfile:    true,
-			expectedHasRepository: false,
-		},
-		{
-			profileName:           "fake-profile",
-			repositoryName:        "fake-repo",
-			expectedHasProfile:    false,
-			expectedHasRepository: false,
-		},
-		{
-			profileName:           "buildkite-plugin",
-			repositoryName:        "very-private-buildkite-plugin",
-			expectedHasProfile:    true,
-			expectedHasRepository: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.profileName, func(t *testing.T) {
-			profileConfig, err := profile.ValidateProfile(context.Background(), validProfileYAML)
-			require.NoError(t, err)
-
-			p, err := profileConfig.LookupProfile(tc.profileName)
-			if tc.expectedHasProfile {
-				require.NoError(t, err)
-				assert.Equal(t, tc.expectedHasRepository, p.HasRepository(tc.repositoryName))
-			} else {
-				require.Error(t, err)
-			}
-		})
-	}
-}
-
 func TestGetDefaultPermissions(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -789,6 +744,9 @@ func TestProfileMatches(t *testing.T) {
 	profileConfig, err := profile.ValidateProfile(ctx, profileWithMatchRules)
 	require.NoError(t, err)
 
+	// Compile profiles to use runtime API
+	profiles := profile.CompileProfiles(profileConfig)
+
 	testCases := []struct {
 		name          string
 		profileName   string
@@ -872,10 +830,10 @@ func TestProfileMatches(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			prof, err := profileConfig.LookupProfile(tc.profileName)
+			prof, err := profiles.GetOrgProfile(tc.profileName)
 			require.NoError(t, err)
 
-			result := prof.Matches(tc.claims)
+			result := prof.Match(tc.claims)
 			assert.Equal(t, tc.expectMatch, result.Matched)
 			assert.Len(t, result.Matches, tc.expectMatches, "number of matches mismatch")
 			if tc.expectMatch {

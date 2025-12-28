@@ -138,6 +138,59 @@ func TestAuthorizedProfile_Match_ValidationError(t *testing.T) {
 	assert.ErrorAs(t, result.Err, &validationErr)
 }
 
+// Test the case where the profile is inconsistent with the request made to Chinmina
+// In this case, the target repository is not included in the targeted profile
+func TestOrganizationAttrs_HasRepository(t *testing.T) {
+	testCases := []struct {
+		testName              string
+		repositories          []string
+		searchRepositoryName  string
+		expectedHasRepository bool
+	}{
+		{
+			testName:              "repo in list matches",
+			repositories:          []string{"chinmina-bridge", "very-private-buildkite-plugin"},
+			searchRepositoryName:  "very-private-buildkite-plugin",
+			expectedHasRepository: true,
+		},
+		{
+			testName:              "wildcard matches",
+			repositories:          []string{"*"},
+			searchRepositoryName:  "very-private-buildkite-plugin",
+			expectedHasRepository: true,
+		},
+		{
+			testName:              "partial match fails",
+			repositories:          []string{"private-plugin"},
+			searchRepositoryName:  "private",
+			expectedHasRepository: false,
+		},
+		{
+			testName:              "over match fails",
+			repositories:          []string{"private-plugin"},
+			searchRepositoryName:  "private-plugin-extended",
+			expectedHasRepository: false,
+		},
+		{
+			testName:              "empty list fails",
+			repositories:          []string{},
+			searchRepositoryName:  "any-old-repo",
+			expectedHasRepository: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.testName, func(t *testing.T) {
+			attr := profile.OrganizationProfileAttr{
+				Repositories: tc.repositories,
+			}
+			hasRepository := attr.HasRepository(tc.searchRepositoryName)
+
+			assert.Equal(t, tc.expectedHasRepository, hasRepository)
+		})
+	}
+}
+
 // mockErrorLookup is a ClaimValueLookup that returns an error.
 type mockErrorLookup struct {
 	err error

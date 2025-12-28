@@ -85,7 +85,7 @@ func NewProfiles(
 // Returns ProfileStoreNotLoadedError if profiles have not been loaded.
 func (p Profiles) GetOrgProfile(name string) (AuthorizedProfile[OrganizationProfileAttr], error) {
 	if !p.IsLoaded() {
-		// Or profiles can only be defined in configuration. If a profile is requested
+		// Organization profiles can only be defined in configuration. If a profile is requested
 		// before loading, it indicates that the service has not been able to load profiles.
 		return AuthorizedProfile[OrganizationProfileAttr]{}, ProfileStoreNotLoadedError{}
 	}
