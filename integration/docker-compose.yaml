@@ -17,10 +17,10 @@ services:
     <<: *buildkite-agent
   buildkite-agent-2:
     <<: *buildkite-agent
-  buildkite-agent-3:
-    <<: *buildkite-agent
-  buildkite-agent-4:
-    <<: *buildkite-agent
+  # buildkite-agent-3:
+  #   <<: *buildkite-agent
+  # buildkite-agent-4:
+  #   <<: *buildkite-agent
 
   chinmina-bridge:
     image: alpine
