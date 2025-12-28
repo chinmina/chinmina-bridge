@@ -109,5 +109,5 @@ func (p Profiles) Digest() string {
 
 // IsLoaded returns true if profiles have been successfully loaded.
 func (p Profiles) IsLoaded() bool {
-	return p.orgProfiles.profiles != nil
+	return len(p.digest) > 0
 }

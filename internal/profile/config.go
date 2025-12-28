@@ -2,6 +2,7 @@ package profile
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -446,6 +447,7 @@ func NewTestProfileConfig(profiles ...Profile) ProfileConfig {
 			Profiles:        profiles,
 			InvalidProfiles: make(map[string]error),
 		},
+		digest: rand.Text(), // random digest to make sure each config is considered unique
 	}
 }
 
