@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"slices"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
@@ -63,12 +62,12 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 				return NewVendorFailed(fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err))
 			}
 
-			// If the requested repository isn't in the profile, return nil. This
+			// If the requested repository isn't in the profile, return unmatched. This
 			// indicates that the handler should return a successful (but empty)
 			// response. This allows Git (for example) to try a different provider in
 			// its credentials chain.
 			_, repository := github.RepoForURL(*repo)
-			if !slices.Contains(authProfile.Attrs.Repositories, repository) {
+			if !authProfile.Attrs.HasRepository(repository) {
 				logger.Debug().Msg("profile doesn't support requested repository: no token vended.")
 				return NewVendorUnmatched()
 			}
