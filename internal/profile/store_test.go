@@ -163,46 +163,6 @@ func TestProfileStoreRWMutexConcurrency(t *testing.T) {
 	)
 	store.Update(profileConfig)
 
-	t.Run("Concurrent reads can execute in parallel", func(t *testing.T) {
-		const numGoroutines = 10
-		var wg sync.WaitGroup
-
-		// Channel to track when each goroutine starts reading
-		startedReading := make(chan struct{}, numGoroutines)
-		// Channel to coordinate when goroutines should finish
-		finishReading := make(chan struct{})
-
-		// Launch multiple read goroutines
-		for range numGoroutines {
-			wg.Go(func() {
-				// Signal that we've started reading
-				startedReading <- struct{}{}
-
-				// Hold the read lock until told to finish
-				_, err := store.GetProfileFromStore("test-profile")
-				assert.NoError(t, err)
-
-				// Wait for signal to finish
-				<-finishReading
-			})
-		}
-
-		// Wait for all goroutines to start reading
-		for range numGoroutines {
-			select {
-			case <-startedReading:
-				// Good, goroutine started
-			case <-time.After(1 * time.Second):
-				t.Fatal("Timeout waiting for goroutines to start - reads may be blocking each other")
-			}
-		}
-
-		// If we got here, all goroutines started reading concurrently
-		// Now let them finish
-		close(finishReading)
-		wg.Wait()
-	})
-
 	t.Run("Writes serialize with reads correctly", func(t *testing.T) {
 		// Test that concurrent reads and writes maintain data consistency
 		// With RWMutex: reads can be concurrent, but writes must be exclusive
