@@ -43,7 +43,7 @@ services:
       - OBSERVE_ENABLED=true
       - OBSERVE_METRICS_ENABLED=true
       - OBSERVE_TYPE=grpc
-      - OBSERVE_OTEL_LOG_LEVEL=debug
+      - OBSERVE_OTEL_LOG_LEVEL=${OBSERVE_OTEL_LOG_LEVEL:-info}
       # pass through AWS credentials (allows for KMS signing to be used)
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
