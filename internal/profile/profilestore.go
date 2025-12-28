@@ -1,5 +1,7 @@
 package profile
 
+import "slices"
+
 // ProfileStoreOf provides immutable type-safe storage and retrieval of authorized profiles.
 // The generic parameter T constrains the type of profile attributes stored.
 // Once created, ProfileStoreOf cannot be modified.
@@ -88,22 +90,16 @@ func (p Profiles) GetOrgProfile(name string) (AuthorizedProfile[OrganizationProf
 	return p.orgProfiles.Get(name)
 }
 
-// GetPipelineDefaults returns the default permissions for pipelines.
-// Falls back to ["contents:read"] if not configured.
-// Returns ProfileStoreNotLoadedError if profiles have not been loaded.
-func (p Profiles) GetPipelineDefaults() ([]string, error) {
-	if !p.IsLoaded() {
-		return nil, ProfileStoreNotLoadedError{}
-	}
-
+// GetPipelineDefaults returns the default permissions for pipelines. Falls back
+// to ["contents:read"] if not configured. Guaranteed to return a result: either
+// the default or the configuration.
+func (p Profiles) GetPipelineDefaults() []string {
 	if len(p.pipelineDefaults) == 0 {
-		return []string{"contents:read"}, nil
+		return []string{"contents:read"}
 	}
 
 	// Return a copy to preserve immutability
-	result := make([]string, len(p.pipelineDefaults))
-	copy(result, p.pipelineDefaults)
-	return result, nil
+	return slices.Clone(p.pipelineDefaults)
 }
 
 // Digest returns the content digest of the profile configuration.

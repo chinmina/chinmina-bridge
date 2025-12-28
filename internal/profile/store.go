@@ -25,7 +25,7 @@ func (p *ProfileStore) GetOrganizationProfile(name string) (AuthorizedProfile[Or
 
 // GetPipelineDefaults returns the default permissions for pipelines.
 // Falls back to ["contents:read"] if not configured.
-func (p *ProfileStore) GetPipelineDefaults() ([]string, error) {
+func (p *ProfileStore) GetPipelineDefaults() []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 

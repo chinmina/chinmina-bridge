@@ -228,8 +228,7 @@ func TestProfiles_GetPipelineDefaults_ConfiguredDefaults(t *testing.T) {
 	pipelineDefaults := []string{"contents:read", "metadata:read"}
 	profiles := profile.NewProfiles(orgProfiles, pipelineDefaults, "digest")
 
-	defaults, err := profiles.GetPipelineDefaults()
-	require.NoError(t, err)
+	defaults := profiles.GetPipelineDefaults()
 	assert.Equal(t, pipelineDefaults, defaults)
 }
 
@@ -241,20 +240,8 @@ func TestProfiles_GetPipelineDefaults_FallbackDefaults(t *testing.T) {
 	)
 	profiles := profile.NewProfiles(orgProfiles, []string{}, "digest")
 
-	defaults, err := profiles.GetPipelineDefaults()
-	require.NoError(t, err)
+	defaults := profiles.GetPipelineDefaults()
 	assert.Equal(t, []string{"contents:read"}, defaults)
-}
-
-// TestProfiles_GetPipelineDefaults_NotLoaded verifies error when profiles not loaded.
-func TestProfiles_GetPipelineDefaults_NotLoaded(t *testing.T) {
-	var profiles profile.Profiles
-
-	_, err := profiles.GetPipelineDefaults()
-
-	require.Error(t, err)
-	var notLoadedErr profile.ProfileStoreNotLoadedError
-	require.ErrorAs(t, err, &notLoadedErr)
 }
 
 // TestProfiles_Immutable verifies Profiles is immutable after creation.
@@ -267,24 +254,21 @@ func TestProfiles_Immutable(t *testing.T) {
 	profiles := profile.NewProfiles(orgProfiles, pipelineDefaults, "digest")
 
 	// Get defaults
-	defaults, err := profiles.GetPipelineDefaults()
-	require.NoError(t, err)
+	defaults := profiles.GetPipelineDefaults()
 	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaults)
 
 	// Modify the source slice (should not affect Profiles)
 	pipelineDefaults[0] = "packages:write"
 
 	// Profiles should still return the original defaults
-	defaults2, err := profiles.GetPipelineDefaults()
-	require.NoError(t, err)
+	defaults2 := profiles.GetPipelineDefaults()
 	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaults2)
 
 	// Modify the returned slice (should not affect Profiles)
 	defaults[0] = "packages:write"
 
 	// Profiles should still return the original defaults
-	defaults3, err := profiles.GetPipelineDefaults()
-	require.NoError(t, err)
+	defaults3 := profiles.GetPipelineDefaults()
 	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaults3)
 }
 

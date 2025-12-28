@@ -1088,8 +1088,8 @@ organization:
 
 		profiles := profile.CompileProfiles(config)
 
-		defaults, err := profiles.GetPipelineDefaults()
-		require.NoError(t, err)
+		defaults := profiles.GetPipelineDefaults()
+
 		assert.Equal(t, []string{"contents:read", "metadata:read"}, defaults)
 	})
 
@@ -1110,8 +1110,7 @@ organization:
 
 		profiles := profile.CompileProfiles(config)
 
-		defaults, err := profiles.GetPipelineDefaults()
-		require.NoError(t, err)
+		defaults := profiles.GetPipelineDefaults()
 		assert.Equal(t, []string{"contents:read"}, defaults)
 	})
 
