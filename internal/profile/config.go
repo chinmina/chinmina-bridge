@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -460,27 +461,17 @@ func CompileProfiles(config ProfileConfig) Profiles {
 	invalidProfiles := make(map[string]error)
 
 	// Convert valid profiles to AuthorizedProfile format
-	for _, profile := range config.Organization.Profiles {
-		// Create matcher closure that wraps Profile.Matches()
-		// Capture profile by value in the closure to avoid issues with loop variables
-		p := profile
-		matcher := func(claims ClaimValueLookup) MatchResult {
-			return p.Matches(claims)
-		}
-
-		// Convert to runtime format
+	for _, p := range config.Organization.Profiles {
 		attrs := OrganizationProfileAttr{
 			Repositories: p.Repositories,
 			Permissions:  p.Permissions,
 		}
 
-		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
+		validProfiles[p.Name] = NewAuthorizedProfile(p.compiledMatcher, attrs)
 	}
 
 	// Copy invalid profiles
-	for name, err := range config.Organization.InvalidProfiles {
-		invalidProfiles[name] = err
-	}
+	maps.Copy(invalidProfiles, config.Organization.InvalidProfiles)
 
 	// Create ProfileStoreOf
 	orgProfiles := NewProfileStoreOf(validProfiles, invalidProfiles)
