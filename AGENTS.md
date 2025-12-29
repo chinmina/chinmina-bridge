@@ -132,6 +132,13 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
   - Exception: HTTP response testing (status codes, headers) appropriately uses individual field checks
 - Struct equality provides complete diff output on failure, making debugging easier
 
+**Test cases**
+
+- When writing tests, DO NOT add tests that just test struct fields or other items that the compiler checks
+- Add tests for logic, not to check the compiler
+- seek test coverage over 90% BUT coverage is a guide only!
+- The most important thing is for tests to cover and document the expected _behaviour_.
+
 **Test Organization:**
 - **Use table-driven tests** when multiple tests follow the same pattern with different parameters
   - Consolidate tests that differ only in input/output values
@@ -171,11 +178,7 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 
 ## Before Committing
 
-1. Run tests: `make test`
-2. Ensure dependencies are clean: `go mod tidy`
-3. Format code: `go fmt ./...` (usually automatic)
-4. Check for issues: `go vet ./...`
-5. Verify build: `make build`
+1. Run the agent make task: `make agent`. this gets dependencies, builds, formats and tests.
 
 ## Additional Resources
 
