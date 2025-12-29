@@ -73,6 +73,49 @@ func TestOrganizationProfileAttr_HasRepository_NoMatch(t *testing.T) {
 	}
 }
 
+// TestOrganizationProfileAttr_GetRepositories tests the GetRepositories method
+func TestOrganizationProfileAttr_GetRepositories_SpecificRepos(t *testing.T) {
+	tests := []struct {
+		name         string
+		repositories []string
+		expected     []string
+	}{
+		{
+			name:         "single repository",
+			repositories: []string{"acme/repo1"},
+			expected:     []string{"acme/repo1"},
+		},
+		{
+			name:         "multiple repositories",
+			repositories: []string{"acme/repo1", "acme/repo2", "other/repo3"},
+			expected:     []string{"acme/repo1", "acme/repo2", "other/repo3"},
+		},
+		{
+			name:         "empty list",
+			repositories: []string{},
+			expected:     []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attr := OrganizationProfileAttr{
+				Repositories: tt.repositories,
+			}
+			assert.Equal(t, tt.expected, attr.GetRepositories())
+		})
+	}
+}
+
+func TestOrganizationProfileAttr_GetRepositories_Wildcard(t *testing.T) {
+	attr := OrganizationProfileAttr{
+		Repositories: []string{"*"},
+	}
+
+	// nil indicates all repositories
+	assert.Nil(t, attr.GetRepositories())
+}
+
 // TestAuthorizedProfile_Match tests the Match method behavior
 func TestAuthorizedProfile_Match_Success(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")

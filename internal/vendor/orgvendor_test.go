@@ -10,6 +10,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
+	"github.com/stretchr/testify/assert"
 )
 
 // createTestClaimsContext creates a context with test Buildkite claims for tests.
@@ -127,6 +128,68 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 				Repositories:        []string{"secret-repo", "another-secret-repo"},
 				Permissions:         []string{"contents:read", "packages:read"},
 				Profile:             "org:non-default-profile",
+				Expiry:              vendedDate,
+				OrganizationSlug:    "organization-slug",
+				VendedRepositoryURL: tt.requestedURL,
+			})
+		})
+	}
+}
+
+func TestOrgVendor_WildcardRepository(t *testing.T) {
+	vendedDate := time.Date(1970, 1, 1, 0, 0, 10, 0, time.UTC)
+
+	// Profile with wildcard repository
+	profileYAML := `
+organization:
+  profiles:
+    - name: wildcard-profile
+      repositories: ["*"]
+      permissions: [contents:read, packages:read]
+`
+
+	// Token vendor that verifies nil is passed for repositories
+	var capturedRepositories []string
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
+		capturedRepositories = repositoryURLs
+		return "wildcard-token-value", vendedDate, nil
+	})
+
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+
+	tests := []struct {
+		name         string
+		requestedURL string
+	}{
+		{
+			name:         "WithSpecificRepositoryURL",
+			requestedURL: "https://github.com/org/any-repo",
+		},
+		{
+			name:         "WithEmptyRepositoryURL",
+			requestedURL: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			capturedRepositories = []string{"sentinel"}
+
+			ref := profile.ProfileRef{
+				Organization: "organization-slug",
+				Name:         "wildcard-profile",
+				Type:         profile.ProfileTypeOrg,
+			}
+			result := v(createTestClaimsContext(), ref, tt.requestedURL)
+
+			// Verify nil was passed to token vendor (indicates all repositories)
+			assert.Nil(t, capturedRepositories)
+
+			assertVendorSuccess(t, result, vendor.ProfileToken{
+				Token:               "wildcard-token-value",
+				Repositories:        nil, // nil indicates all repositories
+				Permissions:         []string{"contents:read", "packages:read"},
+				Profile:             "org:wildcard-profile",
 				Expiry:              vendedDate,
 				OrganizationSlug:    "organization-slug",
 				VendedRepositoryURL: tt.requestedURL,
