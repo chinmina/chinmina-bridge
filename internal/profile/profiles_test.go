@@ -297,7 +297,7 @@ func TestProfiles_NewProfiles(t *testing.T) {
 	pipelineDefaults := []string{"contents:read"}
 	digest := "test-digest"
 
-	profiles := NewProfiles(orgProfiles, pipelineDefaults, digest)
+	profiles := NewProfiles(orgProfiles, pipelineDefaults, digest, "local")
 
 	assert.True(t, profiles.IsLoaded())
 	assert.Equal(t, digest, profiles.digest)
@@ -315,7 +315,7 @@ func TestProfiles_GetOrgProfile_Success(t *testing.T) {
 		nil,
 	)
 
-	profiles := NewProfiles(orgProfiles, []string{"contents:read"}, "digest")
+	profiles := NewProfiles(orgProfiles, []string{"contents:read"}, "digest", "local")
 
 	profile, err := profiles.GetOrgProfile("test-profile")
 	require.NoError(t, err)
@@ -338,7 +338,7 @@ func TestProfiles_GetPipelineDefaults_Configured(t *testing.T) {
 	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
 	customDefaults := []string{"contents:read", "pull_requests:write"}
 
-	profiles := NewProfiles(orgProfiles, customDefaults, "digest")
+	profiles := NewProfiles(orgProfiles, customDefaults, "digest", "local")
 
 	defaults := profiles.GetPipelineDefaults()
 	assert.Equal(t, customDefaults, defaults)
@@ -348,7 +348,7 @@ func TestProfiles_GetPipelineDefaults_Fallback(t *testing.T) {
 	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
 	emptyDefaults := []string{}
 
-	profiles := NewProfiles(orgProfiles, emptyDefaults, "digest")
+	profiles := NewProfiles(orgProfiles, emptyDefaults, "digest", "local")
 
 	defaults := profiles.GetPipelineDefaults()
 	assert.Equal(t, []string{"contents:read"}, defaults)
@@ -358,7 +358,7 @@ func TestProfiles_Immutability_SourceSlice(t *testing.T) {
 	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
 	sourceDefaults := []string{"contents:read", "pull_requests:write"}
 
-	profiles := NewProfiles(orgProfiles, sourceDefaults, "digest")
+	profiles := NewProfiles(orgProfiles, sourceDefaults, "digest", "local")
 
 	// Modify source slice
 	sourceDefaults[0] = "contents:write"
@@ -373,7 +373,7 @@ func TestProfiles_Immutability_ReturnedSlice(t *testing.T) {
 	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
 	sourceDefaults := []string{"contents:read", "pull_requests:write"}
 
-	profiles := NewProfiles(orgProfiles, sourceDefaults, "digest")
+	profiles := NewProfiles(orgProfiles, sourceDefaults, "digest", "local")
 
 	// Get defaults and modify returned slice
 	defaults1 := profiles.GetPipelineDefaults()
@@ -397,6 +397,7 @@ func TestProfiles_IsLoaded(t *testing.T) {
 				NewProfileStoreOf[OrganizationProfileAttr](nil, nil),
 				[]string{"contents:read"},
 				"digest",
+				"local",
 			),
 			expected: true,
 		},
@@ -432,7 +433,7 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 	pipelineDefaults := []string{"contents:read", "pull_requests:write"}
 	digest := "test-digest-12345"
 
-	profiles := NewProfiles(orgProfiles, pipelineDefaults, digest)
+	profiles := NewProfiles(orgProfiles, pipelineDefaults, digest, "local")
 
 	// IsLoaded should be true
 	assert.True(t, profiles.IsLoaded())
@@ -453,6 +454,41 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 
 	// Digest should be accessible (indirectly via IsLoaded check)
 	assert.Equal(t, digest, profiles.digest)
+}
+
+// TestProfiles_Stats verifies that Stats() returns correct aggregated information
+func TestProfiles_Stats(t *testing.T) {
+	matcher := ExactMatcher("pipeline_slug", "test-pipeline")
+
+	// Create profiles with both valid and invalid profiles
+	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](
+		map[string]AuthorizedProfile[OrganizationProfileAttr]{
+			"profile-one": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
+				Repositories: []string{"acme/repo1"},
+				Permissions:  []string{"contents:read"},
+			}),
+			"profile-two": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
+				Repositories: []string{"acme/repo2"},
+				Permissions:  []string{"contents:write"},
+			}),
+		},
+		map[string]error{
+			"invalid-profile": errors.New("compilation failed"),
+		},
+	)
+
+	pipelineDefaults := []string{"contents:read"}
+	digest := "test-digest-abc123"
+	location := "github://acme/profiles/main/profiles.yaml"
+
+	profiles := NewProfiles(orgProfiles, pipelineDefaults, digest, location)
+
+	stats := profiles.Stats()
+
+	assert.Equal(t, 2, stats.OrganizationProfileCount)
+	assert.Equal(t, 1, stats.OrganizationInvalidProfileCount)
+	assert.Equal(t, digest, stats.Digest)
+	assert.Equal(t, location, stats.Location)
 }
 
 // TestNewAuthorizedProfile verifies the constructor

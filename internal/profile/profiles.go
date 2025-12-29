@@ -90,6 +90,16 @@ func (ps ProfileStoreOf[T]) Get(name string) (AuthorizedProfile[T], error) {
 	return AuthorizedProfile[T]{}, ProfileNotFoundError{Name: name}
 }
 
+// ProfileCount returns the number of valid profiles stored.
+func (ps ProfileStoreOf[T]) ProfileCount() int {
+	return len(ps.profiles)
+}
+
+// InvalidProfileCount returns the number of invalid profiles stored.
+func (ps ProfileStoreOf[T]) InvalidProfileCount() int {
+	return len(ps.invalidProfiles)
+}
+
 // --- Profiles (aggregates ProfileStoreOf) ---
 
 // Profiles holds compiled runtime profiles for organization-level configuration.
@@ -99,6 +109,7 @@ type Profiles struct {
 	orgProfiles      ProfileStoreOf[OrganizationProfileAttr]
 	pipelineDefaults []string
 	digest           string
+	location         string
 }
 
 // GetOrgProfile retrieves an organization profile by name.
@@ -134,7 +145,24 @@ func (p Profiles) IsLoaded() bool {
 	return len(p.digest) > 0
 }
 
-// --- Constructor functions (used by other files) ---
+// Stats returns statistics about the loaded profiles including valid/invalid
+// counts.
+func (p Profiles) Stats() ProfilesStats {
+	return ProfilesStats{
+		OrganizationProfileCount:        p.orgProfiles.ProfileCount(),
+		OrganizationInvalidProfileCount: p.orgProfiles.InvalidProfileCount(),
+		Digest:                          p.digest,
+		Location:                        p.location,
+	}
+}
+
+// ProfilesStats provides statistics about loaded profiles.
+type ProfilesStats struct {
+	OrganizationProfileCount        int
+	OrganizationInvalidProfileCount int
+	Digest                          string
+	Location                        string
+}
 
 // NewAuthorizedProfile creates a new AuthorizedProfile with the given matcher and attributes.
 func NewAuthorizedProfile[T any](matcher Matcher, attrs T) AuthorizedProfile[T] {
@@ -174,6 +202,7 @@ func NewProfiles(
 	orgProfiles ProfileStoreOf[OrganizationProfileAttr],
 	pipelineDefaults []string,
 	digest string,
+	location string,
 ) Profiles {
 	// Copy pipelineDefaults to ensure immutability
 	defaultsCopy := make([]string, len(pipelineDefaults))
@@ -183,5 +212,6 @@ func NewProfiles(
 		orgProfiles:      orgProfiles,
 		pipelineDefaults: defaultsCopy,
 		digest:           digest,
+		location:         location,
 	}
 }

@@ -12,7 +12,7 @@ import (
 // compile transforms profileConfig into runtime Profiles.
 // Invalid profiles are tracked in ProfileStoreOf's invalidProfiles map.
 // The digest is passed through to the returned Profiles.
-func compile(config profileConfig, digest string) Profiles {
+func compile(config profileConfig, digest string, location string) Profiles {
 	// Compile matchers for each profile (graceful degradation)
 	validMatchers := make(map[string]Matcher)
 	invalidProfiles := make(map[string]error)
@@ -89,7 +89,7 @@ func compile(config profileConfig, digest string) Profiles {
 	}
 
 	// Create and return Profiles
-	return NewProfiles(orgProfiles, pipelineDefaults, digest)
+	return NewProfiles(orgProfiles, pipelineDefaults, digest, location)
 }
 
 // duplicateNameValidator creates a validator function that checks for duplicate profile names.
