@@ -44,9 +44,14 @@ func (p *ProfileStore) Update(profiles Profiles) {
 
 	// by default, only log when the source has actually changed content
 	if oldDigest != newDigest {
-		log.Info().Msg("organization profiles: updated")
+		log.Info().
+			Interface("stats", profiles.Stats()).
+			Interface("previousStats", p.profiles.Stats()).
+			Msg("organization profiles: updated")
 	} else {
-		log.Debug().Msg("organization profiles: no changes detected")
+		log.Debug().
+			Interface("stats", profiles.Stats()).
+			Msg("organization profiles: no changes detected")
 	}
 
 	p.profiles = profiles
@@ -70,12 +75,7 @@ func load(ctx context.Context, gh GitHubClient, orgProfileLocation string) (Prof
 		return Profiles{}, err
 	}
 
-	profiles := compile(config, digest)
-
-	// Log profile load status
-	log.Info().
-		Str("location", orgProfileLocation).
-		Msg("loaded organization profile configuration")
+	profiles := compile(config, digest, orgProfileLocation)
 
 	return profiles, nil
 }

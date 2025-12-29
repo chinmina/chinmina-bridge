@@ -242,7 +242,7 @@ func TestCompile_GracefulDegradation(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 
 	// Valid profiles should be accessible
 	orgProfiles := profiles.orgProfiles
@@ -284,7 +284,7 @@ func TestCompile_DuplicateNameHandling(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 	orgProfiles := profiles.orgProfiles
 
 	// With duplicate names, the last profile with that name wins in the current implementation
@@ -305,7 +305,7 @@ func TestCompile_EmptyListsHandling(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 	orgProfiles := profiles.orgProfiles
 
 	// Valid profile should be accessible
@@ -336,9 +336,23 @@ func TestCompile_DigestPreservation(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 
 	assert.Equal(t, digest, profiles.digest, "digest should be preserved through compilation")
+}
+
+func TestCompile_LocationPreservation(t *testing.T) {
+	yamlContent, err := os.ReadFile("testdata/profile/valid_profile.yaml")
+	require.NoError(t, err)
+
+	config, digest, err := parse(string(yamlContent))
+	require.NoError(t, err)
+
+	location := "github://acme/profiles/main/profiles.yaml"
+	profiles := compile(config, digest, location)
+
+	stats := profiles.Stats()
+	assert.Equal(t, location, stats.Location, "location should be preserved through compilation")
 }
 
 func TestCompile_PipelineDefaultsFallback(t *testing.T) {
@@ -370,7 +384,7 @@ func TestCompile_PipelineDefaultsFallback(t *testing.T) {
 			config, digest, err := parse(string(yamlContent))
 			require.NoError(t, err)
 
-			profiles := compile(config, digest)
+			profiles := compile(config, digest, "local")
 
 			assert.Equal(t, tt.expectedDefaults, profiles.GetPipelineDefaults(), tt.description)
 		})
@@ -384,7 +398,7 @@ func TestProfileMatching_ExactMatch_Success(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 
 	// Get the profile and test matching
 	profile, err := profiles.GetOrgProfile("production-deploy")
@@ -407,7 +421,7 @@ func TestProfileMatching_ExactMatch_Failure(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 
 	// Get the profile and test matching
 	profile, err := profiles.GetOrgProfile("production-deploy")
@@ -433,7 +447,7 @@ func TestProfileMatching_RegexMatch_Success(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 
 	// Get the profile and test matching
 	profile, err := profiles.GetOrgProfile("staging-deploy")
@@ -456,7 +470,7 @@ func TestProfileMatching_RegexMatch_Failure(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 
 	// Get the profile and test matching
 	profile, err := profiles.GetOrgProfile("staging-deploy")
@@ -481,7 +495,7 @@ func TestProfileMatching_MultipleRules_AllPass(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 
 	// Get the profile and test matching
 	profile, err := profiles.GetOrgProfile("production-silk-only")
@@ -509,7 +523,7 @@ func TestProfileMatching_MultipleRules_OneFails(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 
 	// Get the profile and test matching
 	profile, err := profiles.GetOrgProfile("production-silk-only")
@@ -538,7 +552,7 @@ func TestProfileMatching_EmptyRules_AlwaysPasses(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles := compile(config, digest)
+	profiles := compile(config, digest, "local")
 
 	// Get the profile and test matching
 	profile, err := profiles.GetOrgProfile("shared-utilities-read")
