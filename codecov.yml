@@ -1,6 +1,8 @@
 ignore:
   # testing utility
   - "cmd/create"
+  - "internal/profile/profiletest"
+  - "internal/testhelpers"
   # has sufficient secondary coverage
   - "internal/audit/response.go"
   # telemetry configuration
