@@ -6,7 +6,8 @@ import "slices"
 
 // OrganizationProfileAttr contains the attributes for an organization profile.
 // Slice fields are expected to be treated as immutable after construction.
-// Callers should not modify slice contents after passing to NewAuthorizedProfile or NewProfileStoreOf.
+// Callers should not modify slice contents after passing to
+// NewAuthorizedProfile or NewProfileStoreOf.
 type OrganizationProfileAttr struct {
 	Repositories []string
 	Permissions  []string
@@ -15,11 +16,24 @@ type OrganizationProfileAttr struct {
 // HasRepository checks if the given repository is included in the profile's
 // repositories. Supports wildcard "*" to match any repository.
 func (attr OrganizationProfileAttr) HasRepository(repo string) bool {
-	if len(attr.Repositories) == 1 && attr.Repositories[0] == "*" {
-		return true
-	}
+	return attr.allowAllRepositories() ||
+		slices.Contains(attr.Repositories, repo)
+}
 
-	return slices.Contains(attr.Repositories, repo)
+// GetRepositories returns the list of repositories allowed by the profile.
+// If the profile allows all repositories, it returns nil to signify this.
+func (attr OrganizationProfileAttr) GetRepositories() []string {
+	if attr.allowAllRepositories() {
+		return nil // nil means all repositories
+	}
+	return attr.Repositories
+}
+
+// allowAllRepositories returns true if the profile allows access to all
+// repositories accessible to the Chinmina installation. This is signified by
+// the single "*" entry.
+func (attr OrganizationProfileAttr) allowAllRepositories() bool {
+	return len(attr.Repositories) == 1 && attr.Repositories[0] == "*"
 }
 
 // PipelineProfileAttr is a placeholder for future pipeline profile attributes.
