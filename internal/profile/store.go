@@ -74,7 +74,7 @@ func load(ctx context.Context, gh GitHubClient, orgProfileLocation string) (Prof
 
 	// Log profile load status
 	log.Info().
-		Str("url", orgProfileLocation).
+		Str("location", orgProfileLocation).
 		Msg("loaded organization profile configuration")
 
 	return profiles, nil
