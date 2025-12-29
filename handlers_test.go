@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/auth0/go-jwt-middleware/v2/validator"
+	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
@@ -600,7 +601,7 @@ func TestWriteJSONError_Success(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	writeJSONError(rr, http.StatusForbidden, "access denied: profile match conditions not met")
+	writeJSONError(t.Context(), rr, statusError(http.StatusForbidden, "access denied: profile match conditions not met"))
 
 	// assert
 	assert.Equal(t, http.StatusForbidden, rr.Code)
@@ -640,7 +641,7 @@ func TestWriteJSONError_MultipleStatusCodes(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// act
-			writeJSONError(rr, tc.statusCode, tc.message)
+			writeJSONError(t.Context(), rr, statusError(tc.statusCode, tc.message))
 
 			// assert
 			assert.Equal(t, tc.statusCode, rr.Code)
@@ -650,6 +651,67 @@ func TestWriteJSONError_MultipleStatusCodes(t *testing.T) {
 			err := json.Unmarshal(rr.Body.Bytes(), &respBody)
 			require.NoError(t, err)
 			assert.Equal(t, ErrorResponse{Error: tc.message}, respBody)
+		})
+	}
+}
+
+func statusError(statusCode int, message string) error {
+	return mockStatusError{
+		statusCode: statusCode,
+		message:    message,
+	}
+}
+
+type mockStatusError struct {
+	statusCode int
+	message    string
+}
+
+func (e mockStatusError) Error() string {
+	return e.message
+}
+
+func (e mockStatusError) Status() (int, string) {
+	return e.statusCode, e.message
+}
+
+func TestAuditError(t *testing.T) {
+	cases := []struct {
+		name               string
+		err                error
+		existingAuditError string
+		expectedAuditError string
+	}{
+		{
+			name:               "nil error does nothing",
+			err:                nil,
+			existingAuditError: "",
+			expectedAuditError: "",
+		},
+		{
+			name:               "error written when audit log empty",
+			err:                errors.New("token creation failed"),
+			existingAuditError: "",
+			expectedAuditError: "token creation failed",
+		},
+		{
+			name:               "error not written when audit log already has error",
+			err:                errors.New("second error"),
+			existingAuditError: "first error",
+			expectedAuditError: "first error",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, auditLog := audit.Context(context.Background())
+			auditLog.Error = tc.existingAuditError
+
+			// act
+			auditError(ctx, tc.err)
+
+			// assert
+			assert.Equal(t, tc.expectedAuditError, auditLog.Error)
 		})
 	}
 }

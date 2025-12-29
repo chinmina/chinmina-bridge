@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
+	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
@@ -40,16 +43,13 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile
 
 		ref, err := buildProfileRef(r, expectedType)
 		if err != nil {
-			log.Info().Msgf("invalid profile parameter: %v\n", err)
-			requestError(w, http.StatusBadRequest)
+			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid profile parameter: %w", err))
 			return
 		}
 
 		result := tokenVendor(r.Context(), ref, "")
 		if err, failed := result.Failed(); failed {
-			status, message := errorStatus(err)
-			log.Info().Msgf("token creation failed: %v", err)
-			writeJSONError(w, status, message)
+			writeJSONError(r.Context(), w, fmt.Errorf("token creation failed: %w", err))
 			return
 		}
 
@@ -65,7 +65,7 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile
 		// of the repository it's vended for.
 		marshalledResponse, err := json.Marshal(tokenResponse)
 		if err != nil {
-			requestError(w, http.StatusInternalServerError)
+			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("failed to marshal token response: %w", err))
 			return
 		}
 
@@ -74,7 +74,7 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile
 		if err != nil {
 			// record failure to log: trying to respond to the client at this
 			// point will likely fail
-			log.Info().Msgf("failed to write response: %v\n", err)
+			auditError(r.Context(), fmt.Errorf("failed to write response: %w", err))
 			return
 		}
 	})
@@ -86,30 +86,25 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, expectedTyp
 
 		ref, err := buildProfileRef(r, expectedType)
 		if err != nil {
-			log.Info().Msgf("invalid profile parameter: %v\n", err)
-			requestError(w, http.StatusBadRequest)
+			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid profile parameter: %w", err))
 			return
 		}
 
 		requestedRepo, err := credentialhandler.ReadProperties(r.Body)
 		if err != nil {
-			log.Info().Msgf("read repository properties from client failed %v\n", err)
-			requestError(w, http.StatusInternalServerError)
+			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("read repository properties from client failed: %w", err))
 			return
 		}
 
 		requestedRepoURL, err := credentialhandler.ConstructRepositoryURL(requestedRepo)
 		if err != nil {
-			log.Info().Msgf("invalid request parameters %v\n", err)
-			requestError(w, http.StatusBadRequest)
+			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid request parameters: %w", err))
 			return
 		}
 
 		result := tokenVendor(r.Context(), ref, requestedRepoURL)
 		if err, failed := result.Failed(); failed {
-			status, message := errorStatus(err)
-			log.Info().Msgf("token creation failed: %v", err)
-			writeTextError(w, status, message)
+			writeTextError(r.Context(), w, fmt.Errorf("token creation failed: %w", err))
 			return
 		}
 
@@ -130,8 +125,7 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, expectedTyp
 		// write the reponse to the client in git credentials property format
 		tokenURL, err := tokenResponse.URL()
 		if err != nil {
-			log.Info().Msgf("invalid repo URL: %v\n", err)
-			requestError(w, http.StatusInternalServerError)
+			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("invalid repo URL: %w", err))
 			return
 		}
 
@@ -145,8 +139,7 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, expectedTyp
 
 		err = credentialhandler.WriteProperties(props, w)
 		if err != nil {
-			log.Info().Msgf("failed to write response: %v\n", err)
-			requestError(w, http.StatusInternalServerError)
+			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("failed to write response: %w", err))
 			return
 		}
 	})
@@ -174,7 +167,10 @@ type ErrorResponse struct {
 }
 
 // writeJSONError writes a JSON error response with the given status code and message.
-func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
+func writeJSONError(ctx context.Context, w http.ResponseWriter, err error) {
+	auditError(ctx, err)
+	statusCode, message := errorStatus(err)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
@@ -183,6 +179,16 @@ func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
 		// At this point the status code has been written, so we can only log
 		log.Info().Msgf("failed to write JSON error response: %v", err)
 	}
+}
+
+// writeTextError writes a text/plain error response with custom header
+func writeTextError(ctx context.Context, w http.ResponseWriter, err error) {
+	auditError(ctx, err)
+	statusCode, message := errorStatus(err)
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Chinmina-Denied", message)
+	w.WriteHeader(statusCode)
 }
 
 // errorStatus extracts HTTP status code and message from an error.
@@ -195,14 +201,8 @@ func errorStatus(err error) (int, string) {
 	return http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError)
 }
 
-// writeTextError writes a text/plain error response with custom header
-func writeTextError(w http.ResponseWriter, statusCode int, message string) {
-	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Chinmina-Denied", message)
-	w.WriteHeader(statusCode)
-}
-
-func requestError(w http.ResponseWriter, statusCode int) {
+func requestError(ctx context.Context, w http.ResponseWriter, statusCode int, err error) {
+	auditError(ctx, err)
 	http.Error(w, http.StatusText(statusCode), statusCode)
 }
 
@@ -215,4 +215,22 @@ func drainRequestBody(r *http.Request) {
 		// and close the connection
 		io.CopyN(io.Discard, r.Body, 5*1024*1024)
 	}
+}
+
+// auditError records an error message in the audit log where possible: it will
+// skip writing the error if there has already been an error recorded.
+func auditError(ctx context.Context, err error) {
+	if err == nil {
+		return // nothing to log
+	}
+
+	_, auditLog := audit.Context(ctx)
+	if auditLog.Error == "" {
+		// record the error to the audit log
+		auditLog.Error = err.Error()
+		return
+	}
+
+	// we don't override existing audit errors, so write it to the general log
+	log.Info().Err(err).Msgf("request failure")
 }
