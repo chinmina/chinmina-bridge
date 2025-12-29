@@ -26,7 +26,7 @@ func createTestClaimsContext() context.Context {
 }
 
 func TestOrgVendor_FailsWithWrongProfileType(t *testing.T) {
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), nil)
+	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), nil)
 
 	ref := profile.ProfileRef{
 		Organization: "org",
@@ -39,7 +39,7 @@ func TestOrgVendor_FailsWithWrongProfileType(t *testing.T) {
 }
 
 func TestOrgVendor_FailWhenProfileNotFound(t *testing.T) {
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), nil)
+	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -51,7 +51,7 @@ func TestOrgVendor_FailWhenProfileNotFound(t *testing.T) {
 }
 
 func TestOrgVendor_FailWhenURLInvalid(t *testing.T) {
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), nil)
+	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -64,7 +64,7 @@ func TestOrgVendor_FailWhenURLInvalid(t *testing.T) {
 }
 
 func TestOrgVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), nil)
+	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -81,7 +81,7 @@ func TestOrgVendor_FailWhenTokenVendorFails(t *testing.T) {
 		return "", time.Time{}, errors.New("token vendor failed")
 	})
 
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), tokenVendor)
+	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -98,7 +98,7 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
 		return "non-default-token-value", vendedDate, nil
 	})
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(), tokenVendor)
+	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), tokenVendor)
 
 	tests := []struct {
 		name         string
@@ -150,9 +150,7 @@ func TestOrgVendor_MatchEvaluation(t *testing.T) {
 	}
 
 	// Create profile store with match rules
-	createMatchingProfileStore := func() *profile.ProfileStore {
-		// Load profile YAML with match rules to get compiled matchers
-		profileYAML := `
+	profileYAML := `
 organization:
   profiles:
     - name: prod-deploy
@@ -170,24 +168,13 @@ organization:
       repositories: [test-repo]
       permissions: [contents:read]
 `
-		profileConfig, err := profile.ValidateProfile(context.Background(), profileYAML)
-		if err != nil {
-			t.Fatalf("failed to validate profile: %v", err)
-		}
-
-		store := profile.NewProfileStore()
-		profiles := profile.CompileProfiles(profileConfig)
-		store.Update(profiles)
-		return store
-	}
 
 	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
 		return "test-token", time.Now(), nil
 	})
 
 	t.Run("match success with exact value", func(t *testing.T) {
-		store := createMatchingProfileStore()
-		v := vendor.NewOrgVendor(store, tokenVendor)
+		v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
 
 		ctx := createClaimsContext("silk-prod", "main")
 		ref := profile.ProfileRef{
@@ -201,8 +188,7 @@ organization:
 	})
 
 	t.Run("match failure with wrong value", func(t *testing.T) {
-		store := createMatchingProfileStore()
-		v := vendor.NewOrgVendor(store, tokenVendor)
+		v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
 
 		ctx := createClaimsContext("silk-staging", "main")
 		ref := profile.ProfileRef{
@@ -216,8 +202,7 @@ organization:
 	})
 
 	t.Run("match success with multiple rules", func(t *testing.T) {
-		store := createMatchingProfileStore()
-		v := vendor.NewOrgVendor(store, tokenVendor)
+		v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
 
 		ctx := createClaimsContext("silk-staging", "main")
 		ref := profile.ProfileRef{
@@ -231,8 +216,7 @@ organization:
 	})
 
 	t.Run("match failure with multiple rules - one fails", func(t *testing.T) {
-		store := createMatchingProfileStore()
-		v := vendor.NewOrgVendor(store, tokenVendor)
+		v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
 
 		ctx := createClaimsContext("silk-staging", "feature")
 		ref := profile.ProfileRef{

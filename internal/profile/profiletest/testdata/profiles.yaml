@@ -1,0 +1,37 @@
+organization:
+  defaults:
+    permissions:
+      - contents:read
+  profiles:
+    - name: simple-profile
+      repositories:
+        - repo-1
+        - repo-2
+      permissions:
+        - read
+        - write
+    - name: non-default-profile
+      repositories:
+        - secret-repo
+        - another-secret-repo
+      permissions:
+        - contents:read
+        - packages:read
+    - name: prod-deploy
+      match:
+        - claim: pipeline_slug
+          value: silk-prod
+      repositories:
+        - test-repo
+      permissions:
+        - contents:write
+    - name: staging-deploy
+      match:
+        - claim: pipeline_slug
+          valuePattern: ".*-staging"
+        - claim: build_branch
+          value: main
+      repositories:
+        - test-repo
+      permissions:
+        - contents:read
