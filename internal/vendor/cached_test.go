@@ -398,32 +398,18 @@ func (e E) Error() string {
 func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 	callIndex := 0
 
-	var testProfile = profile.ProfileConfig{
-		Organization: struct {
-			Defaults struct {
-				Permissions []string `yaml:"permissions"`
-			} `yaml:"defaults"`
-			Profiles        []profile.Profile `yaml:"profiles"`
-			InvalidProfiles map[string]error  `yaml:"-"`
-		}{
-			Defaults: struct {
-				Permissions []string `yaml:"permissions"`
-			}{
-				Permissions: []string{},
-			},
-			InvalidProfiles: make(map[string]error),
-			Profiles: []profile.Profile{
-				{
-					Name:         "org:shared-profile",
-					Repositories: []string{"any-repo", "different-repo"},
-					Permissions:  []string{"read", "write"},
-				},
-				{
-					Name:         "org:read-plugins",
-					Repositories: []string{"any-repo", "another-secret-repo"},
-					Permissions:  []string{"contents:read", "packages:read"},
-				},
-			},
+	// Profile data for test fixtures
+	profileData := map[string]struct {
+		repositories []string
+		permissions  []string
+	}{
+		"org:shared-profile": {
+			repositories: []string{"any-repo", "different-repo"},
+			permissions:  []string{"read", "write"},
+		},
+		"org:read-plugins": {
+			repositories: []string{"any-repo", "another-secret-repo"},
+			permissions:  []string{"contents:read", "packages:read"},
 		},
 	}
 
@@ -453,11 +439,14 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 					Profile:             ref.ShortString(),
 				})
 			} else {
-				orgProfile, _ := testProfile.LookupProfile(ref.ShortString())
+				data, ok := profileData[ref.ShortString()]
+				if !ok {
+					return vendor.NewVendorFailed(errors.New("unknown profile"))
+				}
 				return vendor.NewVendorSuccess(vendor.ProfileToken{
 					Token:               v,
-					Repositories:        orgProfile.Repositories,
-					Permissions:         orgProfile.Permissions,
+					Repositories:        data.repositories,
+					Permissions:         data.permissions,
 					VendedRepositoryURL: repo,
 					Profile:             ref.ShortString(),
 				})

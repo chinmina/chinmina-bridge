@@ -1,11 +1,23 @@
 package profile
 
+import "slices"
+
 // OrganizationProfileAttr contains the attributes for an organization profile.
 // Slice fields are expected to be treated as immutable after construction.
 // Callers should not modify slice contents after passing to NewAuthorizedProfile or NewProfileStoreOf.
 type OrganizationProfileAttr struct {
 	Repositories []string
 	Permissions  []string
+}
+
+// HasRepository checks if the given repository is included in the profile's
+// repositories. Supports wildcard "*" to match any repository.
+func (attr OrganizationProfileAttr) HasRepository(repo string) bool {
+	if len(attr.Repositories) == 1 && attr.Repositories[0] == "*" {
+		return true
+	}
+
+	return slices.Contains(attr.Repositories, repo)
 }
 
 // PipelineProfileAttr is a placeholder for future pipeline profile attributes.

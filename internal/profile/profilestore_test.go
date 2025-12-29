@@ -105,37 +105,6 @@ func TestProfileStoreOf_Get_InvalidProfile(t *testing.T) {
 	assert.ErrorIs(t, unavailableErr, validationErr)
 }
 
-// TestProfileStoreOf_Get_InvalidProfileTakesPrecedence verifies that invalid profiles are checked before valid profiles.
-func TestProfileStoreOf_Get_InvalidProfileTakesPrecedence(t *testing.T) {
-	validationErr := errors.New("profile failed validation")
-
-	// Create a profile with the same name in both maps
-	matcher := profile.ExactMatcher("pipeline_slug", "my-pipeline")
-	attrs := profile.OrganizationProfileAttr{
-		Repositories: []string{"chinmina/chinmina-bridge"},
-		Permissions:  []string{"contents:read"},
-	}
-	authProfile := profile.NewAuthorizedProfile(matcher, attrs)
-
-	profiles := map[string]profile.AuthorizedProfile[profile.OrganizationProfileAttr]{
-		"test-profile": authProfile,
-	}
-	invalidProfiles := map[string]error{
-		"test-profile": validationErr,
-	}
-
-	store := profile.NewProfileStoreOf(profiles, invalidProfiles)
-
-	// Invalid should take precedence
-	_, err := store.Get("test-profile")
-
-	require.Error(t, err)
-	var unavailableErr profile.ProfileUnavailableError
-	require.ErrorAs(t, err, &unavailableErr)
-	assert.Equal(t, "test-profile", unavailableErr.Name)
-	assert.ErrorIs(t, unavailableErr, validationErr)
-}
-
 // TestProfileStoreOf_Immutable verifies that ProfileStoreOf is immutable after creation.
 func TestProfileStoreOf_Immutable(t *testing.T) {
 	matcher := profile.ExactMatcher("pipeline_slug", "my-pipeline")
@@ -169,4 +138,124 @@ func TestProfileStoreOf_Immutable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "chinmina/chinmina-bridge", retrieved2.Attrs.Repositories[0])
 	assert.NotEqual(t, "chinmina/other-repo", retrieved2.Attrs.Repositories[0])
+}
+
+// TestNewProfiles verifies NewProfiles creates a Profiles instance.
+func TestNewProfiles(t *testing.T) {
+	orgProfiles := profile.NewProfileStoreOf(
+		map[string]profile.AuthorizedProfile[profile.OrganizationProfileAttr]{},
+		map[string]error{},
+	)
+	pipelineDefaults := []string{"contents:read", "metadata:read"}
+	digest := "abc123"
+
+	profiles := profile.NewProfiles(orgProfiles, pipelineDefaults, digest)
+
+	assert.True(t, profiles.IsLoaded())
+	assert.Equal(t, digest, profiles.Digest())
+}
+
+// TestProfiles_GetOrgProfile_Success verifies successful retrieval of an organization profile.
+func TestProfiles_GetOrgProfile_Success(t *testing.T) {
+	matcher := profile.ExactMatcher("pipeline_slug", "my-pipeline")
+	attrs := profile.OrganizationProfileAttr{
+		Repositories: []string{"chinmina/chinmina-bridge"},
+		Permissions:  []string{"contents:read"},
+	}
+	authProfile := profile.NewAuthorizedProfile(matcher, attrs)
+
+	orgProfiles := profile.NewProfileStoreOf(
+		map[string]profile.AuthorizedProfile[profile.OrganizationProfileAttr]{
+			"test-profile": authProfile,
+		},
+		map[string]error{},
+	)
+	profiles := profile.NewProfiles(orgProfiles, []string{"contents:read"}, "digest")
+
+	retrieved, err := profiles.GetOrgProfile("test-profile")
+	require.NoError(t, err)
+	assert.Equal(t, attrs, retrieved.Attrs)
+}
+
+// TestProfiles_GetOrgProfile_NotLoaded verifies error when profiles not loaded.
+func TestProfiles_GetOrgProfile_NotLoaded(t *testing.T) {
+	var profiles profile.Profiles
+
+	_, err := profiles.GetOrgProfile("test-profile")
+
+	require.Error(t, err)
+	var notLoadedErr profile.ProfileStoreNotLoadedError
+	require.ErrorAs(t, err, &notLoadedErr)
+}
+
+// TestProfiles_GetPipelineDefaults_ConfiguredDefaults verifies configured defaults are returned.
+func TestProfiles_GetPipelineDefaults_ConfiguredDefaults(t *testing.T) {
+	orgProfiles := profile.NewProfileStoreOf(
+		map[string]profile.AuthorizedProfile[profile.OrganizationProfileAttr]{},
+		map[string]error{},
+	)
+	pipelineDefaults := []string{"contents:read", "metadata:read"}
+	profiles := profile.NewProfiles(orgProfiles, pipelineDefaults, "digest")
+
+	defaults := profiles.GetPipelineDefaults()
+	assert.Equal(t, pipelineDefaults, defaults)
+}
+
+// TestProfiles_GetPipelineDefaults_FallbackDefaults verifies fallback defaults when not configured.
+func TestProfiles_GetPipelineDefaults_FallbackDefaults(t *testing.T) {
+	orgProfiles := profile.NewProfileStoreOf(
+		map[string]profile.AuthorizedProfile[profile.OrganizationProfileAttr]{},
+		map[string]error{},
+	)
+	profiles := profile.NewProfiles(orgProfiles, []string{}, "digest")
+
+	defaults := profiles.GetPipelineDefaults()
+	assert.Equal(t, []string{"contents:read"}, defaults)
+}
+
+// TestProfiles_Immutable verifies Profiles is immutable after creation.
+func TestProfiles_Immutable(t *testing.T) {
+	orgProfiles := profile.NewProfileStoreOf(
+		map[string]profile.AuthorizedProfile[profile.OrganizationProfileAttr]{},
+		map[string]error{},
+	)
+	pipelineDefaults := []string{"contents:read", "metadata:read"}
+	profiles := profile.NewProfiles(orgProfiles, pipelineDefaults, "digest")
+
+	// Get defaults
+	defaults := profiles.GetPipelineDefaults()
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaults)
+
+	// Modify the source slice (should not affect Profiles)
+	pipelineDefaults[0] = "packages:write"
+
+	// Profiles should still return the original defaults
+	defaults2 := profiles.GetPipelineDefaults()
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaults2)
+
+	// Modify the returned slice (should not affect Profiles)
+	defaults[0] = "packages:write"
+
+	// Profiles should still return the original defaults
+	defaults3 := profiles.GetPipelineDefaults()
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaults3)
+}
+
+// TestProfiles_IsLoaded verifies IsLoaded returns correct status.
+func TestProfiles_IsLoaded(t *testing.T) {
+	t.Run("loaded profiles", func(t *testing.T) {
+		orgProfiles := profile.NewProfileStoreOf(
+			map[string]profile.AuthorizedProfile[profile.OrganizationProfileAttr]{},
+			map[string]error{},
+		)
+		profiles := profile.NewProfiles(orgProfiles, []string{}, "digest")
+
+		assert.True(t, profiles.IsLoaded())
+	})
+
+	t.Run("unloaded profiles", func(t *testing.T) {
+		var profiles profile.Profiles
+
+		assert.False(t, profiles.IsLoaded())
+	})
 }

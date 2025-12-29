@@ -214,7 +214,7 @@ func refreshOrgProfile(ctx context.Context, profileStore *profile.ProfileStore, 
 	}()
 
 	for {
-		profileConfig, err := profile.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
+		profiles, err := profile.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
 		if err != nil {
 			// log the failure to fetch, then continue. This may be transient, so we
 			// need to keep trying.
@@ -222,7 +222,7 @@ func refreshOrgProfile(ctx context.Context, profileStore *profile.ProfileStore, 
 		} else {
 			// only update the profile if retrieval succeeded
 			// invalid profiles are already logged during FetchOrganizationProfile
-			profileStore.Update(profileConfig)
+			profileStore.Update(profiles)
 		}
 
 		select {

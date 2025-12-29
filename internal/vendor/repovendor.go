@@ -59,14 +59,8 @@ func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLook
 			return NewVendorFailed(fmt.Errorf("no valid repository names found for URL: %s", pipelineRepoURL))
 		}
 
-		permissions := []string{"contents:read"} // fallback default
-		// Get default permissions from organization config
-		orgConfig, err := profileStore.GetOrganization()
-		if err != nil {
-			logger.Warn().Err(err).Msg("organization configuration not available, using fallback default permissions for repository token")
-		} else {
-			permissions = orgConfig.GetDefaultPermissions()
-		}
+		// Get default permissions from profile configuration (falls back to contents:read if not configured)
+		permissions := profileStore.GetPipelineDefaults()
 
 		// Use the GitHub API to vend a token for the allowed repository
 		token, expiry, err := tokenVendor(ctx, allowedRepoNames, permissions)

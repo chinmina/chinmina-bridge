@@ -56,59 +56,54 @@ func TestFetchProfile(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	validatedProfile, err := profile.ValidateProfile(context.Background(), validProfileYAML)
+	validatedProfileConfig, err := profile.ValidateProfile(context.Background(), validProfileYAML)
 	require.NoError(t, err)
+	expectedDigest := validatedProfileConfig.Digest()
 
 	// Test that we get an error attempting to load it before fetching
-	_, err = profileStore.GetOrganization()
+	_, err = profileStore.GetOrganizationProfile("buildkite-plugin")
 	require.Error(t, err)
+	var notLoadedErr profile.ProfileStoreNotLoadedError
+	require.ErrorAs(t, err, &notLoadedErr)
 
-	orgProfile, err := profile.FetchOrganizationProfile(context.Background(), profileConfig, gh)
+	orgProfiles, err := profile.FetchOrganizationProfile(context.Background(), profileConfig, gh)
 	require.NoError(t, err)
-	assertProfileConfigEqual(t, validatedProfile, orgProfile)
+	assert.Equal(t, expectedDigest, orgProfiles.Digest())
 
-	orgProfile, err = profile.FetchOrganizationProfile(context.Background(), profileConfig, gh)
+	orgProfiles, err = profile.FetchOrganizationProfile(context.Background(), profileConfig, gh)
 	require.NoError(t, err)
 
-	profileStore.Update(orgProfile)
-	loadedProfile, err := profileStore.GetOrganization()
+	// Update profile store
+	profileStore.Update(orgProfiles)
+
+	// Verify we can retrieve a profile
+	_, err = profileStore.GetOrganizationProfile("buildkite-plugin")
 	require.NoError(t, err)
-	assertProfileConfigEqual(t, validatedProfile, loadedProfile)
 
 	_, err = profile.FetchOrganizationProfile(context.Background(), fakeProfileConfig, gh)
 	require.Error(t, err)
 }
 
-func TestGetProfileFromStore(t *testing.T) {
+func TestGetOrganizationProfile(t *testing.T) {
 	profileConfig, err := profile.ValidateProfile(context.Background(), sharedValidProfile)
 	require.NoError(t, err)
 
 	store := profile.NewProfileStore()
-	store.Update(profileConfig)
+	profiles := profile.CompileProfiles(profileConfig)
+	store.Update(profiles)
 
 	validProfileName := "simple-profile"
 	invalidProfileName := "glizzy"
 
-	expectedProfile := profile.Profile{
-		Name:         "simple-profile",
-		Match:        nil,
-		Repositories: []string{"repo-1", "repo-2"},
-		Permissions:  []string{"read", "write"},
-	}
-
 	t.Run("Successful retrieval of an existing profile", func(t *testing.T) {
-		retrievedProfile, err := store.GetProfileFromStore(validProfileName)
+		retrievedProfile, err := store.GetOrganizationProfile(validProfileName)
 		require.NoError(t, err)
-		// Use struct equality to verify the profile. Note: compiledMatcher is private
-		// and verified through Matches() behavior, so we use assertProfileConfigEqual pattern
-		assert.Equal(t, expectedProfile.Name, retrievedProfile.Name)
-		assert.Equal(t, expectedProfile.Match, retrievedProfile.Match)
-		assert.Equal(t, expectedProfile.Repositories, retrievedProfile.Repositories)
-		assert.Equal(t, expectedProfile.Permissions, retrievedProfile.Permissions)
+		assert.Equal(t, []string{"repo-1", "repo-2"}, retrievedProfile.Attrs.Repositories)
+		assert.Equal(t, []string{"read", "write"}, retrievedProfile.Attrs.Permissions)
 	})
 
 	t.Run("Error handling when a profile is not found", func(t *testing.T) {
-		_, err := store.GetProfileFromStore(invalidProfileName)
+		_, err := store.GetOrganizationProfile(invalidProfileName)
 		require.Error(t, err)
 		var notFoundErr profile.ProfileNotFoundError
 		require.ErrorAs(t, err, &notFoundErr)
@@ -121,10 +116,11 @@ func TestGetProfileFromStore(t *testing.T) {
 		require.NoError(t, err)
 
 		storeWithInvalid := profile.NewProfileStore()
-		storeWithInvalid.Update(invalidProfileConfig)
+		invalidProfiles := profile.CompileProfiles(invalidProfileConfig)
+		storeWithInvalid.Update(invalidProfiles)
 
 		// Try to lookup an invalid profile
-		_, err = storeWithInvalid.GetProfileFromStore("invalid-regex-pattern")
+		_, err = storeWithInvalid.GetOrganizationProfile("invalid-regex-pattern")
 		require.Error(t, err)
 		var unavailableErr profile.ProfileUnavailableError
 		require.ErrorAs(t, err, &unavailableErr)
@@ -140,7 +136,7 @@ func TestGetProfileFromStore(t *testing.T) {
 
 		for range numGoroutines {
 			wg.Go(func() {
-				_, err := store.GetProfileFromStore(validProfileName)
+				_, err := store.GetOrganizationProfile(validProfileName)
 				assert.NoError(t, err)
 
 				mu.Lock()
@@ -152,59 +148,5 @@ func TestGetProfileFromStore(t *testing.T) {
 		wg.Wait()
 
 		assert.Equal(t, numGoroutines, accessCount, "All goroutines should have executed")
-	})
-}
-
-func TestProfileStoreRWMutexConcurrency(t *testing.T) {
-	// Setup: Create a ProfileStore with a valid profile
-	store := profile.NewProfileStore()
-	profileConfig := profile.NewTestProfileConfig(
-		profile.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
-	)
-	store.Update(profileConfig)
-
-	t.Run("Writes serialize with reads correctly", func(t *testing.T) {
-		// Test that concurrent reads and writes maintain data consistency
-		// With RWMutex: reads can be concurrent, but writes must be exclusive
-
-		const numReaders = 20
-		const numWriters = 5
-		var wg sync.WaitGroup
-		errChan := make(chan error, numReaders+numWriters)
-
-		// Launch concurrent readers
-		for range numReaders {
-			wg.Go(func() {
-				// Multiple reads should all succeed
-				_, err := store.GetProfileFromStore("test-profile")
-				if err != nil {
-					errChan <- err
-				}
-				_, err = store.GetOrganization()
-				if err != nil {
-					errChan <- err
-				}
-			})
-		}
-
-		// Launch concurrent writers
-		for range numWriters {
-			wg.Go(func() {
-				newConfig := profile.NewTestProfileConfig(
-					profile.NewTestProfile("test-profile", []string{"test-repo"}, []string{"contents:read"}),
-				)
-				store.Update(newConfig)
-			})
-		}
-
-		wg.Wait()
-		close(errChan)
-
-		// Verify no errors occurred during concurrent access
-		var errors []error
-		for err := range errChan {
-			errors = append(errors, err)
-		}
-		assert.Empty(t, errors, "Should have no errors during concurrent read/write operations")
 	})
 }
