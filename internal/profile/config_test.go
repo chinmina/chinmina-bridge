@@ -536,81 +536,48 @@ func TestValidateProfileWithMatchRules(t *testing.T) {
 	// Verify we have all expected profiles
 	assert.Len(t, profileConfig.Organization.Profiles, 4)
 
+	// Compile profiles for runtime access
+	profiles := profile.CompileProfiles(profileConfig)
+
 	testCases := []struct {
-		name            string
-		profileName     string
-		expectedProfile profile.Profile
+		name                string
+		profileName         string
+		expectedRepositories []string
+		expectedPermissions  []string
 	}{
 		{
-			name:        "exact match rule",
-			profileName: "production-deploy",
-			expectedProfile: profile.Profile{
-				Name: "production-deploy",
-				Match: []profile.MatchRule{
-					{
-						Claim: "pipeline_slug",
-						Value: "silk-prod",
-					},
-				},
-				Repositories: []string{"acme/silk"},
-				Permissions:  []string{"contents:write"},
-			},
+			name:                "exact match rule",
+			profileName:         "production-deploy",
+			expectedRepositories: []string{"acme/silk"},
+			expectedPermissions:  []string{"contents:write"},
 		},
 		{
-			name:        "regex pattern match",
-			profileName: "staging-deploy",
-			expectedProfile: profile.Profile{
-				Name: "staging-deploy",
-				Match: []profile.MatchRule{
-					{
-						Claim:        "pipeline_slug",
-						ValuePattern: "(silk|cotton)-(staging|stg)",
-					},
-				},
-				Repositories: []string{"acme/silk", "acme/cotton"},
-				Permissions:  []string{"contents:write"},
-			},
+			name:                "regex pattern match",
+			profileName:         "staging-deploy",
+			expectedRepositories: []string{"acme/silk", "acme/cotton"},
+			expectedPermissions:  []string{"contents:write"},
 		},
 		{
-			name:        "multiple match rules (AND logic)",
-			profileName: "production-silk-only",
-			expectedProfile: profile.Profile{
-				Name: "production-silk-only",
-				Match: []profile.MatchRule{
-					{
-						Claim:        "pipeline_slug",
-						ValuePattern: "silk-.*",
-					},
-					{
-						Claim: "build_branch",
-						Value: "main",
-					},
-				},
-				Repositories: []string{"acme/silk"},
-				Permissions:  []string{"contents:write"},
-			},
+			name:                "multiple match rules (AND logic)",
+			profileName:         "production-silk-only",
+			expectedRepositories: []string{"acme/silk"},
+			expectedPermissions:  []string{"contents:write"},
 		},
 		{
-			name:        "no match rules (empty array)",
-			profileName: "shared-utilities-read",
-			expectedProfile: profile.Profile{
-				Name:         "shared-utilities-read",
-				Match:        []profile.MatchRule{},
-				Repositories: []string{"acme/shared-utilities"},
-				Permissions:  []string{"contents:read"},
-			},
+			name:                "no match rules (empty array)",
+			profileName:         "shared-utilities-read",
+			expectedRepositories: []string{"acme/shared-utilities"},
+			expectedPermissions:  []string{"contents:read"},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			retrievedProfile, err := profileConfig.LookupProfile(tc.profileName)
+			retrievedProfile, err := profiles.GetOrgProfile(tc.profileName)
 			require.NoError(t, err)
-			// Compare all fields except compiledMatcher (private and verified via Matches() behavior)
-			assert.Equal(t, tc.expectedProfile.Name, retrievedProfile.Name)
-			assert.Equal(t, tc.expectedProfile.Match, retrievedProfile.Match)
-			assert.Equal(t, tc.expectedProfile.Repositories, retrievedProfile.Repositories)
-			assert.Equal(t, tc.expectedProfile.Permissions, retrievedProfile.Permissions)
+			// Match rules are compiled into the matcher function and validated implicitly
+			assert.Equal(t, tc.expectedRepositories, retrievedProfile.Attrs.Repositories)
+			assert.Equal(t, tc.expectedPermissions, retrievedProfile.Attrs.Permissions)
 		})
 	}
 }
@@ -641,27 +608,26 @@ func TestGracefulDegradation(t *testing.T) {
 	// Only valid profiles should be in the config
 	assert.Len(t, profileConfig.Organization.Profiles, 3, "expected 3 valid profiles")
 
+	// Compile profiles for runtime access
+	profiles := profile.CompileProfiles(profileConfig)
+
 	// Verify valid profiles are accessible
 	validNames := []string{"valid-production", "valid-staging", "valid-no-match"}
 	for _, name := range validNames {
-		_, err := profileConfig.LookupProfile(name)
+		_, err := profiles.GetOrgProfile(name)
 		assert.NoError(t, err, "valid profile %q should be accessible", name)
-		// Note: compiledMatcher is private, verified through ValidateProfile
 	}
 
 	// Verify invalid profiles are not accessible (return error)
 	invalidNames := []string{"invalid-both-match-types", "invalid-disallowed-claim", "invalid-regex-pattern"}
 	for _, name := range invalidNames {
-		_, err := profileConfig.LookupProfile(name)
+		_, err := profiles.GetOrgProfile(name)
 		assert.Error(t, err, "invalid profile %q should return error", name)
 	}
 
-	// Verify that the valid profiles have working matchers
-	// We can't test actual matching without BuildkiteClaims implementation,
-	// but compiledMatcher is verified through ValidateProfile
-	validProd, _ := profileConfig.LookupProfile("valid-production")
-	assert.Equal(t, "valid-production", validProd.Name)
-	assert.Equal(t, []string{"acme/silk"}, validProd.Repositories)
+	// Verify that the valid profiles have correct attributes
+	validProd, _ := profiles.GetOrgProfile("valid-production")
+	assert.Equal(t, []string{"acme/silk"}, validProd.Attrs.Repositories)
 }
 
 func TestDuplicateProfileNames(t *testing.T) {
@@ -680,16 +646,17 @@ func TestDuplicateProfileNames(t *testing.T) {
 	// Only the first occurrence should be valid
 	assert.Len(t, profileConfig.Organization.Profiles, 2, "expected 2 valid profiles")
 
+	// Compile profiles for runtime access
+	profiles := profile.CompileProfiles(profileConfig)
+
 	// Verify the first "production" profile is accessible
-	prod, err := profileConfig.LookupProfile("production")
+	prod, err := profiles.GetOrgProfile("production")
 	assert.NoError(t, err, "first production profile should be accessible")
-	assert.Equal(t, "production", prod.Name)
-	assert.Equal(t, []string{"acme/silk"}, prod.Repositories)
+	assert.Equal(t, []string{"acme/silk"}, prod.Attrs.Repositories)
 
 	// Verify "staging" profile is accessible
-	staging, err := profileConfig.LookupProfile("staging")
+	_, err = profiles.GetOrgProfile("staging")
 	assert.NoError(t, err, "staging profile should be accessible")
-	assert.Equal(t, "staging", staging.Name)
 }
 
 func TestEmptyRepositoriesAndPermissions(t *testing.T) {
@@ -716,23 +683,19 @@ func TestEmptyRepositoriesAndPermissions(t *testing.T) {
 	// Only the valid profile should remain
 	assert.Len(t, profileConfig.Organization.Profiles, 1, "expected 1 valid profile")
 
-	// Verify the valid profile is accessible
-	expected := profile.Profile{
-		Name:         "valid-profile",
-		Repositories: []string{"acme/test"},
-		Permissions:  []string{"contents:read"},
-	}
+	// Compile profiles for runtime access
+	profiles := profile.CompileProfiles(profileConfig)
 
-	validProf, err := profileConfig.LookupProfile("valid-profile")
+	// Verify the valid profile is accessible
+	validProf, err := profiles.GetOrgProfile("valid-profile")
 	assert.NoError(t, err, "valid profile should be accessible")
-	assert.Equal(t, expected.Name, validProf.Name)
-	assert.Equal(t, expected.Repositories, validProf.Repositories)
-	assert.Equal(t, expected.Permissions, validProf.Permissions)
+	assert.Equal(t, []string{"acme/test"}, validProf.Attrs.Repositories)
+	assert.Equal(t, []string{"contents:read"}, validProf.Attrs.Permissions)
 
 	// Verify invalid profiles return errors
 	invalidNames := []string{"empty-repositories", "empty-permissions", "both-empty"}
 	for _, name := range invalidNames {
-		_, err := profileConfig.LookupProfile(name)
+		_, err := profiles.GetOrgProfile(name)
 		assert.Error(t, err, "invalid profile %q should return error", name)
 	}
 }

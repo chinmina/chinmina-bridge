@@ -83,24 +83,6 @@ func (config *ProfileConfig) GetDefaultPermissions() []string {
 	return config.Organization.Defaults.Permissions
 }
 
-func (config *ProfileConfig) LookupProfile(name string) (Profile, error) {
-	for _, profile := range config.Organization.Profiles {
-		if profile.Name == name {
-			return profile, nil
-		}
-	}
-
-	// not found, check if it's invalid
-	if err, invalid := config.Organization.InvalidProfiles[name]; invalid {
-		return Profile{}, ProfileUnavailableError{
-			Name:  name,
-			Cause: err,
-		}
-	}
-
-	return Profile{}, ProfileNotFoundError{Name: name}
-}
-
 type Profile struct {
 	Name         string      `yaml:"name"`
 	Match        []MatchRule `yaml:"match"`
