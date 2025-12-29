@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"context"
 	"sync"
 
 	"github.com/rs/zerolog/log"
@@ -49,4 +50,32 @@ func (p *ProfileStore) Update(profiles Profiles) {
 	}
 
 	p.profiles = profiles
+}
+
+// FetchOrganizationProfile loads organization profile configuration from GitHub.
+// This is the main entry point for production code.
+func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh GitHubClient) (Profiles, error) {
+	return load(ctx, gh, orgProfileLocation)
+}
+
+// load retrieves, parses, and compiles profile configuration from GitHub.
+func load(ctx context.Context, gh GitHubClient, orgProfileLocation string) (Profiles, error) {
+	yamlContent, err := retrieve(ctx, gh, orgProfileLocation)
+	if err != nil {
+		return Profiles{}, err
+	}
+
+	config, digest, err := parse(yamlContent)
+	if err != nil {
+		return Profiles{}, err
+	}
+
+	profiles := compile(config, digest)
+
+	// Log profile load status
+	log.Info().
+		Str("location", orgProfileLocation).
+		Msg("loaded organization profile configuration")
+
+	return profiles, nil
 }

@@ -1,0 +1,4 @@
+organization:
+  defaults:
+    permissions:
+      - contents:read

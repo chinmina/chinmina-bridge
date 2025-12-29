@@ -2,31 +2,28 @@ package vendor_test
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/profile"
+	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 )
 
-func createProfileStoreWithPermissions(permissions []string) *profile.ProfileStore {
-	ps := profile.NewProfileStore()
-	config := profile.ProfileConfig{}
-	config.Organization.Defaults.Permissions = permissions
-	config.Organization.Profiles = []profile.Profile{{Name: "default"}}
-	profiles := profile.CompileProfiles(config)
-	ps.Update(profiles)
-	return ps
-}
+//go:embed testdata/defaults.yaml
+var defaultPermissionsYAML string
 
-func createProfileStoreWithError() *profile.ProfileStore {
-	return profile.NewProfileStore()
-}
+//go:embed testdata/multiple-permissions.yaml
+var multiplePermissionsYAML string
+
+//go:embed testdata/multiple-permissions-extended.yaml
+var multiplePermissionsExtendedYAML string
 
 func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{"contents:read"}), nil, nil)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), nil, nil)
 
 	ref := profile.ProfileRef{
 		Organization: "org",
@@ -39,7 +36,7 @@ func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
 }
 
 func TestRepoVendor_FailsWithNonDefaultProfile(t *testing.T) {
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{"contents:read"}), nil, nil)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), nil, nil)
 
 	ref := profile.ProfileRef{
 		Organization: "org",
@@ -56,7 +53,7 @@ func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
 		return "", errors.New("pipeline not found")
 	})
 
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{"contents:read"}), repoLookup, nil)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), repoLookup, nil)
 
 	ref := profile.ProfileRef{
 		Organization: "org",
@@ -75,7 +72,7 @@ func TestRepoVendor_FailsWhenNoValidRepoNames(t *testing.T) {
 		return "https://github.com/", nil
 	})
 
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{"contents:read"}), repoLookup, nil)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), repoLookup, nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -93,7 +90,7 @@ func TestRepoVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 		return "https://github.com/org/repo-url-mismatch", nil
 	})
 
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{"contents:read"}), repoLookup, nil)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), repoLookup, nil)
 
 	// When there is a difference between the requested repo (by Git generally)
 	// and the repo associated with the pipeline, return success but empty.
@@ -118,7 +115,7 @@ func TestRepoVendor_FailsWhenTokenVendorFails(t *testing.T) {
 		return "", time.Time{}, errors.New("token vendor failed")
 	})
 
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{"contents:read"}), repoLookup, tokenVendor)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -142,7 +139,7 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 		return "vended-token-value", vendedDate, nil
 	})
 
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{"contents:read"}), repoLookup, tokenVendor)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -176,7 +173,7 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 		return "vended-token-value", vendedDate, nil
 	})
 
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{"contents:read"}), repoLookup, tokenVendor)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -211,7 +208,7 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 		return "vended-token-value", vendedDate, nil
 	})
 
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{"contents:read"}), repoLookup, tokenVendor)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -247,7 +244,7 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 	})
 
 	configuredPermissions := []string{"contents:read", "pull_requests:write", "actions:read"}
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions(configuredPermissions), repoLookup, tokenVendor)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, multiplePermissionsYAML), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -285,7 +282,7 @@ func TestRepoVendor_FallbackPermissionsOnProfileStoreError(t *testing.T) {
 	})
 
 	// ProfileStore with error (no config loaded)
-	v := vendor.NewRepoVendor(createProfileStoreWithError(), repoLookup, tokenVendor)
+	v := vendor.NewRepoVendor(profile.NewProfileStore(), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -323,7 +320,7 @@ func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
 	})
 
 	multiplePermissions := []string{"contents:read", "pull_requests:read", "issues:read", "statuses:write"}
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions(multiplePermissions), repoLookup, tokenVendor)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, multiplePermissionsExtendedYAML), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -358,8 +355,8 @@ func TestRepoVendor_EmptyDefaultPermissionsUsesFallback(t *testing.T) {
 		return "vended-token-value", vendedDate, nil
 	})
 
-	// Explicitly empty permissions array (backward compatibility case)
-	v := vendor.NewRepoVendor(createProfileStoreWithPermissions([]string{}), repoLookup, tokenVendor)
+	// Create empty ProfileStore (backward compatibility case)
+	v := vendor.NewRepoVendor(profile.NewProfileStore(), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",

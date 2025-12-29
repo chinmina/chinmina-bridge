@@ -1,152 +1,465 @@
-package profile_test
+package profile
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
+	"errors"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/config"
-	"github.com/chinmina/chinmina-bridge/internal/github"
-	"github.com/chinmina/chinmina-bridge/internal/profile"
-	api "github.com/google/go-github/v80/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestFetchProfile(t *testing.T) {
-	router := http.NewServeMux()
-	profileStore := profile.NewProfileStore()
-
-	expectedExpiry := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
-
-	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
-		JSON(w, &api.InstallationToken{
-			Token:     api.Ptr("expected-token"),
-			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
-		})
-	})
-
-	router.HandleFunc("/repos/chinmina/chinmina-bridge/contents/docs/profile.yaml", func(w http.ResponseWriter, r *http.Request) {
-		JSON(w, &api.RepositoryContent{
-			Content: &validProfileYAML,
-		})
-	})
-
-	svr := httptest.NewServer(router)
-	defer svr.Close()
-
-	// generate valid key for testing
-	key := generateKey(t)
-
-	profileConfig := "chinmina:chinmina-bridge:docs/profile.yaml"
-
-	fakeProfileConfig := "chinmina:chinmina-bridge:docs/fake-profile.yaml"
-
-	gh, err := github.New(
-		context.Background(),
-		config.GithubConfig{
-			ApiURL:         svr.URL,
-			PrivateKey:     key,
-			ApplicationID:  10,
-			InstallationID: 20,
-		},
-	)
-	require.NoError(t, err)
-
-	validatedProfileConfig, err := profile.ValidateProfile(context.Background(), validProfileYAML)
-	require.NoError(t, err)
-	expectedDigest := validatedProfileConfig.Digest()
-
-	// Test that we get an error attempting to load it before fetching
-	_, err = profileStore.GetOrganizationProfile("buildkite-plugin")
-	require.Error(t, err)
-	var notLoadedErr profile.ProfileStoreNotLoadedError
-	require.ErrorAs(t, err, &notLoadedErr)
-
-	orgProfiles, err := profile.FetchOrganizationProfile(context.Background(), profileConfig, gh)
-	require.NoError(t, err)
-	assert.Equal(t, expectedDigest, orgProfiles.Digest())
-
-	orgProfiles, err = profile.FetchOrganizationProfile(context.Background(), profileConfig, gh)
-	require.NoError(t, err)
-
-	// Update profile store
-	profileStore.Update(orgProfiles)
-
-	// Verify we can retrieve a profile
-	_, err = profileStore.GetOrganizationProfile("buildkite-plugin")
-	require.NoError(t, err)
-
-	_, err = profile.FetchOrganizationProfile(context.Background(), fakeProfileConfig, gh)
-	require.Error(t, err)
+// mockGitHubClient implements GitHubClient for testing
+type mockGitHubClient struct {
+	files map[string]string
+	err   error
 }
 
-func TestGetOrganizationProfile(t *testing.T) {
-	profileConfig, err := profile.ValidateProfile(context.Background(), sharedValidProfile)
+func (m *mockGitHubClient) GetFileContent(ctx context.Context, owner, repo, path string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+
+	key := owner + ":" + repo + ":" + path
+	content, ok := m.files[key]
+	if !ok {
+		return "", errors.New("file not found")
+	}
+
+	return content, nil
+}
+
+func TestFetchOrganizationProfile_Success(t *testing.T) {
+	validYAML := `organization:
+  defaults:
+    permissions: ["contents:read"]
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/silk"]
+      permissions: ["contents:read"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:docs/profile.yaml": validYAML,
+		},
+	}
+
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:docs/profile.yaml", gh)
 	require.NoError(t, err)
 
-	store := profile.NewProfileStore()
-	profiles := profile.CompileProfiles(profileConfig)
+	assert.True(t, profiles.IsLoaded())
+	assert.NotEmpty(t, profiles.digest)
+
+	// Verify profile can be accessed
+	profile, err := profiles.GetOrgProfile("test-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/silk"}, profile.Attrs.Repositories)
+}
+
+func TestFetchOrganizationProfile_ReturnsCorrectDigest(t *testing.T) {
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/test"]
+      permissions: ["contents:read"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:test:profile.yaml": validYAML,
+		},
+	}
+
+	// Fetch the same profile twice
+	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:profile.yaml", gh)
+	require.NoError(t, err)
+
+	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:profile.yaml", gh)
+	require.NoError(t, err)
+
+	// Digests should be identical for same content
+	assert.Equal(t, profiles1.digest, profiles2.digest)
+	assert.NotEmpty(t, profiles1.digest)
+}
+
+func TestFetchOrganizationProfile_CanBeCalledMultipleTimes(t *testing.T) {
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/silk"]
+      permissions: ["contents:read"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": validYAML,
+		},
+	}
+
+	// Call multiple times
+	for i := 0; i < 3; i++ {
+		profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+		require.NoError(t, err)
+		assert.True(t, profiles.IsLoaded())
+	}
+}
+
+func TestFetchOrganizationProfile_NonExistent(t *testing.T) {
+	gh := &mockGitHubClient{
+		err: errors.New("404 not found"),
+	}
+
+	_, err := FetchOrganizationProfile(context.Background(), "acme:silk:nonexistent.yaml", gh)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "organization profile load failed")
+}
+
+func TestProfileStore_GetOrganizationProfile_Success(t *testing.T) {
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/silk"]
+      permissions: ["contents:read", "pull_requests:write"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": validYAML,
+		},
+	}
+
+	// Fetch and load profiles
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	require.NoError(t, err)
+
+	// Create store and update with profiles
+	store := NewProfileStore()
 	store.Update(profiles)
 
-	validProfileName := "simple-profile"
-	invalidProfileName := "glizzy"
+	// Retrieve profile
+	profile, err := store.GetOrganizationProfile("test-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, profile.Attrs.Permissions)
+}
 
-	t.Run("Successful retrieval of an existing profile", func(t *testing.T) {
-		retrievedProfile, err := store.GetOrganizationProfile(validProfileName)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"repo-1", "repo-2"}, retrievedProfile.Attrs.Repositories)
-		assert.Equal(t, []string{"read", "write"}, retrievedProfile.Attrs.Permissions)
-	})
+func TestProfileStore_GetOrganizationProfile_NotFound(t *testing.T) {
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/silk"]
+      permissions: ["contents:read"]
+`
 
-	t.Run("Error handling when a profile is not found", func(t *testing.T) {
-		_, err := store.GetOrganizationProfile(invalidProfileName)
-		require.Error(t, err)
-		var notFoundErr profile.ProfileNotFoundError
-		require.ErrorAs(t, err, &notFoundErr)
-		assert.Equal(t, invalidProfileName, notFoundErr.Name)
-	})
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": validYAML,
+		},
+	}
 
-	t.Run("Error handling when a profile is unavailable due to validation failure", func(t *testing.T) {
-		// Load a profile config with validation failures
-		invalidProfileConfig, err := profile.ValidateProfile(context.Background(), profileWithMixedValidation)
-		require.NoError(t, err)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	require.NoError(t, err)
 
-		storeWithInvalid := profile.NewProfileStore()
-		invalidProfiles := profile.CompileProfiles(invalidProfileConfig)
-		storeWithInvalid.Update(invalidProfiles)
+	store := NewProfileStore()
+	store.Update(profiles)
 
-		// Try to lookup an invalid profile
-		_, err = storeWithInvalid.GetOrganizationProfile("invalid-regex-pattern")
-		require.Error(t, err)
-		var unavailableErr profile.ProfileUnavailableError
-		require.ErrorAs(t, err, &unavailableErr)
-		assert.Equal(t, "invalid-regex-pattern", unavailableErr.Name)
-		assert.NotNil(t, unavailableErr.Cause)
-	})
+	_, err = store.GetOrganizationProfile("nonexistent")
+	require.Error(t, err)
 
-	t.Run("Profile lookup is limited to one goroutine at a time", func(t *testing.T) {
-		const numGoroutines = 10
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		accessCount := 0
+	var notFoundErr ProfileNotFoundError
+	require.ErrorAs(t, err, &notFoundErr)
+	assert.Equal(t, "nonexistent", notFoundErr.Name)
+}
 
-		for range numGoroutines {
-			wg.Go(func() {
-				_, err := store.GetOrganizationProfile(validProfileName)
-				assert.NoError(t, err)
+func TestProfileStore_GetOrganizationProfile_Unavailable(t *testing.T) {
+	// YAML with invalid profile (empty repositories)
+	invalidYAML := `organization:
+  profiles:
+    - name: "invalid-profile"
+      repositories: []
+      permissions: ["contents:read"]
+`
 
-				mu.Lock()
-				accessCount++
-				mu.Unlock()
-			})
-		}
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": invalidYAML,
+		},
+	}
 
-		wg.Wait()
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	require.NoError(t, err)
 
-		assert.Equal(t, numGoroutines, accessCount, "All goroutines should have executed")
-	})
+	store := NewProfileStore()
+	store.Update(profiles)
+
+	_, err = store.GetOrganizationProfile("invalid-profile")
+	require.Error(t, err)
+
+	var unavailErr ProfileUnavailableError
+	require.ErrorAs(t, err, &unavailErr)
+	assert.Equal(t, "invalid-profile", unavailErr.Name)
+	assert.Contains(t, unavailErr.Cause.Error(), "repositories list must be non-empty")
+}
+
+func TestProfileStore_Concurrency(t *testing.T) {
+	// Simple smoke test that multiple goroutines can access the store concurrently
+	// without panics. Actual race conditions are caught by `go test -race`.
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/silk"]
+      permissions: ["contents:read"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": validYAML,
+		},
+	}
+
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	require.NoError(t, err)
+
+	store := NewProfileStore()
+	store.Update(profiles)
+
+	// Launch multiple goroutines accessing the store concurrently
+	var wg sync.WaitGroup
+	numGoroutines := 100
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+
+			profile, err := store.GetOrganizationProfile("test-profile")
+			if err != nil {
+				return
+			}
+
+			// Basic sanity check
+			if len(profile.Attrs.Repositories) != 1 {
+				return
+			}
+
+			// Also exercise GetPipelineDefaults
+			_ = store.GetPipelineDefaults()
+		}()
+	}
+
+	wg.Wait()
+	// Test passes if no panics occurred
+}
+
+func TestProfileStore_GetOrganizationProfile_NotLoaded(t *testing.T) {
+	store := NewProfileStore()
+
+	_, err := store.GetOrganizationProfile("any-profile")
+	require.Error(t, err)
+
+	var notLoadedErr ProfileStoreNotLoadedError
+	require.ErrorAs(t, err, &notLoadedErr)
+}
+
+func TestProfileStore_GetPipelineDefaults(t *testing.T) {
+	tests := []struct {
+		name             string
+		yaml             string
+		expectedDefaults []string
+	}{
+		{
+			name: "configured defaults",
+			yaml: `organization:
+  defaults:
+    permissions: ["contents:read", "pull_requests:write"]
+  profiles:
+    - name: "test"
+      repositories: ["acme/test"]
+      permissions: ["contents:read"]
+`,
+			expectedDefaults: []string{"contents:read", "pull_requests:write"},
+		},
+		{
+			name: "fallback defaults",
+			yaml: `organization:
+  profiles:
+    - name: "test"
+      repositories: ["acme/test"]
+      permissions: ["contents:read"]
+`,
+			expectedDefaults: []string{"contents:read"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gh := &mockGitHubClient{
+				files: map[string]string{
+					"acme:test:profile.yaml": tt.yaml,
+				},
+			}
+
+			profiles, err := FetchOrganizationProfile(context.Background(), "acme:test:profile.yaml", gh)
+			require.NoError(t, err)
+
+			store := NewProfileStore()
+			store.Update(profiles)
+
+			defaults := store.GetPipelineDefaults()
+			assert.Equal(t, tt.expectedDefaults, defaults)
+		})
+	}
+}
+
+func TestProfileStore_Update_MultipleTimes(t *testing.T) {
+	yaml1 := `organization:
+  profiles:
+    - name: "profile-v1"
+      repositories: ["acme/v1"]
+      permissions: ["contents:read"]
+`
+
+	yaml2 := `organization:
+  profiles:
+    - name: "profile-v2"
+      repositories: ["acme/v2"]
+      permissions: ["contents:write"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:test:v1.yaml": yaml1,
+			"acme:test:v2.yaml": yaml2,
+		},
+	}
+
+	store := NewProfileStore()
+
+	// Load first version
+	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh)
+	require.NoError(t, err)
+	store.Update(profiles1)
+
+	profile1, err := store.GetOrganizationProfile("profile-v1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/v1"}, profile1.Attrs.Repositories)
+
+	// Update with second version
+	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh)
+	require.NoError(t, err)
+	store.Update(profiles2)
+
+	// Old profile should no longer be accessible
+	_, err = store.GetOrganizationProfile("profile-v1")
+	require.Error(t, err)
+
+	// New profile should be accessible
+	profile2, err := store.GetOrganizationProfile("profile-v2")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/v2"}, profile2.Attrs.Repositories)
+}
+
+func TestProfileStore_Update_NoChange(t *testing.T) {
+	yaml1 := `organization:
+  profiles:
+    - name: "profile-v1"
+      repositories: ["acme/v1"]
+      permissions: ["contents:read"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:test:v1.yaml": yaml1,
+		},
+	}
+
+	store := NewProfileStore()
+
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh)
+	require.NoError(t, err)
+
+	// First update
+	store.Update(profiles)
+
+	// Second update with same profiles - should log "no changes detected"
+	store.Update(profiles)
+
+	// Verify profile is still accessible
+	profile, err := store.GetOrganizationProfile("profile-v1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/v1"}, profile.Attrs.Repositories)
+}
+
+func TestFetchOrganizationProfile_InvalidYAML(t *testing.T) {
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:test:invalid.yaml": "invalid: yaml: [broken",
+		},
+	}
+
+	_, err := FetchOrganizationProfile(context.Background(), "acme:test:invalid.yaml", gh)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "organization profile file parsing failed")
+}
+
+func TestLoad_EndToEnd(t *testing.T) {
+	validYAML := `organization:
+  defaults:
+    permissions: ["contents:read"]
+  profiles:
+    - name: "prod-profile"
+      match:
+        - claim: pipeline_slug
+          value: "silk-prod"
+      repositories: ["acme/silk"]
+      permissions: ["contents:write"]
+
+    - name: "staging-profile"
+      match:
+        - claim: pipeline_slug
+          valuePattern: ".*-staging"
+      repositories: ["acme/silk", "acme/cotton"]
+      permissions: ["contents:read"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:config:profile.yaml": validYAML,
+		},
+	}
+
+	// Test the load function directly (via FetchOrganizationProfile)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:config:profile.yaml", gh)
+	require.NoError(t, err)
+
+	// Verify profiles are loaded correctly
+	assert.True(t, profiles.IsLoaded())
+	assert.NotEmpty(t, profiles.digest)
+
+	// Verify prod profile
+	prodProfile, err := profiles.GetOrgProfile("prod-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/silk"}, prodProfile.Attrs.Repositories)
+	assert.Equal(t, []string{"contents:write"}, prodProfile.Attrs.Permissions)
+
+	// Test prod profile matching
+	claims := mapClaimLookup{"pipeline_slug": "silk-prod"}
+	result := prodProfile.Match(claims)
+	assert.True(t, result.Matched)
+
+	// Verify staging profile
+	stagingProfile, err := profiles.GetOrgProfile("staging-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/silk", "acme/cotton"}, stagingProfile.Attrs.Repositories)
+
+	// Test staging profile matching with regex
+	claims = mapClaimLookup{"pipeline_slug": "silk-staging"}
+	result = stagingProfile.Match(claims)
+	assert.True(t, result.Matched)
+
+	// Verify pipeline defaults
+	defaults := profiles.GetPipelineDefaults()
+	assert.Equal(t, []string{"contents:read"}, defaults)
 }

@@ -1,0 +1,6 @@
+organization:
+  defaults:
+    permissions:
+      - contents:read
+      - pull_requests:write
+      - actions:read

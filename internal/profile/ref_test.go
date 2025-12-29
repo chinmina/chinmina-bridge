@@ -1,248 +1,224 @@
-package profile_test
+package profile
 
 import (
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
-	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewProfileRef_Success(t *testing.T) {
+func TestNewProfileRef_WithTypePrefix_Success(t *testing.T) {
 	tests := []struct {
-		name          string
-		claims        jwt.BuildkiteClaims
-		expectedType  profile.ProfileType
-		profileString string
-		expected      profile.ProfileRef
+		name       string
+		profileStr string
+		expected   ProfileRef
 	}{
 		{
-			name: "RepoProfileWithTypePrefix",
-			claims: jwt.BuildkiteClaims{
-				OrganizationSlug: "acme-corp",
-				PipelineID:       "abc123",
-				PipelineSlug:     "my-pipeline",
-			},
-			expectedType:  profile.ProfileTypeRepo,
-			profileString: "repo:default",
-			expected: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeRepo,
+			name:       "repo:default",
+			profileStr: "repo:default",
+			expected: ProfileRef{
+				Organization: "acme",
+				Type:         ProfileTypeRepo,
 				Name:         "default",
-				PipelineID:   "abc123",
-				PipelineSlug: "my-pipeline",
+				PipelineID:   "pipeline-id",
+				PipelineSlug: "pipeline-slug",
 			},
 		},
 		{
-			name: "RepoProfileWithoutTypePrefix",
-			claims: jwt.BuildkiteClaims{
-				OrganizationSlug: "acme-corp",
-				PipelineID:       "abc123",
-				PipelineSlug:     "my-pipeline",
-			},
-			expectedType:  profile.ProfileTypeRepo,
-			profileString: "custom-profile",
-			expected: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeRepo,
-				Name:         "custom-profile",
-				PipelineID:   "abc123",
-				PipelineSlug: "my-pipeline",
-			},
-		},
-		{
-			name: "OrgProfileWithTypePrefix",
-			claims: jwt.BuildkiteClaims{
-				OrganizationSlug: "acme-corp",
-				PipelineID:       "abc123",
-				PipelineSlug:     "my-pipeline",
-			},
-			expectedType:  profile.ProfileTypeOrg,
-			profileString: "org:write-packages",
-			expected: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeOrg,
+			name:       "org:write-packages",
+			profileStr: "org:write-packages",
+			expected: ProfileRef{
+				Organization: "acme",
+				Type:         ProfileTypeOrg,
 				Name:         "write-packages",
-				PipelineID:   "",
-				PipelineSlug: "",
 			},
 		},
 		{
-			name: "OrgProfileWithoutTypePrefix",
-			claims: jwt.BuildkiteClaims{
-				OrganizationSlug: "acme-corp",
-				PipelineID:       "abc123",
-				PipelineSlug:     "my-pipeline",
-			},
-			expectedType:  profile.ProfileTypeOrg,
-			profileString: "write-packages",
-			expected: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeOrg,
-				Name:         "write-packages",
-				PipelineID:   "",
-				PipelineSlug: "",
-			},
-		},
-		{
-			name: "EmptyProfileDefaultsToRepoDefault",
-			claims: jwt.BuildkiteClaims{
-				OrganizationSlug: "acme-corp",
-				PipelineID:       "abc123",
-				PipelineSlug:     "my-pipeline",
-			},
-			expectedType:  profile.ProfileTypeRepo,
-			profileString: "",
-			expected: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeRepo,
-				Name:         "default",
-				PipelineID:   "abc123",
-				PipelineSlug: "my-pipeline",
-			},
-		},
-		{
-			name: "MultiComponentProfileName",
-			claims: jwt.BuildkiteClaims{
-				OrganizationSlug: "acme-corp",
-				PipelineID:       "abc123",
-				PipelineSlug:     "my-pipeline",
-			},
-			expectedType:  profile.ProfileTypeOrg,
-			profileString: "org:write-packages-v2",
-			expected: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeOrg,
+			name:       "org:write-packages-v2",
+			profileStr: "org:write-packages-v2",
+			expected: ProfileRef{
+				Organization: "acme",
+				Type:         ProfileTypeOrg,
 				Name:         "write-packages-v2",
-				PipelineID:   "",
-				PipelineSlug: "",
-			},
-		},
-		{
-			name: "EmptyOrganizationSlug",
-			claims: jwt.BuildkiteClaims{
-				OrganizationSlug: "",
-				PipelineID:       "abc123",
-				PipelineSlug:     "my-pipeline",
-			},
-			expectedType:  profile.ProfileTypeRepo,
-			profileString: "repo:default",
-			expected: profile.ProfileRef{
-				Organization: "",
-				Type:         profile.ProfileTypeRepo,
-				Name:         "default",
-				PipelineID:   "abc123",
-				PipelineSlug: "my-pipeline",
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ref, err := profile.NewProfileRef(tt.claims, tt.expectedType, tt.profileString)
+			claims := jwt.BuildkiteClaims{
+				OrganizationSlug: "acme",
+				PipelineID:       "pipeline-id",
+				PipelineSlug:     "pipeline-slug",
+			}
 
+			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, ref)
 		})
 	}
 }
 
-func TestNewProfileRef_InvalidFormats(t *testing.T) {
+func TestNewProfileRef_WithoutTypePrefix_Success(t *testing.T) {
 	tests := []struct {
-		name           string
-		expectedType   profile.ProfileType
-		profileString  string
-		expectedErrMsg string
+		name       string
+		profileStr string
+		expected   ProfileRef
 	}{
 		{
-			name:           "EmptyOrgProfile",
-			expectedType:   profile.ProfileTypeOrg,
-			profileString:  "",
-			expectedErrMsg: "organization profiles have no default",
+			name:       "custom-profile defaults to repo",
+			profileStr: "custom-profile",
+			expected: ProfileRef{
+				Organization: "acme",
+				Type:         ProfileTypeRepo,
+				Name:         "custom-profile",
+				PipelineID:   "pipeline-id",
+				PipelineSlug: "pipeline-slug",
+			},
 		},
 		{
-			name:           "MissingType",
-			expectedType:   profile.ProfileTypeRepo,
-			profileString:  ":profile-name",
-			expectedErrMsg: "invalid profile format",
+			name:       "write-packages with explicit org type",
+			profileStr: "write-packages",
+			expected: ProfileRef{
+				Organization: "acme",
+				Type:         ProfileTypeOrg,
+				Name:         "write-packages",
+			},
 		},
-		{
-			name:           "MissingName",
-			expectedType:   profile.ProfileTypeRepo,
-			profileString:  "repo:",
-			expectedErrMsg: "invalid profile format",
-		},
-		{
-			name:           "InvalidProfileType",
-			expectedType:   profile.ProfileTypeRepo,
-			profileString:  "invalid:profile",
-			expectedErrMsg: "invalid profile type",
-		},
-		{
-			name:           "TypeMismatchRepoExpectedOrgGiven",
-			expectedType:   profile.ProfileTypeRepo,
-			profileString:  "org:profile-name",
-			expectedErrMsg: "profile type mismatch",
-		},
-		{
-			name:           "TypeMismatchOrgExpectedRepoGiven",
-			expectedType:   profile.ProfileTypeOrg,
-			profileString:  "repo:profile-name",
-			expectedErrMsg: "profile type mismatch",
-		},
-	}
-
-	claims := jwt.BuildkiteClaims{
-		OrganizationSlug: "acme-corp",
-		PipelineID:       "abc123",
-		PipelineSlug:     "my-pipeline",
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := profile.NewProfileRef(claims, tt.expectedType, tt.profileString)
+			claims := jwt.BuildkiteClaims{
+				OrganizationSlug: "acme",
+				PipelineID:       "pipeline-id",
+				PipelineSlug:     "pipeline-slug",
+			}
 
-			require.Error(t, err)
-			assert.ErrorContains(t, err, tt.expectedErrMsg)
+			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, ref)
 		})
 	}
 }
 
-func TestProfileRef_String(t *testing.T) {
+func TestNewProfileRef_EmptyString_DefaultBehavior(t *testing.T) {
+	claims := jwt.BuildkiteClaims{
+		OrganizationSlug: "acme",
+		PipelineID:       "pipeline-id",
+		PipelineSlug:     "pipeline-slug",
+	}
+
+	ref, err := NewProfileRef(claims, ProfileTypeRepo, "")
+	require.NoError(t, err)
+	assert.Equal(t, ProfileTypeRepo, ref.Type)
+	assert.Equal(t, "default", ref.Name)
+}
+
+func TestNewProfileRef_EmptyOrgSlug_Accepted(t *testing.T) {
+	claims := jwt.BuildkiteClaims{
+		OrganizationSlug: "",
+		PipelineID:       "pipeline-id",
+		PipelineSlug:     "pipeline-slug",
+	}
+
+	ref, err := NewProfileRef(claims, ProfileTypeRepo, "default")
+	require.NoError(t, err)
+	assert.Equal(t, "", ref.Organization)
+}
+
+func TestNewProfileRef_Failure(t *testing.T) {
 	tests := []struct {
-		name     string
-		ref      profile.ProfileRef
-		expected string
+		name         string
+		profileStr   string
+		expectedType ProfileType
+		errorMsg     string
 	}{
 		{
-			name: "RepoFormat",
-			ref: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeRepo,
-				Name:         "default",
-				PipelineID:   "abc123",
-				PipelineSlug: "my-pipeline",
-			},
-			expected: "profile://organization/acme-corp/pipeline/abc123/my-pipeline/profile/default",
+			name:         "empty org profile",
+			profileStr:   "",
+			expectedType: ProfileTypeOrg,
+			errorMsg:     "organization profiles have no default",
 		},
 		{
-			name: "OrgFormat",
-			ref: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeOrg,
-				Name:         "write-packages",
-				PipelineID:   "",
-				PipelineSlug: "",
-			},
-			expected: "profile://organization/acme-corp/profile/write-packages",
+			name:         "missing type",
+			profileStr:   ":profile-name",
+			expectedType: ProfileTypeRepo,
+			errorMsg:     "invalid profile format",
+		},
+		{
+			name:         "missing name",
+			profileStr:   "repo:",
+			expectedType: ProfileTypeRepo,
+			errorMsg:     "invalid profile format",
+		},
+		{
+			name:         "invalid profile type",
+			profileStr:   "invalid:profile",
+			expectedType: ProfileTypeRepo,
+			errorMsg:     "invalid profile type",
+		},
+		{
+			name:         "type mismatch - repo expected org given",
+			profileStr:   "org:profile-name",
+			expectedType: ProfileTypeRepo,
+			errorMsg:     "profile type mismatch",
+		},
+		{
+			name:         "type mismatch - org expected repo given",
+			profileStr:   "repo:profile-name",
+			expectedType: ProfileTypeOrg,
+			errorMsg:     "profile type mismatch",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.ref.String()
-			assert.Equal(t, tt.expected, result)
+			claims := jwt.BuildkiteClaims{
+				OrganizationSlug: "acme",
+				PipelineID:       "pipeline-id",
+				PipelineSlug:     "pipeline-slug",
+			}
+
+			_, err := NewProfileRef(claims, tt.expectedType, tt.profileStr)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errorMsg)
+		})
+	}
+}
+
+func TestProfileRef_String_CanonicalFormat(t *testing.T) {
+	tests := []struct {
+		name     string
+		ref      ProfileRef
+		expected string
+	}{
+		{
+			name: "repo profile",
+			ref: ProfileRef{
+				Organization: "acme",
+				Type:         ProfileTypeRepo,
+				Name:         "default",
+				PipelineID:   "abc123",
+				PipelineSlug: "my-pipeline",
+			},
+			expected: "profile://organization/acme/pipeline/abc123/my-pipeline/profile/default",
+		},
+		{
+			name: "org profile",
+			ref: ProfileRef{
+				Organization: "acme",
+				Type:         ProfileTypeOrg,
+				Name:         "write-packages",
+			},
+			expected: "profile://organization/acme/profile/write-packages",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.ref.String())
 		})
 	}
 }
@@ -250,28 +226,22 @@ func TestProfileRef_String(t *testing.T) {
 func TestProfileRef_ShortString(t *testing.T) {
 	tests := []struct {
 		name     string
-		ref      profile.ProfileRef
+		ref      ProfileRef
 		expected string
 	}{
 		{
-			name: "Repo",
-			ref: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeRepo,
-				Name:         "default",
-				PipelineID:   "abc123",
-				PipelineSlug: "my-pipeline",
+			name: "repo profile",
+			ref: ProfileRef{
+				Type: ProfileTypeRepo,
+				Name: "default",
 			},
 			expected: "repo:default",
 		},
 		{
-			name: "Org",
-			ref: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeOrg,
-				Name:         "write-packages",
-				PipelineID:   "",
-				PipelineSlug: "",
+			name: "org profile",
+			ref: ProfileRef{
+				Type: ProfileTypeOrg,
+				Name: "write-packages",
 			},
 			expected: "org:write-packages",
 		},
@@ -279,198 +249,240 @@ func TestProfileRef_ShortString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.ref.ShortString()
-			assert.Equal(t, tt.expected, result)
+			assert.Equal(t, tt.expected, tt.ref.ShortString())
 		})
 	}
 }
 
 func TestParseProfileRef_Roundtrip(t *testing.T) {
 	tests := []struct {
-		name     string
-		original profile.ProfileRef
+		name string
+		ref  ProfileRef
 	}{
 		{
-			name: "RepoProfile",
-			original: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeRepo,
-				Name:         "default",
+			name: "repo profile",
+			ref: ProfileRef{
+				Organization: "acme",
+				Type:         ProfileTypeRepo,
+				Name:         "custom-profile",
 				PipelineID:   "abc123",
 				PipelineSlug: "my-pipeline",
 			},
 		},
 		{
-			name: "OrgProfile",
-			original: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeOrg,
+			name: "org profile",
+			ref: ProfileRef{
+				Organization: "acme",
+				Type:         ProfileTypeOrg,
 				Name:         "write-packages",
-				PipelineID:   "",
-				PipelineSlug: "",
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Convert to string
-			refStr := tt.original.String()
-
-			// Parse back
-			parsed, err := profile.ParseProfileRef(refStr)
-
+			s := tt.ref.String()
+			parsed, err := ParseProfileRef(s)
 			require.NoError(t, err)
-			assert.Equal(t, tt.original, parsed)
+			assert.Equal(t, tt.ref, parsed)
 		})
 	}
 }
 
 func TestParseProfileRef_ComplexNames(t *testing.T) {
 	tests := []struct {
-		name     string
-		refStr   string
-		expected profile.ProfileRef
+		name string
+		urn  string
+		ref  ProfileRef
 	}{
 		{
-			name:   "RepoProfileComplexNames",
-			refStr: "profile://organization/my-org-123/pipeline/pipe-id-456/my-slug-789/profile/profile-name-v2",
-			expected: profile.ProfileRef{
-				Organization: "my-org-123",
-				Type:         profile.ProfileTypeRepo,
+			name: "hyphens and numbers in names",
+			urn:  "profile://organization/acme-org-123/pipeline/pipeline-id-456/pipeline-slug-789/profile/profile-name-v2",
+			ref: ProfileRef{
+				Organization: "acme-org-123",
+				Type:         ProfileTypeRepo,
 				Name:         "profile-name-v2",
-				PipelineID:   "pipe-id-456",
-				PipelineSlug: "my-slug-789",
+				PipelineID:   "pipeline-id-456",
+				PipelineSlug: "pipeline-slug-789",
 			},
 		},
 		{
-			name:   "OrgProfileComplexNames",
-			refStr: "profile://organization/my-org-123/profile/profile-name-v2",
-			expected: profile.ProfileRef{
-				Organization: "my-org-123",
-				Type:         profile.ProfileTypeOrg,
-				Name:         "profile-name-v2",
-				PipelineID:   "",
-				PipelineSlug: "",
-			},
-		},
-		{
-			name:   "ExtraSlashesInPath",
-			refStr: "profile://organization/acme-corp/pipeline/abc123/my-pipeline/profile/default/extra/path",
-			expected: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeRepo,
-				Name:         "default",
-				PipelineID:   "abc123",
-				PipelineSlug: "my-pipeline",
+			name: "underscores in names",
+			urn:  "profile://organization/acme_org/profile/write_packages_v2",
+			ref: ProfileRef{
+				Organization: "acme_org",
+				Type:         ProfileTypeOrg,
+				Name:         "write_packages_v2",
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			parsed, err := profile.ParseProfileRef(tt.refStr)
-
+			parsed, err := ParseProfileRef(tt.urn)
 			require.NoError(t, err)
-			assert.Equal(t, tt.expected, parsed)
+			assert.Equal(t, tt.ref, parsed)
 		})
 	}
 }
 
-func TestParseProfileRef_InvalidFormats(t *testing.T) {
+func TestParseProfileRef_ExtraSlashesIgnored(t *testing.T) {
+	// Extra slashes in path should be handled - parsing first valid structure
+	urn := "profile://organization/acme/pipeline/id/slug/profile/name/extra/slashes"
+	parsed, err := ParseProfileRef(urn)
+	require.NoError(t, err)
+	assert.Equal(t, ProfileRef{
+		Organization: "acme",
+		Type:         ProfileTypeRepo,
+		Name:         "name",
+		PipelineID:   "id",
+		PipelineSlug: "slug",
+	}, parsed)
+}
+
+func TestParseProfileRef_BackwardCompatibility_OldFormat(t *testing.T) {
+	// Old format without pipeline slug: profile://organization/org/pipeline/id/name
+	urn := "profile://organization/acme/pipeline/pipeline-id/profile-name"
+	parsed, err := ParseProfileRef(urn)
+	require.NoError(t, err)
+	assert.Equal(t, ProfileRef{
+		Organization: "acme",
+		Type:         ProfileTypeRepo,
+		Name:         "profile-name",
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "",
+	}, parsed)
+}
+
+func TestParseProfileRef_Failure(t *testing.T) {
 	tests := []struct {
-		name           string
-		refStr         string
-		expectedErrMsg string
+		name     string
+		urn      string
+		errorMsg string
 	}{
 		{
-			name:           "NoPrefix",
-			refStr:         "invalid-string",
-			expectedErrMsg: "expected to start with 'profile://organization/'",
+			name:     "no profile prefix",
+			urn:      "invalid://organization/acme/profile/name",
+			errorMsg: "expected to start with 'profile://organization/'",
 		},
 		{
-			name:           "TooFewComponents",
-			refStr:         "profile://organization/acme-corp",
-			expectedErrMsg: "expected at least 3 components",
+			name:     "too few components",
+			urn:      "profile://organization/acme",
+			errorMsg: "expected at least 3 components",
 		},
 		{
-			name:           "UnknownType",
-			refStr:         "profile://organization/acme-corp/unknown/profile-name",
-			expectedErrMsg: "could not determine profile type",
+			name:     "unknown type",
+			urn:      "profile://organization/acme/unknown/value/name",
+			errorMsg: "could not determine profile type",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := profile.ParseProfileRef(tt.refStr)
-
+			_, err := ParseProfileRef(tt.urn)
 			require.Error(t, err)
-			assert.ErrorContains(t, err, tt.expectedErrMsg)
+			assert.Contains(t, err.Error(), tt.errorMsg)
 		})
 	}
 }
 
 func TestProfileType_String(t *testing.T) {
 	tests := []struct {
-		name        string
-		profileType profile.ProfileType
-		expected    string
+		name     string
+		pt       ProfileType
+		expected string
 	}{
 		{
-			name:        "Repo",
-			profileType: profile.ProfileTypeRepo,
-			expected:    "repo",
+			name:     "ProfileTypeRepo",
+			pt:       ProfileTypeRepo,
+			expected: "repo",
 		},
 		{
-			name:        "Org",
-			profileType: profile.ProfileTypeOrg,
-			expected:    "org",
+			name:     "ProfileTypeOrg",
+			pt:       ProfileTypeOrg,
+			expected: "org",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.profileType.String())
+			assert.Equal(t, tt.expected, tt.pt.String())
 		})
 	}
 }
 
-func TestParseProfileRef_OldFormat_BackwardCompatibility(t *testing.T) {
-	tests := []struct {
-		name     string
-		refStr   string
-		expected profile.ProfileRef
-	}{
-		{
-			name:   "OldRepoFormat",
-			refStr: "profile://organization/acme-corp/pipeline/abc123/default",
-			expected: profile.ProfileRef{
-				Organization: "acme-corp",
-				Type:         profile.ProfileTypeRepo,
-				Name:         "default",
-				PipelineID:   "abc123",
-				PipelineSlug: "", // Empty in old format
-			},
-		},
-		{
-			name:   "OldRepoFormatComplexNames",
-			refStr: "profile://organization/my-org-123/pipeline/pipe-id-456/profile-name-v2",
-			expected: profile.ProfileRef{
-				Organization: "my-org-123",
-				Type:         profile.ProfileTypeRepo,
-				Name:         "profile-name-v2",
-				PipelineID:   "pipe-id-456",
-				PipelineSlug: "", // Empty in old format
-			},
-		},
+func TestNewProfileRef_PipelineFieldsOnlySetForRepo(t *testing.T) {
+	claims := jwt.BuildkiteClaims{
+		OrganizationSlug: "acme",
+		PipelineID:       "pipeline-id",
+		PipelineSlug:     "pipeline-slug",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			parsed, err := profile.ParseProfileRef(tt.refStr)
+	// Repo profile should have pipeline fields set
+	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "default")
+	require.NoError(t, err)
+	assert.Equal(t, "pipeline-id", repoRef.PipelineID)
+	assert.Equal(t, "pipeline-slug", repoRef.PipelineSlug)
 
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, parsed)
-		})
+	// Org profile should NOT have pipeline fields set
+	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages")
+	require.NoError(t, err)
+	assert.Empty(t, orgRef.PipelineID)
+	assert.Empty(t, orgRef.PipelineSlug)
+}
+
+func TestProfileRef_Consistency(t *testing.T) {
+	// Test that all methods work together consistently
+	claims := jwt.BuildkiteClaims{
+		OrganizationSlug: "test-org",
+		PipelineID:       "test-id",
+		PipelineSlug:     "test-slug",
 	}
+
+	// Create a repo profile ref
+	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "custom-profile")
+	require.NoError(t, err)
+
+	// Verify complete struct matches expected
+	expectedRepo := ProfileRef{
+		Organization: "test-org",
+		Type:         ProfileTypeRepo,
+		Name:         "custom-profile",
+		PipelineID:   "test-id",
+		PipelineSlug: "test-slug",
+	}
+	assert.Equal(t, expectedRepo, repoRef)
+
+	// Verify String() produces canonical format
+	assert.Equal(t, "profile://organization/test-org/pipeline/test-id/test-slug/profile/custom-profile", repoRef.String())
+
+	// Verify ShortString() produces short format
+	assert.Equal(t, "repo:custom-profile", repoRef.ShortString())
+
+	// Verify Type.String() works
+	assert.Equal(t, "repo", repoRef.Type.String())
+
+	// Verify ParseProfileRef can parse the canonical format
+	parsed, err := ParseProfileRef(repoRef.String())
+	require.NoError(t, err)
+	assert.Equal(t, repoRef, parsed)
+
+	// Create an org profile ref
+	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "org-profile")
+	require.NoError(t, err)
+
+	// Verify complete struct matches expected
+	expectedOrg := ProfileRef{
+		Organization: "test-org",
+		Type:         ProfileTypeOrg,
+		Name:         "org-profile",
+		PipelineID:   "",
+		PipelineSlug: "",
+	}
+	assert.Equal(t, expectedOrg, orgRef)
+
+	// Verify org profile formats
+	assert.Equal(t, "profile://organization/test-org/profile/org-profile", orgRef.String())
+	assert.Equal(t, "org:org-profile", orgRef.ShortString())
+	assert.Equal(t, "org", orgRef.Type.String())
 }
