@@ -32,12 +32,14 @@ func (m *mockGitHubClient) GetFileContent(ctx context.Context, owner, repo, path
 
 func TestFetchOrganizationProfile_Success(t *testing.T) {
 	validYAML := `organization:
-  defaults:
-    permissions: ["contents:read"]
   profiles:
     - name: "test-profile"
       repositories: ["acme/silk"]
       permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read"]
 `
 
 	gh := &mockGitHubClient{
@@ -272,12 +274,14 @@ func TestProfileStore_GetPipelineDefaults(t *testing.T) {
 		{
 			name: "configured defaults",
 			yaml: `organization:
-  defaults:
-    permissions: ["contents:read", "pull_requests:write"]
   profiles:
     - name: "test"
       repositories: ["acme/test"]
       permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read", "pull_requests:write"]
 `,
 			expectedDefaults: []string{"contents:read", "pull_requests:write"},
 		},
@@ -406,8 +410,6 @@ func TestFetchOrganizationProfile_InvalidYAML(t *testing.T) {
 
 func TestLoad_EndToEnd(t *testing.T) {
 	validYAML := `organization:
-  defaults:
-    permissions: ["contents:read"]
   profiles:
     - name: "prod-profile"
       match:
@@ -422,6 +424,10 @@ func TestLoad_EndToEnd(t *testing.T) {
           valuePattern: ".*-staging"
       repositories: ["acme/silk", "acme/cotton"]
       permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read"]
 `
 
 	gh := &mockGitHubClient{

@@ -83,7 +83,7 @@ func compile(config profileConfig, digest string, location string) Profiles {
 	orgProfiles := NewProfileStoreOf(validProfiles, invalidProfiles)
 
 	// Extract pipeline defaults with fallback
-	pipelineDefaults := config.Organization.Defaults.Permissions
+	pipelineDefaults := config.Pipeline.Defaults.Permissions
 	if len(pipelineDefaults) == 0 {
 		pipelineDefaults = []string{"contents:read"}
 	}
@@ -154,7 +154,7 @@ func compileMatchRules(rules []matchRule) (Matcher, error) {
 		matchers = append(matchers, matcher)
 	}
 
-	// Return composite matcher (handles empty list case)
+	// Return composite matcher -- an empty list will always match
 	return CompositeMatcher(matchers...), nil
 }
 

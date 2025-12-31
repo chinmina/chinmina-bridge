@@ -1,0 +1,21 @@
+organization:
+  profiles:
+    - name: "buildkite-plugin"
+      repositories:
+        - somewhat-private-buildkite-plugin
+        - very-private-buildkite-plugin
+      permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read", "pull_requests:write"]
+  profiles:
+    - name: "high-access"
+      permissions: ["contents:write", "pull_requests:write", "issues:write"]
+    - name: "read-only"
+      permissions: ["contents:read"]
+    - name: "with-match-rules"
+      match:
+        - claim: "pipeline_slug"
+          valuePattern: "^security-.*"
+      permissions: ["contents:read", "security_events:write"]

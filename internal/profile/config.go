@@ -38,11 +38,14 @@ func (e ClaimValidationError) Status() (int, string) {
 
 type profileConfig struct {
 	Organization struct {
+		Profiles []organizationProfile `yaml:"profiles"`
+	} `yaml:"organization"`
+	Pipeline struct {
 		Defaults struct {
 			Permissions []string `yaml:"permissions"`
 		} `yaml:"defaults"`
-		Profiles []organizationProfile `yaml:"profiles"`
-	} `yaml:"organization"`
+		Profiles []pipelineProfile `yaml:"profiles"`
+	} `yaml:"pipeline"`
 }
 
 type organizationProfile struct {
@@ -50,6 +53,12 @@ type organizationProfile struct {
 	Match        []matchRule `yaml:"match"`
 	Repositories []string    `yaml:"repositories"`
 	Permissions  []string    `yaml:"permissions"`
+}
+
+type pipelineProfile struct {
+	Name        string      `yaml:"name"`
+	Match       []matchRule `yaml:"match"`
+	Permissions []string    `yaml:"permissions"`
 }
 
 type matchRule struct {

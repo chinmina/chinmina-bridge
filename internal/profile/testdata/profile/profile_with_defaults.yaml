@@ -1,6 +1,4 @@
 organization:
-  defaults:
-    permissions: ["contents:read", "pull_requests:write"]
   profiles:
     # allow read access to a set of buildkite-plugins
     - name: "buildkite-plugin"
@@ -15,3 +13,7 @@ organization:
     # '*' indicates all, when specified must be only value. No other wildcards supported.
       repositories: ["*"]
       permissions: ["packages:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read", "pull_requests:write"]
