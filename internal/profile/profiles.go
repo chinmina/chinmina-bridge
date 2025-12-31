@@ -36,10 +36,10 @@ func (attr OrganizationProfileAttr) allowAllRepositories() bool {
 	return len(attr.Repositories) == 1 && attr.Repositories[0] == "*"
 }
 
-// PipelineProfileAttr is a placeholder for future pipeline profile attributes.
-// Any future slice fields should be treated as immutable after construction.
+// PipelineProfileAttr contains the attributes for a pipeline profile.
+// Slice fields are expected to be treated as immutable after construction.
 type PipelineProfileAttr struct {
-	// TODO: Add pipeline-specific attributes when implementing pipeline profiles
+	Permissions []string
 }
 
 // --- AuthorizedProfile (uses attribute types) ---
@@ -103,11 +103,12 @@ func (ps ProfileStoreOf[T]) InvalidProfileCount() int {
 // --- Profiles (aggregates ProfileStoreOf) ---
 
 // Profiles holds compiled runtime profiles for organization-level configuration.
-// It combines organization profiles with pipeline defaults and a content digest.
+// It combines organization profiles with pipeline profiles and a content digest.
 // Once created, Profiles is immutable.
 type Profiles struct {
 	orgProfiles      ProfileStoreOf[OrganizationProfileAttr]
-	pipelineDefaults []string
+	pipelineProfiles ProfileStoreOf[PipelineProfileAttr]
+	pipelineDefaults []string // TODO: Remove in Phase 3 when "default" profile is created
 	digest           string
 	location         string
 }
@@ -123,16 +124,31 @@ func (p Profiles) GetOrgProfile(name string) (AuthorizedProfile[OrganizationProf
 	return p.orgProfiles.Get(name)
 }
 
-// GetPipelineDefaults returns the default permissions for pipelines. Falls back
-// to ["contents:read"] if not configured. Guaranteed to return a result: either
-// the default or the configuration.
+// GetPipelineProfile retrieves a pipeline profile by name.
+// Returns ProfileStoreNotLoadedError if profiles have not been loaded.
+func (p Profiles) GetPipelineProfile(name string) (AuthorizedProfile[PipelineProfileAttr], error) {
+	if !p.IsLoaded() {
+		return AuthorizedProfile[PipelineProfileAttr]{}, ProfileStoreNotLoadedError{}
+	}
+	return p.pipelineProfiles.Get(name)
+}
+
+// GetPipelineDefaults returns default permissions for pipelines.
+// TODO: Remove in Phase 5 when vendor switches to GetPipelineProfile("default")
+// Temporary method for backwards compatibility during migration.
 func (p Profiles) GetPipelineDefaults() []string {
-	if len(p.pipelineDefaults) == 0 {
-		return []string{"contents:read"}
+	// Try to get the "default" profile first (will be available after Phase 3)
+	if defaultProfile, err := p.pipelineProfiles.Get("default"); err == nil {
+		return slices.Clone(defaultProfile.Attrs.Permissions)
 	}
 
-	// Return a copy to preserve immutability
-	return slices.Clone(p.pipelineDefaults)
+	// Phase 2: Use configured defaults from pipelineDefaults field
+	if len(p.pipelineDefaults) > 0 {
+		return slices.Clone(p.pipelineDefaults)
+	}
+
+	// Fallback to hardcoded default
+	return []string{"contents:read"}
 }
 
 // Digest returns the content digest of the profile configuration.
@@ -151,6 +167,8 @@ func (p Profiles) Stats() ProfilesStats {
 	return ProfilesStats{
 		OrganizationProfileCount:        p.orgProfiles.ProfileCount(),
 		OrganizationInvalidProfileCount: p.orgProfiles.InvalidProfileCount(),
+		PipelineProfileCount:            p.pipelineProfiles.ProfileCount(),
+		PipelineInvalidProfileCount:     p.pipelineProfiles.InvalidProfileCount(),
 		Digest:                          p.digest,
 		Location:                        p.location,
 	}
@@ -160,6 +178,8 @@ func (p Profiles) Stats() ProfilesStats {
 type ProfilesStats struct {
 	OrganizationProfileCount        int
 	OrganizationInvalidProfileCount int
+	PipelineProfileCount            int
+	PipelineInvalidProfileCount     int
 	Digest                          string
 	Location                        string
 }
@@ -197,19 +217,19 @@ func NewProfileStoreOf[T any](profiles map[string]AuthorizedProfile[T], invalidP
 }
 
 // NewProfiles creates a new Profiles instance.
-// The pipelineDefaults slice is copied to ensure immutability.
 func NewProfiles(
 	orgProfiles ProfileStoreOf[OrganizationProfileAttr],
+	pipelineProfiles ProfileStoreOf[PipelineProfileAttr],
 	pipelineDefaults []string,
 	digest string,
 	location string,
 ) Profiles {
 	// Copy pipelineDefaults to ensure immutability
-	defaultsCopy := make([]string, len(pipelineDefaults))
-	copy(defaultsCopy, pipelineDefaults)
+	defaultsCopy := slices.Clone(pipelineDefaults)
 
 	return Profiles{
 		orgProfiles:      orgProfiles,
+		pipelineProfiles: pipelineProfiles,
 		pipelineDefaults: defaultsCopy,
 		digest:           digest,
 		location:         location,

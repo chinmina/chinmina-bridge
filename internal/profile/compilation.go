@@ -82,14 +82,22 @@ func compile(config profileConfig, digest string, location string) Profiles {
 	// Create ProfileStoreOf
 	orgProfiles := NewProfileStoreOf(validProfiles, invalidProfiles)
 
+	// TODO: Compile pipeline profiles in Phase 3
+	// For now, create empty pipeline profiles store
+	pipelineProfiles := NewProfileStoreOf(
+		map[string]AuthorizedProfile[PipelineProfileAttr]{},
+		map[string]error{},
+	)
+
 	// Extract pipeline defaults with fallback
+	// TODO: In Phase 3, this will be used to create the "default" profile
 	pipelineDefaults := config.Pipeline.Defaults.Permissions
 	if len(pipelineDefaults) == 0 {
 		pipelineDefaults = []string{"contents:read"}
 	}
 
 	// Create and return Profiles
-	return NewProfiles(orgProfiles, pipelineDefaults, digest, location)
+	return NewProfiles(orgProfiles, pipelineProfiles, pipelineDefaults, digest, location)
 }
 
 // duplicateNameValidator creates a validator function that checks for duplicate profile names.
