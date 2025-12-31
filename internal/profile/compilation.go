@@ -9,16 +9,14 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// compile transforms profileConfig into runtime Profiles.
-// Invalid profiles are tracked in ProfileStoreOf's invalidProfiles map.
-// The digest is passed through to the returned Profiles.
-func compile(config profileConfig, digest string, location string) Profiles {
-	// Compile matchers for each profile (graceful degradation)
+// compileOrganizationProfiles compiles organization profiles from config.
+// Returns a ProfileStoreOf containing valid and invalid profiles.
+func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[OrganizationProfileAttr] {
 	validMatchers := make(map[string]Matcher)
 	invalidProfiles := make(map[string]error)
 	duplicateNameCheck := duplicateNameValidator()
 
-	for _, prof := range config.Organization.Profiles {
+	for _, prof := range profiles {
 		// Check for duplicate profile names
 		if err := duplicateNameCheck(prof.Name); err != nil {
 			invalidProfiles[prof.Name] = err
@@ -64,7 +62,7 @@ func compile(config profileConfig, digest string, location string) Profiles {
 	validProfiles := make(map[string]AuthorizedProfile[OrganizationProfileAttr])
 
 	// Convert valid profiles to AuthorizedProfile format
-	for _, p := range config.Organization.Profiles {
+	for _, p := range profiles {
 		matcher, ok := validMatchers[p.Name]
 		if !ok {
 			// Profile was invalid, skip it
@@ -79,22 +77,104 @@ func compile(config profileConfig, digest string, location string) Profiles {
 		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
 	}
 
-	// Create ProfileStoreOf
-	orgProfiles := NewProfileStoreOf(validProfiles, invalidProfiles)
+	return NewProfileStoreOf(validProfiles, invalidProfiles)
+}
 
-	// TODO: Compile pipeline profiles in Phase 3
-	// For now, create empty pipeline profiles store
-	pipelineProfiles := NewProfileStoreOf(
-		map[string]AuthorizedProfile[PipelineProfileAttr]{},
-		map[string]error{},
-	)
+// compilePipelineProfiles compiles pipeline profiles from config.
+// Creates a "default" profile from defaultPermissions.
+// Validates that user-defined profiles don't use the reserved "default" name.
+// Returns a ProfileStoreOf containing valid and invalid profiles.
+func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []string) ProfileStoreOf[PipelineProfileAttr] {
+	validMatchers := make(map[string]Matcher)
+	invalidProfiles := make(map[string]error)
+	duplicateNameCheck := duplicateNameValidator()
+
+	for _, prof := range profiles {
+		// Check for reserved "default" name
+		if prof.Name == "default" {
+			err := fmt.Errorf("profile name %q is reserved", "default")
+			invalidProfiles[prof.Name] = err
+			continue
+		}
+
+		// Check for duplicate profile names
+		if err := duplicateNameCheck(prof.Name); err != nil {
+			invalidProfiles[prof.Name] = err
+			continue
+		}
+
+		// Check for empty permissions list
+		if len(prof.Permissions) == 0 {
+			err := fmt.Errorf("permissions list must be non-empty")
+			invalidProfiles[prof.Name] = err
+			continue
+		}
+
+		// Compile match rules (empty rules are allowed)
+		matcher, err := compileMatchRules(prof.Match)
+		if err != nil {
+			invalidProfiles[prof.Name] = err
+			continue
+		}
+
+		validMatchers[prof.Name] = matcher
+	}
+
+	// Log warnings for invalid profiles
+	if len(invalidProfiles) > 0 {
+		d := zerolog.Dict()
+		for name, err := range invalidProfiles {
+			d.Str(name, err.Error())
+		}
+
+		log.Warn().
+			Dict("invalid_profiles", d).
+			Msg("pipeline profile: some profiles failed validation and were ignored")
+	}
+
+	// Build maps for ProfileStoreOf
+	validProfiles := make(map[string]AuthorizedProfile[PipelineProfileAttr])
+
+	// Convert valid profiles to AuthorizedProfile format
+	for _, p := range profiles {
+		matcher, ok := validMatchers[p.Name]
+		if !ok {
+			// Profile was invalid, skip it
+			continue
+		}
+
+		attrs := PipelineProfileAttr{
+			Permissions: p.Permissions,
+		}
+
+		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
+	}
+
+	// Add "default" profile from defaultPermissions
+	// Empty match rules means it matches all pipelines
+	defaultMatcher, _ := compileMatchRules(nil) // Empty rules always succeed
+	validProfiles["default"] = NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
+		Permissions: defaultPermissions,
+	})
+
+	return NewProfileStoreOf(validProfiles, invalidProfiles)
+}
+
+// compile transforms profileConfig into runtime Profiles.
+// Invalid profiles are tracked in ProfileStoreOf's invalidProfiles map.
+// The digest is passed through to the returned Profiles.
+func compile(config profileConfig, digest string, location string) Profiles {
+	// Compile organization profiles
+	orgProfiles := compileOrganizationProfiles(config.Organization.Profiles)
 
 	// Extract pipeline defaults with fallback
-	// TODO: In Phase 3, this will be used to create the "default" profile
 	pipelineDefaults := config.Pipeline.Defaults.Permissions
 	if len(pipelineDefaults) == 0 {
 		pipelineDefaults = []string{"contents:read"}
 	}
+
+	// Compile pipeline profiles
+	pipelineProfiles := compilePipelineProfiles(config.Pipeline.Profiles, pipelineDefaults)
 
 	// Create and return Profiles
 	return NewProfiles(orgProfiles, pipelineProfiles, pipelineDefaults, digest, location)
