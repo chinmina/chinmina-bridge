@@ -32,15 +32,6 @@ func (p *ProfileStore) GetPipelineProfile(name string) (AuthorizedProfile[Pipeli
 	return p.profiles.GetPipelineProfile(name)
 }
 
-// GetPipelineDefaults returns the default permissions for pipelines.
-// Falls back to ["contents:read"] if not configured.
-func (p *ProfileStore) GetPipelineDefaults() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	return p.profiles.GetPipelineDefaults()
-}
-
 // Update the currently stored profiles. Logs at info level if the
 // profile content changed (based on digest), or at debug level if unchanged.
 func (p *ProfileStore) Update(profiles Profiles) {

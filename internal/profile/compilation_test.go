@@ -386,7 +386,9 @@ func TestCompile_PipelineDefaultsFallback(t *testing.T) {
 
 			profiles := compile(config, digest, "local")
 
-			assert.Equal(t, tt.expectedDefaults, profiles.GetPipelineDefaults(), tt.description)
+			defaultProfile, err := profiles.GetPipelineProfile("default")
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedDefaults, defaultProfile.Attrs.Permissions, tt.description)
 		})
 	}
 }

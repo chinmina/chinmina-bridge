@@ -317,65 +317,13 @@ func TestProfileStore_Concurrency(t *testing.T) {
 				return
 			}
 
-			// Also exercise GetPipelineDefaults
-			_ = store.GetPipelineDefaults()
+			// Also exercise GetPipelineProfile
+			_, _ = store.GetPipelineProfile("default")
 		}()
 	}
 
 	wg.Wait()
 	// Test passes if no panics occurred
-}
-
-func TestProfileStore_GetPipelineDefaults(t *testing.T) {
-	tests := []struct {
-		name             string
-		yaml             string
-		expectedDefaults []string
-	}{
-		{
-			name: "configured defaults",
-			yaml: `organization:
-  profiles:
-    - name: "test"
-      repositories: ["acme/test"]
-      permissions: ["contents:read"]
-
-pipeline:
-  defaults:
-    permissions: ["contents:read", "pull_requests:write"]
-`,
-			expectedDefaults: []string{"contents:read", "pull_requests:write"},
-		},
-		{
-			name: "fallback defaults",
-			yaml: `organization:
-  profiles:
-    - name: "test"
-      repositories: ["acme/test"]
-      permissions: ["contents:read"]
-`,
-			expectedDefaults: []string{"contents:read"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gh := &mockGitHubClient{
-				files: map[string]string{
-					"acme:test:profile.yaml": tt.yaml,
-				},
-			}
-
-			profiles, err := FetchOrganizationProfile(context.Background(), "acme:test:profile.yaml", gh)
-			require.NoError(t, err)
-
-			store := NewProfileStore()
-			store.Update(profiles)
-
-			defaults := store.GetPipelineDefaults()
-			assert.Equal(t, tt.expectedDefaults, defaults)
-		})
-	}
 }
 
 func TestProfileStore_Update_MultipleTimes(t *testing.T) {
@@ -525,7 +473,8 @@ pipeline:
 	result = stagingProfile.Match(claims)
 	assert.True(t, result.Matched)
 
-	// Verify pipeline defaults
-	defaults := profiles.GetPipelineDefaults()
-	assert.Equal(t, []string{"contents:read"}, defaults)
+	// Verify pipeline defaults via default profile
+	defaultProfile, err := profiles.GetPipelineProfile("default")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
 }

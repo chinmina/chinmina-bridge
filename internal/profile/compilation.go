@@ -177,7 +177,7 @@ func compile(config profileConfig, digest string, location string) Profiles {
 	pipelineProfiles := compilePipelineProfiles(config.Pipeline.Profiles, pipelineDefaults)
 
 	// Create and return Profiles
-	return NewProfiles(orgProfiles, pipelineProfiles, pipelineDefaults, digest, location)
+	return NewProfiles(orgProfiles, pipelineProfiles, digest, location)
 }
 
 // duplicateNameValidator creates a validator function that checks for duplicate profile names.

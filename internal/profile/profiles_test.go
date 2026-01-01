@@ -297,7 +297,7 @@ func TestProfiles_NewProfiles(t *testing.T) {
 	pipelineProfiles := NewProfileStoreOf[PipelineProfileAttr](nil, nil)
 	digest := "test-digest"
 
-	profiles := NewProfiles(orgProfiles, pipelineProfiles, []string{"contents:read"}, digest, "local")
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, digest, "local")
 
 	assert.Equal(t, digest, profiles.digest)
 }
@@ -315,7 +315,7 @@ func TestProfiles_GetOrgProfile_Success(t *testing.T) {
 	)
 
 	pipelineProfiles := NewProfileStoreOf[PipelineProfileAttr](nil, nil)
-	profiles := NewProfiles(orgProfiles, pipelineProfiles, []string{"contents:read"}, "digest", "local")
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, "digest", "local")
 
 	profile, err := profiles.GetOrgProfile("test-profile")
 	require.NoError(t, err)
@@ -335,7 +335,7 @@ func TestProfiles_GetPipelineProfile_Success(t *testing.T) {
 	)
 
 	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
-	profiles := NewProfiles(orgProfiles, pipelineProfiles, []string{"contents:read"}, "digest", "local")
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, "digest", "local")
 
 	profile, err := profiles.GetPipelineProfile("high-access")
 	require.NoError(t, err)
@@ -345,7 +345,7 @@ func TestProfiles_GetPipelineProfile_Success(t *testing.T) {
 func TestProfiles_GetPipelineProfile_NotFound(t *testing.T) {
 	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
 	pipelineProfiles := NewProfileStoreOf[PipelineProfileAttr](nil, nil)
-	profiles := NewProfiles(orgProfiles, pipelineProfiles, []string{"contents:read"}, "digest", "local")
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, "digest", "local")
 
 	_, err := profiles.GetPipelineProfile("nonexistent")
 	require.Error(t, err)
@@ -381,7 +381,7 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 
 	digest := "test-digest-12345"
 
-	profiles := NewProfiles(orgProfiles, pipelineProfiles, []string{"contents:read"}, digest, "local")
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, digest, "local")
 
 	// GetOrgProfile should work for valid profile
 	validProfile, err := profiles.GetOrgProfile("valid-profile")
@@ -444,7 +444,7 @@ func TestProfiles_Stats(t *testing.T) {
 	digest := "test-digest-abc123"
 	location := "github://acme/profiles/main/profiles.yaml"
 
-	profiles := NewProfiles(orgProfiles, pipelineProfiles, []string{"contents:read"}, digest, location)
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, digest, location)
 
 	stats := profiles.Stats()
 
