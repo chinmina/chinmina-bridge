@@ -16,6 +16,35 @@ func NewProfileStore() *ProfileStore {
 	return &ProfileStore{}
 }
 
+// NewDefaultProfiles creates a minimal default Profiles with only the "default"
+// pipeline profile using hard-coded default permissions ["contents:read"].
+// This provides a baseline profile set so the ProfileStore is never unloaded.
+func NewDefaultProfiles() Profiles {
+	// Create universal matcher (empty match rules always match)
+	defaultMatcher := CompositeMatcher()
+
+	// Create pipeline profiles map with only "default"
+	pipelineProfiles := map[string]AuthorizedProfile[PipelineProfileAttr]{
+		"default": NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
+			Permissions: []string{"contents:read"},
+		}),
+	}
+
+	// Create empty organization profiles
+	orgProfiles := NewProfileStoreOf(
+		map[string]AuthorizedProfile[OrganizationProfileAttr]{},
+		map[string]error{},
+	)
+
+	// Create pipeline profile store
+	pipelineProfileStore := NewProfileStoreOf(pipelineProfiles, map[string]error{})
+
+	// Synthetic digest to distinguish from loaded profiles
+	digest := "default-profile:v1"
+
+	return NewProfiles(orgProfiles, pipelineProfileStore, digest, "")
+}
+
 // GetOrganizationProfile retrieves an organization profile in runtime format.
 func (p *ProfileStore) GetOrganizationProfile(name string) (AuthorizedProfile[OrganizationProfileAttr], error) {
 	p.mu.RLock()
