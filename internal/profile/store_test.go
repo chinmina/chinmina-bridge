@@ -478,3 +478,35 @@ pipeline:
 	require.NoError(t, err)
 	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
 }
+
+func TestNewDefaultProfiles(t *testing.T) {
+	profiles := NewDefaultProfiles()
+
+	// Verify default pipeline profile exists
+	defaultProfile, err := profiles.GetPipelineProfile("default")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+
+	// Verify default profile matches any claims (universal matcher)
+	claims := mapClaimLookup{"pipeline_slug": "any-pipeline"}
+	result := defaultProfile.Match(claims)
+	assert.True(t, result.Matched)
+	assert.NoError(t, result.Err)
+
+	// Verify stats show correct counts and digest
+	expectedStats := ProfilesStats{
+		OrganizationProfileCount:        0,
+		OrganizationInvalidProfileCount: 0,
+		PipelineProfileCount:            1,
+		PipelineInvalidProfileCount:     0,
+		Digest:                          "default-profile:v1",
+		Location:                        "",
+	}
+	assert.Equal(t, expectedStats, profiles.Stats())
+
+	// Verify organization profiles are empty
+	_, err = profiles.GetOrgProfile("any-profile")
+	require.Error(t, err)
+	var notFoundErr ProfileNotFoundError
+	assert.ErrorAs(t, err, &notFoundErr)
+}

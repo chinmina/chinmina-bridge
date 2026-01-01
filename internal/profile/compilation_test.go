@@ -759,3 +759,42 @@ func TestCompilePipelineProfiles_WithMatchRules(t *testing.T) {
 	matchResult = profile.Match(nonMatchingClaims)
 	assert.False(t, matchResult.Matched)
 }
+
+func TestCompilePipelineProfiles_InvalidMatchRule(t *testing.T) {
+	profiles := []pipelineProfile{
+		{
+			Name:        "bad-regex-profile",
+			Permissions: []string{"contents:read"},
+			Match: []matchRule{
+				{Claim: "pipeline_slug", ValuePattern: "[invalid(regex"}, // Invalid regex
+			},
+		},
+		{
+			Name:        "valid-profile",
+			Permissions: []string{"contents:write"},
+		},
+	}
+
+	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+
+	// "bad-regex-profile" should be marked invalid due to bad regex
+	_, err := result.Get("bad-regex-profile")
+	require.Error(t, err)
+	var unavailErr ProfileUnavailableError
+	require.ErrorAs(t, err, &unavailErr)
+	assert.Contains(t, unavailErr.Cause.Error(), "error parsing regexp")
+
+	// Profile should be marked as invalid
+	assert.Equal(t, 2, result.ProfileCount()) // valid-profile + default
+	assert.Equal(t, 1, result.InvalidProfileCount())
+
+	// "valid-profile" should still be accessible
+	validProfile, err := result.Get("valid-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:write"}, validProfile.Attrs.Permissions)
+
+	// Default profile should still exist with default permissions
+	defaultProfile, err := result.Get("default")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+}
