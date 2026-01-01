@@ -48,7 +48,7 @@ func TestParse_UnknownFieldRejection(t *testing.T) {
 	_, _, err = parse(string(yamlContent))
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "organization profile file parsing failed")
+	assert.Contains(t, err.Error(), "profile file parsing failed")
 }
 
 func TestParse_DigestCalculation(t *testing.T) {
@@ -202,7 +202,7 @@ func TestParse_RejectOrganizationDefaults(t *testing.T) {
 	_, _, err = parse(string(yamlContent))
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "organization profile file parsing failed")
+	assert.Contains(t, err.Error(), "profile file parsing failed")
 }
 
 func TestParse_RejectRepositoriesInPipelineProfile(t *testing.T) {
@@ -212,5 +212,5 @@ func TestParse_RejectRepositoriesInPipelineProfile(t *testing.T) {
 	_, _, err = parse(string(yamlContent))
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "organization profile file parsing failed")
+	assert.Contains(t, err.Error(), "profile file parsing failed")
 }

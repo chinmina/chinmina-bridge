@@ -125,7 +125,7 @@ func parse(yamlContent string) (profileConfig, string, error) {
 
 	err := dec.Decode(&config)
 	if err != nil {
-		return profileConfig{}, "", fmt.Errorf("organization profile file parsing failed: %w", err)
+		return profileConfig{}, "", fmt.Errorf("profile file parsing failed: %w", err)
 	}
 
 	// Calculate SHA256 digest of the source YAML for change detection

@@ -414,7 +414,7 @@ func TestFetchOrganizationProfile_InvalidYAML(t *testing.T) {
 
 	_, err := FetchOrganizationProfile(context.Background(), "acme:test:invalid.yaml", gh)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "organization profile file parsing failed")
+	assert.Contains(t, err.Error(), "profile file parsing failed")
 }
 
 func TestLoad_EndToEnd(t *testing.T) {

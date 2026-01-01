@@ -399,7 +399,7 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, pipelineProfile.Attrs.Permissions)
 
-	// Digest should be accessible (indirectly via IsLoaded check)
+	// Digest should be accessible
 	assert.Equal(t, digest, profiles.digest)
 }
 
