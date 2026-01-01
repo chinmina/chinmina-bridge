@@ -205,6 +205,88 @@ func TestProfileStore_GetOrganizationProfile_Unavailable(t *testing.T) {
 	assert.Contains(t, unavailErr.Cause.Error(), "repositories list must be non-empty")
 }
 
+func TestProfileStore_GetPipelineProfile_Success(t *testing.T) {
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/silk"]
+      permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read"]
+  profiles:
+    - name: "high-access"
+      permissions: ["contents:write", "pull_requests:write"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": validYAML,
+		},
+	}
+
+	// Fetch and load profiles
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	require.NoError(t, err)
+
+	// Create store and update with profiles
+	store := NewProfileStore()
+	store.Update(profiles)
+
+	// Retrieve pipeline profile
+	profile, err := store.GetPipelineProfile("high-access")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:write", "pull_requests:write"}, profile.Attrs.Permissions)
+
+	// Also verify "default" profile exists (created from defaults)
+	defaultProfile, err := store.GetPipelineProfile("default")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+}
+
+func TestProfileStore_GetPipelineProfile_NotFound(t *testing.T) {
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/silk"]
+      permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": validYAML,
+		},
+	}
+
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	require.NoError(t, err)
+
+	store := NewProfileStore()
+	store.Update(profiles)
+
+	_, err = store.GetPipelineProfile("nonexistent")
+	require.Error(t, err)
+
+	var notFoundErr ProfileNotFoundError
+	require.ErrorAs(t, err, &notFoundErr)
+	assert.Equal(t, "nonexistent", notFoundErr.Name)
+}
+
+func TestProfileStore_GetPipelineProfile_NotLoaded(t *testing.T) {
+	store := NewProfileStore()
+
+	_, err := store.GetPipelineProfile("any-profile")
+	require.Error(t, err)
+
+	var notLoadedErr ProfileStoreNotLoadedError
+	require.ErrorAs(t, err, &notLoadedErr)
+}
+
 func TestProfileStore_Concurrency(t *testing.T) {
 	// Simple smoke test that multiple goroutines can access the store concurrently
 	// without panics. Actual race conditions are caught by `go test -race`.

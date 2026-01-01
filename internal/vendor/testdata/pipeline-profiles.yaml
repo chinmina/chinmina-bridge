@@ -1,0 +1,16 @@
+pipeline:
+  defaults:
+    permissions:
+      - contents:read
+  profiles:
+    - name: "high-access"
+      permissions:
+        - contents:write
+        - pull_requests:write
+    - name: "with-match-rules"
+      match:
+        - claim: "pipeline_slug"
+          valuePattern: "^security-.*"
+      permissions:
+        - contents:read
+        - security_events:write

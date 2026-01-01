@@ -24,6 +24,14 @@ func (p *ProfileStore) GetOrganizationProfile(name string) (AuthorizedProfile[Or
 	return p.profiles.GetOrgProfile(name)
 }
 
+// GetPipelineProfile retrieves a pipeline profile in runtime format.
+func (p *ProfileStore) GetPipelineProfile(name string) (AuthorizedProfile[PipelineProfileAttr], error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return p.profiles.GetPipelineProfile(name)
+}
+
 // GetPipelineDefaults returns the default permissions for pipelines.
 // Falls back to ["contents:read"] if not configured.
 func (p *ProfileStore) GetPipelineDefaults() []string {
@@ -33,7 +41,7 @@ func (p *ProfileStore) GetPipelineDefaults() []string {
 	return p.profiles.GetPipelineDefaults()
 }
 
-// Update the currently stored organization profile. Logs at info level if the
+// Update the currently stored profiles. Logs at info level if the
 // profile content changed (based on digest), or at debug level if unchanged.
 func (p *ProfileStore) Update(profiles Profiles) {
 	p.mu.Lock()
@@ -47,11 +55,11 @@ func (p *ProfileStore) Update(profiles Profiles) {
 		log.Info().
 			Interface("stats", profiles.Stats()).
 			Interface("previousStats", p.profiles.Stats()).
-			Msg("organization profiles: updated")
+			Msg("profiles: updated")
 	} else {
 		log.Debug().
 			Interface("stats", profiles.Stats()).
-			Msg("organization profiles: no changes detected")
+			Msg("profiles: no changes detected")
 	}
 
 	p.profiles = profiles

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -22,6 +23,22 @@ var multiplePermissionsYAML string
 //go:embed testdata/multiple-permissions-extended.yaml
 var multiplePermissionsExtendedYAML string
 
+//go:embed testdata/pipeline-profiles.yaml
+var pipelineProfilesYAML string
+
+// createTestClaimsContextWithPipeline creates a context with JWT claims for testing,
+// allowing specification of the pipeline slug.
+func createTestClaimsContextWithPipeline(pipelineSlug string) context.Context {
+	claims := &jwt.BuildkiteClaims{
+		OrganizationSlug: "organization-slug",
+		PipelineSlug:     pipelineSlug,
+		PipelineID:       "pipeline-id",
+		BuildBranch:      "main",
+	}
+
+	return jwt.ContextWithBuildkiteClaims(context.Background(), claims)
+}
+
 func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
 	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), nil, nil)
 
@@ -31,21 +48,8 @@ func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
 		Type:         profile.ProfileTypeOrg, // Wrong type!
 		PipelineSlug: "",
 	}
-	result := v(context.Background(), ref, "repo-url")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "repo-url")
 	assertVendorFailure(t, result, "profile type mismatch")
-}
-
-func TestRepoVendor_FailsWithNonDefaultProfile(t *testing.T) {
-	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), nil, nil)
-
-	ref := profile.ProfileRef{
-		Organization: "org",
-		Name:         "custom-profile",
-		Type:         profile.ProfileTypeRepo,
-		PipelineSlug: "my-pipeline",
-	}
-	result := v(context.Background(), ref, "repo-url")
-	assertVendorFailure(t, result, "unsupported profile name")
 }
 
 func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
@@ -62,7 +66,7 @@ func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(context.Background(), ref, "repo-url")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "repo-url")
 	assertVendorFailure(t, result, "could not find repository for pipeline")
 }
 
@@ -81,7 +85,7 @@ func TestRepoVendor_FailsWhenNoValidRepoNames(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(context.Background(), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
 	assertVendorFailure(t, result, "error getting repo names")
 }
 
@@ -102,7 +106,7 @@ func TestRepoVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(context.Background(), ref, "https://github.com/org/other-repo")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/other-repo")
 	assertVendorUnmatched(t, result)
 }
 
@@ -124,7 +128,7 @@ func TestRepoVendor_FailsWhenTokenVendorFails(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(context.Background(), ref, "https://github.com/org/repo-url")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url")
 	assertVendorFailure(t, result, "token vendor failed")
 }
 
@@ -148,7 +152,7 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(context.Background(), ref, "https://github.com/org/repo-url")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
@@ -184,7 +188,7 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 	}
 
 	// Empty requestedRepoURL should succeed by using pipeline repo
-	result := v(context.Background(), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"pipeline-repo"},
@@ -218,7 +222,7 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 	// Request with HTTPS URL should match after translation
-	result := v(context.Background(), ref, "https://github.com/org/repo-url.git")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
@@ -254,7 +258,7 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	result := v(context.Background(), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
@@ -268,21 +272,13 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 	assert.Equal(t, configuredPermissions, capturedPermissions)
 }
 
-func TestRepoVendor_FallbackPermissionsOnProfileStoreError(t *testing.T) {
-	vendedDate := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
-
+func TestRepoVendor_FailsWhenProfileStoreNotLoaded(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
 		return "https://github.com/org/repo-url.git", nil
 	})
 
-	var capturedPermissions []string
-	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, permissions []string) (string, time.Time, error) {
-		capturedPermissions = permissions
-		return "vended-token-value", vendedDate, nil
-	})
-
-	// ProfileStore with error (no config loaded)
-	v := vendor.NewRepoVendor(profile.NewProfileStore(), repoLookup, tokenVendor)
+	// ProfileStore with no config loaded
+	v := vendor.NewRepoVendor(profile.NewProfileStore(), repoLookup, nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -292,20 +288,8 @@ func TestRepoVendor_FallbackPermissionsOnProfileStoreError(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	result := v(context.Background(), ref, "")
-	assertVendorSuccess(t, result, vendor.ProfileToken{
-		Token:               "vended-token-value",
-		Repositories:        []string{"repo-url"},
-		Permissions:         []string{"contents:read"},
-		Profile:             "repo:default",
-		Expiry:              vendedDate,
-		OrganizationSlug:    "organization-slug",
-		VendedRepositoryURL: "https://github.com/org/repo-url.git",
-	})
-
-	// Verify fallback permissions were used
-	fallbackPermissions := []string{"contents:read"}
-	assert.Equal(t, fallbackPermissions, capturedPermissions)
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
+	assertVendorFailure(t, result, "could not find pipeline profile")
 }
 
 func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
@@ -330,7 +314,7 @@ func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	result := v(context.Background(), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
@@ -342,42 +326,112 @@ func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
 	})
 }
 
-func TestRepoVendor_EmptyDefaultPermissionsUsesFallback(t *testing.T) {
-	vendedDate := time.Date(1980, 01, 01, 0, 0, 0, 0, time.UTC)
+func TestRepoVendor_NamedProfileLookupSuccess(t *testing.T) {
+	vendedDate := time.Date(1990, 01, 01, 0, 0, 0, 0, time.UTC)
 
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
-		return "https://github.com/org/repo-url.git", nil
+		return "https://github.com/org/repo-url", nil
 	})
 
 	var capturedPermissions []string
-	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, permissions []string) (string, time.Time, error) {
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repoNames []string, permissions []string) (string, time.Time, error) {
 		capturedPermissions = permissions
 		return "vended-token-value", vendedDate, nil
 	})
 
-	// Create empty ProfileStore (backward compatibility case)
-	v := vendor.NewRepoVendor(profile.NewProfileStore(), repoLookup, tokenVendor)
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, pipelineProfilesYAML), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
-		Name:         "default",
+		Name:         "high-access",
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
 
-	result := v(context.Background(), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
-		Permissions:         []string{"contents:read"},
-		Profile:             "repo:default",
+		Permissions:         []string{"contents:write", "pull_requests:write"},
+		Profile:             "repo:high-access",
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
-		VendedRepositoryURL: "https://github.com/org/repo-url.git",
+		VendedRepositoryURL: "https://github.com/org/repo-url",
+	})
+	// Verify the high-access profile permissions were used
+	assert.Equal(t, []string{"contents:write", "pull_requests:write"}, capturedPermissions)
+}
+
+func TestRepoVendor_ProfileMatchSuccess(t *testing.T) {
+	vendedDate := time.Date(1995, 01, 01, 0, 0, 0, 0, time.UTC)
+
+	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
+		return "https://github.com/org/repo-url", nil
 	})
 
-	// Verify fallback is used when defaults are empty
-	fallbackPermissions := []string{"contents:read"}
-	assert.Equal(t, fallbackPermissions, capturedPermissions)
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repoNames []string, permissions []string) (string, time.Time, error) {
+		return "vended-token-value", vendedDate, nil
+	})
+
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, pipelineProfilesYAML), repoLookup, tokenVendor)
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Name:         "with-match-rules",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "security-scanner", // Matches "^security-.*"
+	}
+
+	// Pipeline slug matches the pattern "^security-.*"
+	result := v(createTestClaimsContextWithPipeline("security-scanner"), ref, "")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "vended-token-value",
+		Repositories:        []string{"repo-url"},
+		Permissions:         []string{"contents:read", "security_events:write"},
+		Profile:             "repo:with-match-rules",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/repo-url",
+	})
+}
+
+func TestRepoVendor_ProfileMatchFailure(t *testing.T) {
+	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
+		return "https://github.com/org/repo-url", nil
+	})
+
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, pipelineProfilesYAML), repoLookup, nil)
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Name:         "with-match-rules",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "normal-pipeline", // Does NOT match "^security-.*"
+	}
+
+	// Pipeline slug does not match the pattern
+	result := v(createTestClaimsContextWithPipeline("normal-pipeline"), ref, "")
+	assertVendorFailure(t, result, "match conditions not met")
+}
+
+func TestRepoVendor_ProfileNotFound(t *testing.T) {
+	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
+		return "https://github.com/org/repo-url", nil
+	})
+
+	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, pipelineProfilesYAML), repoLookup, nil)
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Name:         "nonexistent-profile",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "my-pipeline",
+	}
+
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
+	assertVendorFailure(t, result, "could not find pipeline profile")
 }
