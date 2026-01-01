@@ -51,7 +51,6 @@ pipeline:
 	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:docs/profile.yaml", gh)
 	require.NoError(t, err)
 
-	assert.True(t, profiles.IsLoaded())
 	assert.NotEmpty(t, profiles.digest)
 
 	// Verify profile can be accessed
@@ -104,7 +103,7 @@ func TestFetchOrganizationProfile_CanBeCalledMultipleTimes(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
 		require.NoError(t, err)
-		assert.True(t, profiles.IsLoaded())
+		assert.NotEmpty(t, profiles.digest)
 	}
 }
 
@@ -277,16 +276,6 @@ pipeline:
 	assert.Equal(t, "nonexistent", notFoundErr.Name)
 }
 
-func TestProfileStore_GetPipelineProfile_NotLoaded(t *testing.T) {
-	store := NewProfileStore()
-
-	_, err := store.GetPipelineProfile("any-profile")
-	require.Error(t, err)
-
-	var notLoadedErr ProfileStoreNotLoadedError
-	require.ErrorAs(t, err, &notLoadedErr)
-}
-
 func TestProfileStore_Concurrency(t *testing.T) {
 	// Simple smoke test that multiple goroutines can access the store concurrently
 	// without panics. Actual race conditions are caught by `go test -race`.
@@ -335,16 +324,6 @@ func TestProfileStore_Concurrency(t *testing.T) {
 
 	wg.Wait()
 	// Test passes if no panics occurred
-}
-
-func TestProfileStore_GetOrganizationProfile_NotLoaded(t *testing.T) {
-	store := NewProfileStore()
-
-	_, err := store.GetOrganizationProfile("any-profile")
-	require.Error(t, err)
-
-	var notLoadedErr ProfileStoreNotLoadedError
-	require.ErrorAs(t, err, &notLoadedErr)
 }
 
 func TestProfileStore_GetPipelineDefaults(t *testing.T) {
@@ -523,7 +502,6 @@ pipeline:
 	require.NoError(t, err)
 
 	// Verify profiles are loaded correctly
-	assert.True(t, profiles.IsLoaded())
 	assert.NotEmpty(t, profiles.digest)
 
 	// Verify prod profile

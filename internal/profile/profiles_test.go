@@ -299,7 +299,6 @@ func TestProfiles_NewProfiles(t *testing.T) {
 
 	profiles := NewProfiles(orgProfiles, pipelineProfiles, []string{"contents:read"}, digest, "local")
 
-	assert.True(t, profiles.IsLoaded())
 	assert.Equal(t, digest, profiles.digest)
 }
 
@@ -324,17 +323,6 @@ func TestProfiles_GetOrgProfile_Success(t *testing.T) {
 	assert.Equal(t, []string{"contents:read"}, profile.Attrs.Permissions)
 }
 
-func TestProfiles_GetOrgProfile_NotLoaded(t *testing.T) {
-	// Create empty Profiles (zero value simulates not loaded)
-	profiles := Profiles{}
-
-	_, err := profiles.GetOrgProfile("any-profile")
-	require.Error(t, err)
-
-	var notLoadedErr ProfileStoreNotLoadedError
-	require.ErrorAs(t, err, &notLoadedErr)
-}
-
 func TestProfiles_GetPipelineProfile_Success(t *testing.T) {
 	matcher := CompositeMatcher()
 	pipelineProfiles := NewProfileStoreOf(
@@ -354,17 +342,6 @@ func TestProfiles_GetPipelineProfile_Success(t *testing.T) {
 	assert.Equal(t, []string{"contents:write", "pull_requests:write"}, profile.Attrs.Permissions)
 }
 
-func TestProfiles_GetPipelineProfile_NotLoaded(t *testing.T) {
-	// Create empty Profiles (zero value simulates not loaded)
-	profiles := Profiles{}
-
-	_, err := profiles.GetPipelineProfile("any-profile")
-	require.Error(t, err)
-
-	var notLoadedErr ProfileStoreNotLoadedError
-	require.ErrorAs(t, err, &notLoadedErr)
-}
-
 func TestProfiles_GetPipelineProfile_NotFound(t *testing.T) {
 	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
 	pipelineProfiles := NewProfileStoreOf[PipelineProfileAttr](nil, nil)
@@ -376,37 +353,6 @@ func TestProfiles_GetPipelineProfile_NotFound(t *testing.T) {
 	var notFoundErr ProfileNotFoundError
 	require.ErrorAs(t, err, &notFoundErr)
 	assert.Equal(t, "nonexistent", notFoundErr.Name)
-}
-
-func TestProfiles_IsLoaded(t *testing.T) {
-	tests := []struct {
-		name     string
-		profiles Profiles
-		expected bool
-	}{
-		{
-			name: "loaded profiles",
-			profiles: NewProfiles(
-				NewProfileStoreOf[OrganizationProfileAttr](nil, nil),
-				NewProfileStoreOf[PipelineProfileAttr](nil, nil),
-				[]string{"contents:read"},
-				"digest",
-				"local",
-			),
-			expected: true,
-		},
-		{
-			name:     "unloaded profiles (zero value)",
-			profiles: Profiles{},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.profiles.IsLoaded())
-		})
-	}
 }
 
 func TestProfiles_Methods_Consistency(t *testing.T) {
@@ -436,9 +382,6 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 	digest := "test-digest-12345"
 
 	profiles := NewProfiles(orgProfiles, pipelineProfiles, []string{"contents:read"}, digest, "local")
-
-	// IsLoaded should be true
-	assert.True(t, profiles.IsLoaded())
 
 	// GetOrgProfile should work for valid profile
 	validProfile, err := profiles.GetOrgProfile("valid-profile")

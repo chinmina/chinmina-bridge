@@ -179,20 +179,6 @@ func TestProfileMatchFailedError_Status(t *testing.T) {
 	assert.Equal(t, "Forbidden", message)
 }
 
-func TestProfileStoreNotLoadedError_Format(t *testing.T) {
-	err := ProfileStoreNotLoadedError{}
-
-	assert.Equal(t, "organization profile not loaded", err.Error())
-}
-
-func TestProfileStoreNotLoadedError_Status(t *testing.T) {
-	err := ProfileStoreNotLoadedError{}
-
-	code, message := err.Status()
-	assert.Equal(t, 503, code)
-	assert.Equal(t, "organization profile not loaded", message)
-}
-
 func TestParse_PipelineProfiles(t *testing.T) {
 	yamlContent, err := os.ReadFile("testdata/profile/pipeline_profile.yaml")
 	require.NoError(t, err)

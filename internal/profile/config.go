@@ -111,17 +111,6 @@ func (e ProfileMatchFailedError) Status() (int, string) {
 	return http.StatusForbidden, http.StatusText(http.StatusForbidden)
 }
 
-// ProfileStoreNotLoadedError indicates the profile store has not been loaded
-type ProfileStoreNotLoadedError struct{}
-
-func (e ProfileStoreNotLoadedError) Error() string {
-	return "organization profile not loaded"
-}
-
-func (e ProfileStoreNotLoadedError) Status() (int, string) {
-	return http.StatusServiceUnavailable, "organization profile not loaded"
-}
-
 // parse deserializes YAML into profileConfig and calculates digest.
 // Fails on YAML parsing issues including unknown properties.
 func parse(yamlContent string) (profileConfig, string, error) {

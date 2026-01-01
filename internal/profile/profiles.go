@@ -114,22 +114,12 @@ type Profiles struct {
 }
 
 // GetOrgProfile retrieves an organization profile by name.
-// Returns ProfileStoreNotLoadedError if profiles have not been loaded.
 func (p Profiles) GetOrgProfile(name string) (AuthorizedProfile[OrganizationProfileAttr], error) {
-	if !p.IsLoaded() {
-		// Organization profiles can only be defined in configuration. If a profile is requested
-		// before loading, it indicates that the service has not been able to load profiles.
-		return AuthorizedProfile[OrganizationProfileAttr]{}, ProfileStoreNotLoadedError{}
-	}
 	return p.orgProfiles.Get(name)
 }
 
 // GetPipelineProfile retrieves a pipeline profile by name.
-// Returns ProfileStoreNotLoadedError if profiles have not been loaded.
 func (p Profiles) GetPipelineProfile(name string) (AuthorizedProfile[PipelineProfileAttr], error) {
-	if !p.IsLoaded() {
-		return AuthorizedProfile[PipelineProfileAttr]{}, ProfileStoreNotLoadedError{}
-	}
 	return p.pipelineProfiles.Get(name)
 }
 
@@ -154,11 +144,6 @@ func (p Profiles) GetPipelineDefaults() []string {
 // Digest returns the content digest of the profile configuration.
 func (p Profiles) Digest() string {
 	return p.digest
-}
-
-// IsLoaded returns true if profiles have been successfully loaded.
-func (p Profiles) IsLoaded() bool {
-	return len(p.digest) > 0
 }
 
 // Stats returns statistics about the loaded profiles including valid/invalid
