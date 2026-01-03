@@ -146,7 +146,7 @@ func launchServer() error {
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:           handler,
-		MaxHeaderBytes:    20 << 10,      // 20 KB
+		MaxHeaderBytes:    20 << 10,         // 20 KB
 		ReadHeaderTimeout: 20 * time.Second, // Prevent Slowloris attacks
 	}
 

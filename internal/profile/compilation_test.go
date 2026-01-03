@@ -250,15 +250,15 @@ func TestCompile_GracefulDegradation(t *testing.T) {
 
 	validProfile, err := orgProfiles.Get("valid-production")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/silk"}, validProfile.Attrs.Repositories)
+	assert.Equal(t, []string{"silk"}, validProfile.Attrs.Repositories)
 
 	validStaging, err := orgProfiles.Get("valid-staging")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/silk", "acme/cotton"}, validStaging.Attrs.Repositories)
+	assert.Equal(t, []string{"silk", "cotton"}, validStaging.Attrs.Repositories)
 
 	validNoMatch, err := orgProfiles.Get("valid-no-match")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/shared"}, validNoMatch.Attrs.Repositories)
+	assert.Equal(t, []string{"shared"}, validNoMatch.Attrs.Repositories)
 
 	// Invalid profiles should return ProfileUnavailableError
 	_, err = orgProfiles.Get("invalid-both-match-types")
@@ -293,7 +293,7 @@ func TestCompile_DuplicateNameHandling(t *testing.T) {
 	// (first is validated, but second's attributes overwrite in the profile map)
 	profile, err := orgProfiles.Get("production")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/cotton"}, profile.Attrs.Repositories)
+	assert.Equal(t, []string{"cotton"}, profile.Attrs.Repositories)
 
 	// "staging" should also be accessible
 	_, err = orgProfiles.Get("staging")
@@ -818,7 +818,7 @@ organization:
   profiles:
     - name: invalid-permission-format
       repositories:
-        - acme/repo
+        - repo
       permissions:
         - "contents"  # Missing colon
       match:
@@ -827,7 +827,7 @@ organization:
 
     - name: invalid-permission-field
       repositories:
-        - acme/repo
+        - repo
       permissions:
         - "invalid_field:read"  # Field doesn't exist
       match:
@@ -836,7 +836,7 @@ organization:
 
     - name: invalid-permission-action
       repositories:
-        - acme/repo
+        - repo
       permissions:
         - "contents:admin"  # Invalid action
       match:
@@ -845,7 +845,7 @@ organization:
 
     - name: valid-profile
       repositories:
-        - acme/repo
+        - repo
       permissions:
         - "contents:read"
       match:
@@ -867,7 +867,7 @@ pipeline:
 	result := profiles.orgProfiles
 
 	// All invalid profiles should be marked as invalid
-	assert.Equal(t, 1, result.ProfileCount())       // Only valid-profile
+	assert.Equal(t, 1, result.ProfileCount())        // Only valid-profile
 	assert.Equal(t, 3, result.InvalidProfileCount()) // Three invalid profiles
 
 	// Valid profile should be accessible
@@ -886,13 +886,90 @@ pipeline:
 	assert.Error(t, err)
 }
 
+func TestCompile_OrganizationProfile_InvalidRepositories(t *testing.T) {
+	yamlContent := `
+organization:
+  profiles:
+    - name: invalid-owner-prefix
+      repositories:
+        - "owner/repo"  # Contains owner prefix
+      permissions:
+        - "contents:read"
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+    - name: invalid-wildcard-mixed
+      repositories:
+        - "*"
+        - "repo"  # Wildcard mixed with other entries
+      permissions:
+        - "contents:read"
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+    - name: valid-wildcard-only
+      repositories:
+        - "*"  # Wildcard alone is valid
+      permissions:
+        - "contents:read"
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+    - name: valid-multiple-repos
+      repositories:
+        - "repo1"
+        - "repo2"  # Multiple repos without prefix are valid
+      permissions:
+        - "contents:read"
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+pipeline:
+  defaults:
+    permissions:
+      - "contents:read"
+`
+
+	config, digest, err := parse(yamlContent)
+	require.NoError(t, err)
+
+	profiles, err := compile(config, digest, "local")
+	require.NoError(t, err)
+
+	result := profiles.orgProfiles
+
+	// All invalid profiles should be marked as invalid
+	assert.Equal(t, 2, result.ProfileCount())        // valid-wildcard-only + valid-multiple-repos
+	assert.Equal(t, 2, result.InvalidProfileCount()) // Two invalid profiles
+
+	// Valid profiles should be accessible
+	validWildcard, err := result.Get("valid-wildcard-only")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"*"}, validWildcard.Attrs.Repositories)
+
+	validMultiple, err := result.Get("valid-multiple-repos")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"repo1", "repo2"}, validMultiple.Attrs.Repositories)
+
+	// Invalid profiles should not be accessible
+	_, err = result.Get("invalid-owner-prefix")
+	assert.Error(t, err)
+
+	_, err = result.Get("invalid-wildcard-mixed")
+	assert.Error(t, err)
+}
+
 func TestCompile_PipelineProfile_InvalidPermissions(t *testing.T) {
 	yamlContent := `
 organization:
   profiles:
     - name: org-profile
       repositories:
-        - acme/repo
+        - repo
       permissions:
         - "contents:read"
       match:
@@ -943,7 +1020,7 @@ pipeline:
 	result := profiles.pipelineProfiles
 
 	// All invalid profiles should be marked as invalid
-	assert.Equal(t, 2, result.ProfileCount())       // valid-profile + default
+	assert.Equal(t, 2, result.ProfileCount())        // valid-profile + default
 	assert.Equal(t, 3, result.InvalidProfileCount()) // Three invalid profiles
 
 	// Valid profile should be accessible
@@ -973,7 +1050,7 @@ organization:
   profiles:
     - name: org-profile
       repositories:
-        - acme/repo
+        - repo
       permissions:
         - "contents:read"
       match:

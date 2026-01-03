@@ -3,6 +3,7 @@ package profile
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
@@ -28,6 +29,12 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 		if len(prof.Repositories) == 0 {
 			err := fmt.Errorf("repositories list must be non-empty")
 			invalidProfiles[prof.Name] = err
+			continue
+		}
+
+		// Validate repository format
+		if err := validateRepositories(prof.Repositories); err != nil {
+			invalidProfiles[prof.Name] = fmt.Errorf("invalid repositories: %w", err)
 			continue
 		}
 
@@ -209,6 +216,28 @@ func validatePermissions(permissions []string) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validateRepositories validates that the repositories list follows the required format:
+// - If wildcard "*" is present, it must be the only entry
+// - Repository names must not contain "/" (no owner prefix)
+func validateRepositories(repos []string) error {
+	// Check for wildcard mixed with other entries
+	hasWildcard := slices.Contains(repos, "*")
+	if hasWildcard && len(repos) > 1 {
+		return fmt.Errorf("wildcard '*' must be the only repository entry")
+	}
+
+	// Check for owner prefix (slash in repo name)
+	for _, repo := range repos {
+		if repo == "*" {
+			continue
+		}
+		if strings.Contains(repo, "/") {
+			return fmt.Errorf("repository %q must not contain owner prefix", repo)
+		}
+	}
+	return nil
 }
 
 // duplicateNameValidator creates a validator function that checks for duplicate profile names.
