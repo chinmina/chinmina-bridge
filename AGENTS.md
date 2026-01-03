@@ -118,9 +118,7 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 - Wrap errors with `fmt.Errorf` and `%w` for error chains
 - Only log errors if they are being handled by the current code context. Do not log when returning an error: include context in the wrapped error instead.
 - Handlers return appropriate HTTP status codes via `requestError(w, statusCode)`
-- Panics are only used when absolutely necessary for issues that can only occur
-  when well outside standard operating parameters: i.e. the environment is
-  unrecoverable or a programming error is detected.
+- panic() may not be added by CI agents without explicit direction to do so. The plan must state explicitly that a panic can be used in a given situation. Otherwise, errors must be used.
 
 ### Testing
 

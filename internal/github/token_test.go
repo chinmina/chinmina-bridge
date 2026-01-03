@@ -376,57 +376,64 @@ func TestGetRepoNames_Fails(t *testing.T) {
 	}
 }
 
-func TestScopesToPermissions_Succeeds(t *testing.T) {
+func TestValidateScope(t *testing.T) {
 	tests := []struct {
-		name     string
-		scopes   []string
-		expected *api.InstallationPermissions
+		name        string
+		scope       string
+		expectError bool
+		errorText   string
 	}{
 		{
-			name:   "valid scopes",
-			scopes: []string{"contents:read", "packages:write"},
-			expected: &api.InstallationPermissions{
-				Contents: api.Ptr("read"),
-				Packages: api.Ptr("write"),
-			},
+			name:        "valid scope with read",
+			scope:       "contents:read",
+			expectError: false,
 		},
 		{
-			name:   "some valid scopes",
-			scopes: []string{"blah", "pull_requests:write", "invalid:read", "actions:admin"},
-			expected: &api.InstallationPermissions{
-				PullRequests: api.Ptr("write"),
-			},
+			name:        "valid scope with write",
+			scope:       "issues:write",
+			expectError: false,
+		},
+		{
+			name:        "missing colon",
+			scope:       "contents",
+			expectError: true,
+			errorText:   "malformed scope",
+		},
+		{
+			name:        "empty string",
+			scope:       "",
+			expectError: true,
+			errorText:   "malformed scope",
+		},
+		{
+			name:        "invalid field",
+			scope:       "invalid_field:read",
+			expectError: true,
+			errorText:   "invalid permission field",
+		},
+		{
+			name:        "invalid action",
+			scope:       "contents:admin",
+			expectError: true,
+			errorText:   "invalid permission action",
+		},
+		{
+			name:        "empty action",
+			scope:       "contents:",
+			expectError: true,
+			errorText:   "invalid permission action",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actualPermissions, err := github.ScopesToPermissions(tt.scopes)
-			assert.Equal(t, tt.expected, actualPermissions)
-			assert.NoError(t, err)
-		})
-	}
-}
-
-func TestScopesToPermissions_Fails(t *testing.T) {
-	tests := []struct {
-		name          string
-		scopes        []string
-		expectedError string
-	}{
-		{
-			name:          "invalid permissions",
-			scopes:        []string{"nonsense", "contents:", "invalid:read", "contents:invalid"},
-			expectedError: "no valid permissions found",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			actualPermissions, err := github.ScopesToPermissions(tt.scopes)
-			assert.Equal(t, &api.InstallationPermissions{}, actualPermissions)
-			assert.Error(t, err)
-			assert.ErrorContains(t, err, tt.expectedError)
+			err := github.ValidateScope(tt.scope)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorText)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }
