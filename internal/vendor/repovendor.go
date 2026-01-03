@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/rs/zerolog/log"
 )
@@ -18,11 +19,6 @@ func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLook
 		// Validate that this is a repo-scoped profile
 		if ref.Type != profile.ProfileTypeRepo {
 			return NewVendorFailed(fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeRepo.String(), ref.Type.String()))
-		}
-
-		// non-default repository-scoped profiles are not yet supported
-		if ref.Name != profile.ProfileNameDefault {
-			return NewVendorFailed(fmt.Errorf("unsupported profile name for repo-scoped profile: %s", ref.Name))
 		}
 
 		// Use Buildkite API to find the repository for the pipeline
@@ -59,8 +55,28 @@ func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLook
 			return NewVendorFailed(fmt.Errorf("no valid repository names found for URL: %s", pipelineRepoURL))
 		}
 
-		// Get default permissions from profile configuration (falls back to contents:read if not configured)
-		permissions := profileStore.GetPipelineDefaults()
+		// Get pipeline profile (simple lookup - "default" is in the map)
+		pipelineProfile, err := profileStore.GetPipelineProfile(ref.Name)
+		if err != nil {
+			return NewVendorFailed(fmt.Errorf("could not find pipeline profile %s: %w", ref.Name, err))
+		}
+
+		// Match claims (default profile always matches via empty matcher)
+		claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
+		validatingClaims := profile.NewValidatingLookup(claims)
+		profileMatcher := AuditingMatcher(ctx, pipelineProfile.Match)
+
+		matchResult := profileMatcher(validatingClaims)
+		if matchResult.Err != nil {
+			// Return validation errors or other errors directly
+			return NewVendorFailed(fmt.Errorf("pipeline profile match evaluation failed: %w", matchResult.Err))
+		}
+		if !matchResult.Matched {
+			// Match conditions not met
+			return NewVendorFailed(profile.ProfileMatchFailedError{Name: ref.Name})
+		}
+
+		permissions := pipelineProfile.Attrs.Permissions
 
 		// Use the GitHub API to vend a token for the allowed repository
 		token, expiry, err := tokenVendor(ctx, allowedRepoNames, permissions)

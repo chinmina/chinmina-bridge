@@ -16,6 +16,35 @@ func NewProfileStore() *ProfileStore {
 	return &ProfileStore{}
 }
 
+// NewDefaultProfiles creates a minimal default Profiles with only the "default"
+// pipeline profile using hard-coded default permissions ["contents:read"].
+// This provides a baseline profile set so the ProfileStore is never unloaded.
+func NewDefaultProfiles() Profiles {
+	// Create universal matcher (empty match rules always match)
+	defaultMatcher := CompositeMatcher()
+
+	// Create pipeline profiles map with only "default"
+	pipelineProfiles := map[string]AuthorizedProfile[PipelineProfileAttr]{
+		"default": NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
+			Permissions: []string{"contents:read"},
+		}),
+	}
+
+	// Create empty organization profiles
+	orgProfiles := NewProfileStoreOf(
+		map[string]AuthorizedProfile[OrganizationProfileAttr]{},
+		map[string]error{},
+	)
+
+	// Create pipeline profile store
+	pipelineProfileStore := NewProfileStoreOf(pipelineProfiles, map[string]error{})
+
+	// Synthetic digest to distinguish from loaded profiles
+	digest := "default-profile:v1"
+
+	return NewProfiles(orgProfiles, pipelineProfileStore, digest, "")
+}
+
 // GetOrganizationProfile retrieves an organization profile in runtime format.
 func (p *ProfileStore) GetOrganizationProfile(name string) (AuthorizedProfile[OrganizationProfileAttr], error) {
 	p.mu.RLock()
@@ -24,16 +53,15 @@ func (p *ProfileStore) GetOrganizationProfile(name string) (AuthorizedProfile[Or
 	return p.profiles.GetOrgProfile(name)
 }
 
-// GetPipelineDefaults returns the default permissions for pipelines.
-// Falls back to ["contents:read"] if not configured.
-func (p *ProfileStore) GetPipelineDefaults() []string {
+// GetPipelineProfile retrieves a pipeline profile in runtime format.
+func (p *ProfileStore) GetPipelineProfile(name string) (AuthorizedProfile[PipelineProfileAttr], error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	return p.profiles.GetPipelineDefaults()
+	return p.profiles.GetPipelineProfile(name)
 }
 
-// Update the currently stored organization profile. Logs at info level if the
+// Update the currently stored profiles. Logs at info level if the
 // profile content changed (based on digest), or at debug level if unchanged.
 func (p *ProfileStore) Update(profiles Profiles) {
 	p.mu.Lock()
@@ -47,11 +75,11 @@ func (p *ProfileStore) Update(profiles Profiles) {
 		log.Info().
 			Interface("stats", profiles.Stats()).
 			Interface("previousStats", p.profiles.Stats()).
-			Msg("organization profiles: updated")
+			Msg("profiles: updated")
 	} else {
 		log.Debug().
 			Interface("stats", profiles.Stats()).
-			Msg("organization profiles: no changes detected")
+			Msg("profiles: no changes detected")
 	}
 
 	p.profiles = profiles

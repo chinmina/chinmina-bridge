@@ -386,7 +386,9 @@ func TestCompile_PipelineDefaultsFallback(t *testing.T) {
 
 			profiles := compile(config, digest, "local")
 
-			assert.Equal(t, tt.expectedDefaults, profiles.GetPipelineDefaults(), tt.description)
+			defaultProfile, err := profiles.GetPipelineProfile("default")
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedDefaults, defaultProfile.Attrs.Permissions, tt.description)
 		})
 	}
 }
@@ -575,4 +577,224 @@ func TestProfileMatching_EmptyRules_AlwaysPasses(t *testing.T) {
 	assert.Empty(t, result.Matches)
 	assert.Nil(t, result.Attempt)
 	assert.NoError(t, result.Err)
+}
+
+func TestCompilePipelineProfiles_ReservedNameRejection(t *testing.T) {
+	profiles := []pipelineProfile{
+		{
+			Name:        "default",
+			Permissions: []string{"contents:read"},
+		},
+		{
+			Name:        "valid-profile",
+			Permissions: []string{"contents:read", "pull_requests:write"},
+		},
+	}
+
+	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+
+	// "default" should be invalid
+	_, err := result.Get("default")
+	require.NoError(t, err, "default profile should exist (created from defaults)")
+
+	// "valid-profile" should be accessible
+	validProfile, err := result.Get("valid-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, validProfile.Attrs.Permissions)
+
+	// Check that the user-defined "default" was rejected
+	assert.Equal(t, 1, result.InvalidProfileCount(), "user-defined 'default' should be marked invalid")
+}
+
+func TestCompilePipelineProfiles_EmptyMatchRulesPass(t *testing.T) {
+	profiles := []pipelineProfile{
+		{
+			Name:        "open-profile",
+			Match:       []matchRule{}, // Empty match rules
+			Permissions: []string{"contents:read"},
+		},
+	}
+
+	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+
+	profile, err := result.Get("open-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, profile.Attrs.Permissions)
+
+	// Empty match rules should match any claims
+	claims := mapClaimLookup{"pipeline_slug": "any-pipeline"}
+	matchResult := profile.Match(claims)
+	assert.True(t, matchResult.Matched)
+}
+
+func TestCompilePipelineProfiles_EmptyPermissionsRejection(t *testing.T) {
+	profiles := []pipelineProfile{
+		{
+			Name:        "no-permissions",
+			Permissions: []string{}, // Empty permissions
+		},
+		{
+			Name:        "valid-profile",
+			Permissions: []string{"contents:read"},
+		},
+	}
+
+	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+
+	// "no-permissions" should be invalid
+	_, err := result.Get("no-permissions")
+	require.Error(t, err)
+	var unavailErr ProfileUnavailableError
+	require.ErrorAs(t, err, &unavailErr)
+	assert.Contains(t, unavailErr.Cause.Error(), "permissions list must be non-empty")
+
+	// "valid-profile" should be accessible
+	_, err = result.Get("valid-profile")
+	require.NoError(t, err)
+}
+
+func TestCompilePipelineProfiles_DuplicateNames(t *testing.T) {
+	profiles := []pipelineProfile{
+		{
+			Name:        "duplicate",
+			Permissions: []string{"contents:read"},
+		},
+		{
+			Name:        "duplicate",
+			Permissions: []string{"pull_requests:write"},
+		},
+		{
+			Name:        "unique",
+			Permissions: []string{"issues:read"},
+		},
+	}
+
+	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+
+	// With duplicate names, the last profile wins (second's attributes overwrite first)
+	duplicateProfile, err := result.Get("duplicate")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"pull_requests:write"}, duplicateProfile.Attrs.Permissions)
+
+	// Second duplicate was rejected, verify invalid count
+	assert.Equal(t, 1, result.InvalidProfileCount(), "second duplicate should be marked invalid")
+
+	// "unique" should be accessible
+	_, err = result.Get("unique")
+	require.NoError(t, err)
+}
+
+func TestCompilePipelineProfiles_DefaultProfileCreation(t *testing.T) {
+	tests := []struct {
+		name                string
+		profiles            []pipelineProfile
+		defaultPermissions  []string
+		expectedPermissions []string
+	}{
+		{
+			name:                "default profile with custom permissions",
+			profiles:            []pipelineProfile{},
+			defaultPermissions:  []string{"contents:read", "pull_requests:write"},
+			expectedPermissions: []string{"contents:read", "pull_requests:write"},
+		},
+		{
+			name:                "default profile with single permission",
+			profiles:            []pipelineProfile{},
+			defaultPermissions:  []string{"contents:read"},
+			expectedPermissions: []string{"contents:read"},
+		},
+		{
+			name: "default profile exists alongside user profiles",
+			profiles: []pipelineProfile{
+				{
+					Name:        "custom",
+					Permissions: []string{"issues:read"},
+				},
+			},
+			defaultPermissions:  []string{"contents:read"},
+			expectedPermissions: []string{"contents:read"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions)
+
+			// "default" profile should exist
+			defaultProfile, err := result.Get("default")
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedPermissions, defaultProfile.Attrs.Permissions)
+
+			// Default profile should match any claims (empty match rules)
+			claims := mapClaimLookup{"pipeline_slug": "any-pipeline"}
+			matchResult := defaultProfile.Match(claims)
+			assert.True(t, matchResult.Matched, "default profile should match any pipeline")
+		})
+	}
+}
+
+func TestCompilePipelineProfiles_WithMatchRules(t *testing.T) {
+	profiles := []pipelineProfile{
+		{
+			Name: "specific-pipeline",
+			Match: []matchRule{
+				{Claim: "pipeline_slug", Value: "silk-prod"},
+			},
+			Permissions: []string{"contents:write"},
+		},
+	}
+
+	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+
+	profile, err := result.Get("specific-pipeline")
+	require.NoError(t, err)
+
+	// Should match the specific pipeline
+	matchingClaims := mapClaimLookup{"pipeline_slug": "silk-prod"}
+	matchResult := profile.Match(matchingClaims)
+	assert.True(t, matchResult.Matched)
+
+	// Should not match a different pipeline
+	nonMatchingClaims := mapClaimLookup{"pipeline_slug": "cotton-prod"}
+	matchResult = profile.Match(nonMatchingClaims)
+	assert.False(t, matchResult.Matched)
+}
+
+func TestCompilePipelineProfiles_InvalidMatchRule(t *testing.T) {
+	profiles := []pipelineProfile{
+		{
+			Name:        "bad-regex-profile",
+			Permissions: []string{"contents:read"},
+			Match: []matchRule{
+				{Claim: "pipeline_slug", ValuePattern: "[invalid(regex"}, // Invalid regex
+			},
+		},
+		{
+			Name:        "valid-profile",
+			Permissions: []string{"contents:write"},
+		},
+	}
+
+	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+
+	// "bad-regex-profile" should be marked invalid due to bad regex
+	_, err := result.Get("bad-regex-profile")
+	require.Error(t, err)
+	var unavailErr ProfileUnavailableError
+	require.ErrorAs(t, err, &unavailErr)
+	assert.Contains(t, unavailErr.Cause.Error(), "error parsing regexp")
+
+	// Profile should be marked as invalid
+	assert.Equal(t, 2, result.ProfileCount()) // valid-profile + default
+	assert.Equal(t, 1, result.InvalidProfileCount())
+
+	// "valid-profile" should still be accessible
+	validProfile, err := result.Get("valid-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:write"}, validProfile.Attrs.Permissions)
+
+	// Default profile should still exist with default permissions
+	defaultProfile, err := result.Get("default")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
 }

@@ -294,12 +294,11 @@ func TestProfiles_NewProfiles(t *testing.T) {
 		nil,
 	)
 
-	pipelineDefaults := []string{"contents:read"}
+	pipelineProfiles := NewProfileStoreOf[PipelineProfileAttr](nil, nil)
 	digest := "test-digest"
 
-	profiles := NewProfiles(orgProfiles, pipelineDefaults, digest, "local")
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, digest, "local")
 
-	assert.True(t, profiles.IsLoaded())
 	assert.Equal(t, digest, profiles.digest)
 }
 
@@ -315,7 +314,8 @@ func TestProfiles_GetOrgProfile_Success(t *testing.T) {
 		nil,
 	)
 
-	profiles := NewProfiles(orgProfiles, []string{"contents:read"}, "digest", "local")
+	pipelineProfiles := NewProfileStoreOf[PipelineProfileAttr](nil, nil)
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, "digest", "local")
 
 	profile, err := profiles.GetOrgProfile("test-profile")
 	require.NoError(t, err)
@@ -323,96 +323,36 @@ func TestProfiles_GetOrgProfile_Success(t *testing.T) {
 	assert.Equal(t, []string{"contents:read"}, profile.Attrs.Permissions)
 }
 
-func TestProfiles_GetOrgProfile_NotLoaded(t *testing.T) {
-	// Create empty Profiles (zero value simulates not loaded)
-	profiles := Profiles{}
+func TestProfiles_GetPipelineProfile_Success(t *testing.T) {
+	matcher := CompositeMatcher()
+	pipelineProfiles := NewProfileStoreOf(
+		map[string]AuthorizedProfile[PipelineProfileAttr]{
+			"high-access": NewAuthorizedProfile(matcher, PipelineProfileAttr{
+				Permissions: []string{"contents:write", "pull_requests:write"},
+			}),
+		},
+		nil,
+	)
 
-	_, err := profiles.GetOrgProfile("any-profile")
+	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, "digest", "local")
+
+	profile, err := profiles.GetPipelineProfile("high-access")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:write", "pull_requests:write"}, profile.Attrs.Permissions)
+}
+
+func TestProfiles_GetPipelineProfile_NotFound(t *testing.T) {
+	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
+	pipelineProfiles := NewProfileStoreOf[PipelineProfileAttr](nil, nil)
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, "digest", "local")
+
+	_, err := profiles.GetPipelineProfile("nonexistent")
 	require.Error(t, err)
 
-	var notLoadedErr ProfileStoreNotLoadedError
-	require.ErrorAs(t, err, &notLoadedErr)
-}
-
-func TestProfiles_GetPipelineDefaults_Configured(t *testing.T) {
-	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
-	customDefaults := []string{"contents:read", "pull_requests:write"}
-
-	profiles := NewProfiles(orgProfiles, customDefaults, "digest", "local")
-
-	defaults := profiles.GetPipelineDefaults()
-	assert.Equal(t, customDefaults, defaults)
-}
-
-func TestProfiles_GetPipelineDefaults_Fallback(t *testing.T) {
-	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
-	emptyDefaults := []string{}
-
-	profiles := NewProfiles(orgProfiles, emptyDefaults, "digest", "local")
-
-	defaults := profiles.GetPipelineDefaults()
-	assert.Equal(t, []string{"contents:read"}, defaults)
-}
-
-func TestProfiles_Immutability_SourceSlice(t *testing.T) {
-	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
-	sourceDefaults := []string{"contents:read", "pull_requests:write"}
-
-	profiles := NewProfiles(orgProfiles, sourceDefaults, "digest", "local")
-
-	// Modify source slice
-	sourceDefaults[0] = "contents:write"
-	sourceDefaults = append(sourceDefaults, "packages:read")
-
-	// Profiles should be unchanged
-	defaults := profiles.GetPipelineDefaults()
-	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, defaults)
-}
-
-func TestProfiles_Immutability_ReturnedSlice(t *testing.T) {
-	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](nil, nil)
-	sourceDefaults := []string{"contents:read", "pull_requests:write"}
-
-	profiles := NewProfiles(orgProfiles, sourceDefaults, "digest", "local")
-
-	// Get defaults and modify returned slice
-	defaults1 := profiles.GetPipelineDefaults()
-	defaults1[0] = "contents:write"
-	defaults1 = append(defaults1, "packages:read")
-
-	// Get defaults again - should be unchanged
-	defaults2 := profiles.GetPipelineDefaults()
-	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, defaults2)
-}
-
-func TestProfiles_IsLoaded(t *testing.T) {
-	tests := []struct {
-		name     string
-		profiles Profiles
-		expected bool
-	}{
-		{
-			name: "loaded profiles",
-			profiles: NewProfiles(
-				NewProfileStoreOf[OrganizationProfileAttr](nil, nil),
-				[]string{"contents:read"},
-				"digest",
-				"local",
-			),
-			expected: true,
-		},
-		{
-			name:     "unloaded profiles (zero value)",
-			profiles: Profiles{},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.profiles.IsLoaded())
-		})
-	}
+	var notFoundErr ProfileNotFoundError
+	require.ErrorAs(t, err, &notFoundErr)
+	assert.Equal(t, "nonexistent", notFoundErr.Name)
 }
 
 func TestProfiles_Methods_Consistency(t *testing.T) {
@@ -430,13 +370,18 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 		},
 	)
 
-	pipelineDefaults := []string{"contents:read", "pull_requests:write"}
+	pipelineProfiles := NewProfileStoreOf(
+		map[string]AuthorizedProfile[PipelineProfileAttr]{
+			"pipeline-profile": NewAuthorizedProfile(matcher, PipelineProfileAttr{
+				Permissions: []string{"contents:read", "pull_requests:write"},
+			}),
+		},
+		nil,
+	)
+
 	digest := "test-digest-12345"
 
-	profiles := NewProfiles(orgProfiles, pipelineDefaults, digest, "local")
-
-	// IsLoaded should be true
-	assert.True(t, profiles.IsLoaded())
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, digest, "local")
 
 	// GetOrgProfile should work for valid profile
 	validProfile, err := profiles.GetOrgProfile("valid-profile")
@@ -449,10 +394,12 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 	var unavailErr ProfileUnavailableError
 	require.ErrorAs(t, err, &unavailErr)
 
-	// GetPipelineDefaults should return configured defaults
-	assert.Equal(t, pipelineDefaults, profiles.GetPipelineDefaults())
+	// GetPipelineProfile should work for valid profile
+	pipelineProfile, err := profiles.GetPipelineProfile("pipeline-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, pipelineProfile.Attrs.Permissions)
 
-	// Digest should be accessible (indirectly via IsLoaded check)
+	// Digest should be accessible
 	assert.Equal(t, digest, profiles.digest)
 }
 
@@ -473,20 +420,38 @@ func TestProfiles_Stats(t *testing.T) {
 			}),
 		},
 		map[string]error{
-			"invalid-profile": errors.New("compilation failed"),
+			"invalid-org-profile": errors.New("compilation failed"),
 		},
 	)
 
-	pipelineDefaults := []string{"contents:read"}
+	pipelineProfiles := NewProfileStoreOf[PipelineProfileAttr](
+		map[string]AuthorizedProfile[PipelineProfileAttr]{
+			"pipeline-one": NewAuthorizedProfile(matcher, PipelineProfileAttr{
+				Permissions: []string{"contents:write", "pull_requests:write"},
+			}),
+			"pipeline-two": NewAuthorizedProfile(matcher, PipelineProfileAttr{
+				Permissions: []string{"contents:read"},
+			}),
+			"pipeline-three": NewAuthorizedProfile(matcher, PipelineProfileAttr{
+				Permissions: []string{"contents:read", "issues:write"},
+			}),
+		},
+		map[string]error{
+			"invalid-pipeline-profile": errors.New("compilation failed"),
+		},
+	)
+
 	digest := "test-digest-abc123"
 	location := "github://acme/profiles/main/profiles.yaml"
 
-	profiles := NewProfiles(orgProfiles, pipelineDefaults, digest, location)
+	profiles := NewProfiles(orgProfiles, pipelineProfiles, digest, location)
 
 	stats := profiles.Stats()
 
 	assert.Equal(t, 2, stats.OrganizationProfileCount)
 	assert.Equal(t, 1, stats.OrganizationInvalidProfileCount)
+	assert.Equal(t, 3, stats.PipelineProfileCount)
+	assert.Equal(t, 1, stats.PipelineInvalidProfileCount)
 	assert.Equal(t, digest, stats.Digest)
 	assert.Equal(t, location, stats.Location)
 }

@@ -1,11 +1,4 @@
 organization:
-  # Optional: Configure default permissions for repo:default tokens
-  # These permissions apply to pipeline-scoped (repo:*) profiles when no specific profile is requested.
-  # If not specified, falls back to ["contents:read"] for backward compatibility.
-  # Multiple permissions can be specified as a YAML array.
-  defaults:
-    permissions: ["contents:read", "pull_requests:write"]
-
   profiles:
     # allow read access to a set of buildkite-plugins
     - name: "buildkite-plugin"
@@ -20,3 +13,11 @@ organization:
     # '*' indicates all, when specified must be only value. No other wildcards supported.
       repositories: ["*"]
       permissions: ["packages:read"]
+
+pipeline:
+  # Optional: Configure default permissions for repo:default tokens
+  # These permissions apply to pipeline-scoped (repo:*) profiles when no specific profile is requested.
+  # If not specified, falls back to ["contents:read"] for backward compatibility.
+  # Multiple permissions can be specified as a YAML array.
+  defaults:
+    permissions: ["contents:read", "pull_requests:write"]

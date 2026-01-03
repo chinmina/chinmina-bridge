@@ -48,7 +48,7 @@ func TestParse_UnknownFieldRejection(t *testing.T) {
 	_, _, err = parse(string(yamlContent))
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "organization profile file parsing failed")
+	assert.Contains(t, err.Error(), "profile file parsing failed")
 }
 
 func TestParse_DigestCalculation(t *testing.T) {
@@ -179,16 +179,38 @@ func TestProfileMatchFailedError_Status(t *testing.T) {
 	assert.Equal(t, "Forbidden", message)
 }
 
-func TestProfileStoreNotLoadedError_Format(t *testing.T) {
-	err := ProfileStoreNotLoadedError{}
+func TestParse_PipelineProfiles(t *testing.T) {
+	yamlContent, err := os.ReadFile("testdata/profile/pipeline_profile.yaml")
+	require.NoError(t, err)
 
-	assert.Equal(t, "organization profile not loaded", err.Error())
+	config, digest, err := parse(string(yamlContent))
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, digest, "digest should not be empty")
+	assert.NotEmpty(t, config.Pipeline.Profiles, "pipeline profiles should be loaded")
+	assert.Len(t, config.Pipeline.Profiles, 3, "should have 3 pipeline profiles")
+	assert.Equal(t, "high-access", config.Pipeline.Profiles[0].Name)
+	assert.Equal(t, []string{"contents:write", "pull_requests:write", "issues:write"}, config.Pipeline.Profiles[0].Permissions)
+	assert.NotEmpty(t, config.Pipeline.Defaults.Permissions, "pipeline defaults should be loaded")
+	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, config.Pipeline.Defaults.Permissions)
 }
 
-func TestProfileStoreNotLoadedError_Status(t *testing.T) {
-	err := ProfileStoreNotLoadedError{}
+func TestParse_RejectOrganizationDefaults(t *testing.T) {
+	yamlContent, err := os.ReadFile("testdata/profile/org_defaults_rejected.yaml")
+	require.NoError(t, err)
 
-	code, message := err.Status()
-	assert.Equal(t, 503, code)
-	assert.Equal(t, "organization profile not loaded", message)
+	_, _, err = parse(string(yamlContent))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "profile file parsing failed")
+}
+
+func TestParse_RejectRepositoriesInPipelineProfile(t *testing.T) {
+	yamlContent, err := os.ReadFile("testdata/profile/pipeline_with_repositories.yaml")
+	require.NoError(t, err)
+
+	_, _, err = parse(string(yamlContent))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "profile file parsing failed")
 }

@@ -96,6 +96,7 @@ func main() {
 
 func launchServer() error {
 	orgProfile := profile.NewProfileStore()
+	orgProfile.Update(profile.NewDefaultProfiles())
 	ctx := context.Background()
 
 	cfg, err := config.Load(context.Background())

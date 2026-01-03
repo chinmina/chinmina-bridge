@@ -32,12 +32,14 @@ func (m *mockGitHubClient) GetFileContent(ctx context.Context, owner, repo, path
 
 func TestFetchOrganizationProfile_Success(t *testing.T) {
 	validYAML := `organization:
-  defaults:
-    permissions: ["contents:read"]
   profiles:
     - name: "test-profile"
       repositories: ["acme/silk"]
       permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read"]
 `
 
 	gh := &mockGitHubClient{
@@ -49,7 +51,6 @@ func TestFetchOrganizationProfile_Success(t *testing.T) {
 	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:docs/profile.yaml", gh)
 	require.NoError(t, err)
 
-	assert.True(t, profiles.IsLoaded())
 	assert.NotEmpty(t, profiles.digest)
 
 	// Verify profile can be accessed
@@ -102,7 +103,7 @@ func TestFetchOrganizationProfile_CanBeCalledMultipleTimes(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
 		require.NoError(t, err)
-		assert.True(t, profiles.IsLoaded())
+		assert.NotEmpty(t, profiles.digest)
 	}
 }
 
@@ -203,6 +204,78 @@ func TestProfileStore_GetOrganizationProfile_Unavailable(t *testing.T) {
 	assert.Contains(t, unavailErr.Cause.Error(), "repositories list must be non-empty")
 }
 
+func TestProfileStore_GetPipelineProfile_Success(t *testing.T) {
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/silk"]
+      permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read"]
+  profiles:
+    - name: "high-access"
+      permissions: ["contents:write", "pull_requests:write"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": validYAML,
+		},
+	}
+
+	// Fetch and load profiles
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	require.NoError(t, err)
+
+	// Create store and update with profiles
+	store := NewProfileStore()
+	store.Update(profiles)
+
+	// Retrieve pipeline profile
+	profile, err := store.GetPipelineProfile("high-access")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:write", "pull_requests:write"}, profile.Attrs.Permissions)
+
+	// Also verify "default" profile exists (created from defaults)
+	defaultProfile, err := store.GetPipelineProfile("default")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+}
+
+func TestProfileStore_GetPipelineProfile_NotFound(t *testing.T) {
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["acme/silk"]
+      permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": validYAML,
+		},
+	}
+
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	require.NoError(t, err)
+
+	store := NewProfileStore()
+	store.Update(profiles)
+
+	_, err = store.GetPipelineProfile("nonexistent")
+	require.Error(t, err)
+
+	var notFoundErr ProfileNotFoundError
+	require.ErrorAs(t, err, &notFoundErr)
+	assert.Equal(t, "nonexistent", notFoundErr.Name)
+}
+
 func TestProfileStore_Concurrency(t *testing.T) {
 	// Simple smoke test that multiple goroutines can access the store concurrently
 	// without panics. Actual race conditions are caught by `go test -race`.
@@ -244,73 +317,13 @@ func TestProfileStore_Concurrency(t *testing.T) {
 				return
 			}
 
-			// Also exercise GetPipelineDefaults
-			_ = store.GetPipelineDefaults()
+			// Also exercise GetPipelineProfile
+			_, _ = store.GetPipelineProfile("default")
 		}()
 	}
 
 	wg.Wait()
 	// Test passes if no panics occurred
-}
-
-func TestProfileStore_GetOrganizationProfile_NotLoaded(t *testing.T) {
-	store := NewProfileStore()
-
-	_, err := store.GetOrganizationProfile("any-profile")
-	require.Error(t, err)
-
-	var notLoadedErr ProfileStoreNotLoadedError
-	require.ErrorAs(t, err, &notLoadedErr)
-}
-
-func TestProfileStore_GetPipelineDefaults(t *testing.T) {
-	tests := []struct {
-		name             string
-		yaml             string
-		expectedDefaults []string
-	}{
-		{
-			name: "configured defaults",
-			yaml: `organization:
-  defaults:
-    permissions: ["contents:read", "pull_requests:write"]
-  profiles:
-    - name: "test"
-      repositories: ["acme/test"]
-      permissions: ["contents:read"]
-`,
-			expectedDefaults: []string{"contents:read", "pull_requests:write"},
-		},
-		{
-			name: "fallback defaults",
-			yaml: `organization:
-  profiles:
-    - name: "test"
-      repositories: ["acme/test"]
-      permissions: ["contents:read"]
-`,
-			expectedDefaults: []string{"contents:read"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gh := &mockGitHubClient{
-				files: map[string]string{
-					"acme:test:profile.yaml": tt.yaml,
-				},
-			}
-
-			profiles, err := FetchOrganizationProfile(context.Background(), "acme:test:profile.yaml", gh)
-			require.NoError(t, err)
-
-			store := NewProfileStore()
-			store.Update(profiles)
-
-			defaults := store.GetPipelineDefaults()
-			assert.Equal(t, tt.expectedDefaults, defaults)
-		})
-	}
 }
 
 func TestProfileStore_Update_MultipleTimes(t *testing.T) {
@@ -401,13 +414,11 @@ func TestFetchOrganizationProfile_InvalidYAML(t *testing.T) {
 
 	_, err := FetchOrganizationProfile(context.Background(), "acme:test:invalid.yaml", gh)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "organization profile file parsing failed")
+	assert.Contains(t, err.Error(), "profile file parsing failed")
 }
 
 func TestLoad_EndToEnd(t *testing.T) {
 	validYAML := `organization:
-  defaults:
-    permissions: ["contents:read"]
   profiles:
     - name: "prod-profile"
       match:
@@ -422,6 +433,10 @@ func TestLoad_EndToEnd(t *testing.T) {
           valuePattern: ".*-staging"
       repositories: ["acme/silk", "acme/cotton"]
       permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read"]
 `
 
 	gh := &mockGitHubClient{
@@ -435,7 +450,6 @@ func TestLoad_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify profiles are loaded correctly
-	assert.True(t, profiles.IsLoaded())
 	assert.NotEmpty(t, profiles.digest)
 
 	// Verify prod profile
@@ -459,7 +473,40 @@ func TestLoad_EndToEnd(t *testing.T) {
 	result = stagingProfile.Match(claims)
 	assert.True(t, result.Matched)
 
-	// Verify pipeline defaults
-	defaults := profiles.GetPipelineDefaults()
-	assert.Equal(t, []string{"contents:read"}, defaults)
+	// Verify pipeline defaults via default profile
+	defaultProfile, err := profiles.GetPipelineProfile("default")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+}
+
+func TestNewDefaultProfiles(t *testing.T) {
+	profiles := NewDefaultProfiles()
+
+	// Verify default pipeline profile exists
+	defaultProfile, err := profiles.GetPipelineProfile("default")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+
+	// Verify default profile matches any claims (universal matcher)
+	claims := mapClaimLookup{"pipeline_slug": "any-pipeline"}
+	result := defaultProfile.Match(claims)
+	assert.True(t, result.Matched)
+	assert.NoError(t, result.Err)
+
+	// Verify stats show correct counts and digest
+	expectedStats := ProfilesStats{
+		OrganizationProfileCount:        0,
+		OrganizationInvalidProfileCount: 0,
+		PipelineProfileCount:            1,
+		PipelineInvalidProfileCount:     0,
+		Digest:                          "default-profile:v1",
+		Location:                        "",
+	}
+	assert.Equal(t, expectedStats, profiles.Stats())
+
+	// Verify organization profiles are empty
+	_, err = profiles.GetOrgProfile("any-profile")
+	require.Error(t, err)
+	var notFoundErr ProfileNotFoundError
+	assert.ErrorAs(t, err, &notFoundErr)
 }

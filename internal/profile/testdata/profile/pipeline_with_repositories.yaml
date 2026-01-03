@@ -1,0 +1,15 @@
+organization:
+  profiles:
+    - name: "buildkite-plugin"
+      repositories:
+        - somewhat-private-buildkite-plugin
+      permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read", "pull_requests:write"]
+  profiles:
+    - name: "invalid-profile"
+      repositories:
+        - some-repo
+      permissions: ["contents:write"]
