@@ -41,7 +41,7 @@ func TestHandlers_RequireClaims(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest("POST", "/not-applicable", nil)
+			req, err := http.NewRequestWithContext(t.Context(), "POST", "/not-applicable", nil)
 			require.NoError(t, err)
 
 			rr := httptest.NewRecorder()
@@ -58,10 +58,8 @@ func TestHandlePostToken_ReturnsTokenOnSuccess(t *testing.T) {
 
 	ctx := claimsContext()
 
-	req, err := http.NewRequest("POST", "/token", nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/token", nil)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -88,10 +86,8 @@ func TestHandlePostToken_ReturnsFailureOnVendorFailure(t *testing.T) {
 
 	ctx := claimsContext()
 
-	req, err := http.NewRequest("POST", "/token", nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/token", nil)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -132,11 +128,10 @@ func TestHandlePostTokenWithProfile_ReturnsTokenOnSuccess(t *testing.T) {
 
 			ctx := claimsContext()
 
-			req, err := http.NewRequest("POST", "/token/"+tc.profileParam, nil)
+			req, err := http.NewRequestWithContext(ctx, "POST", "/token/"+tc.profileParam, nil)
 			require.NoError(t, err)
 
 			req.SetPathValue("profile", tc.profileParam)
-			req = req.WithContext(ctx)
 			rr := httptest.NewRecorder()
 
 			// act
@@ -172,10 +167,8 @@ func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 
 	body := &bytes.Buffer{}
 	credentialhandler.WriteProperties(m, body)
-	req, err := http.NewRequest("POST", "/git-credentials", body)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", body)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -204,10 +197,8 @@ func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
 
 	body := &bytes.Buffer{}
 	credentialhandler.WriteProperties(m, body)
-	req, err := http.NewRequest("POST", "/git-credentials", body)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", body)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -230,10 +221,8 @@ func TestHandlePostGitCredentials_ReturnsFailureOnInvalidRequest(t *testing.T) {
 
 	ctx := claimsContext()
 
-	req, err := http.NewRequest("POST", "/git-credentials", nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", nil)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -259,10 +248,8 @@ func TestHandlePostGitCredentials_ReturnsFailureOnReadFailure(t *testing.T) {
 	body := &bytes.Buffer{}
 	credentialhandler.WriteProperties(m, body)
 
-	req, err := http.NewRequest("POST", "/git-credentials", body)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", body)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -290,10 +277,8 @@ func TestHandlePostGitCredentials_ReturnsFailureOnVendorFailure(t *testing.T) {
 
 	body := &bytes.Buffer{}
 	credentialhandler.WriteProperties(m, body)
-	req, err := http.NewRequest("POST", "/git-credentials", body)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", body)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -338,11 +323,10 @@ func TestHandlePostGitCredentialsWithRepoProfile_ReturnsTokenOnSuccess(t *testin
 
 			body := &bytes.Buffer{}
 			credentialhandler.WriteProperties(m, body)
-			req, err := http.NewRequest("POST", "/git-credentials/"+tc.profileParam, body)
+			req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials/"+tc.profileParam, body)
 			require.NoError(t, err)
 
 			req.SetPathValue("profile", tc.profileParam)
-			req = req.WithContext(ctx)
 			rr := httptest.NewRecorder()
 
 			// act
@@ -362,10 +346,8 @@ func TestHandlePostGitCredentialsWithRepoProfile_ReturnsTokenOnSuccess(t *testin
 func TestHandleHealthCheck_Success(t *testing.T) {
 	ctx := context.Background()
 
-	req, err := http.NewRequest("GET", "/healthcheck", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "/healthcheck", nil)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -404,11 +386,10 @@ func TestHandlePostGitCredentialsWithProfile_ReturnsTokenOnSuccess(t *testing.T)
 
 	body := &bytes.Buffer{}
 	credentialhandler.WriteProperties(m, body)
-	req, err := http.NewRequest("POST", "/organization/git-credentials/test-profile", body)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/organization/git-credentials/test-profile", body)
 	require.NoError(t, err)
 
 	req.SetPathValue("profile", "test-profile")
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -467,7 +448,7 @@ func TestMaxRequestSizeMiddleware(t *testing.T) {
 	handler := mw(innerHandler)
 
 	body := bytes.NewBufferString("0123456789n123456789")
-	req, err := http.NewRequest("POST", "/git-credentials", body)
+	req, err := http.NewRequestWithContext(t.Context(), "POST", "/git-credentials", body)
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
@@ -517,10 +498,8 @@ func TestHandlePostToken_ProfileErrors(t *testing.T) {
 
 			ctx := claimsContext()
 
-			req, err := http.NewRequest("POST", "/token", nil)
+			req, err := http.NewRequestWithContext(ctx, "POST", "/token", nil)
 			require.NoError(t, err)
-
-			req = req.WithContext(ctx)
 			rr := httptest.NewRecorder()
 
 			// act
@@ -548,10 +527,8 @@ func TestHandlePostToken_ClaimValidationError(t *testing.T) {
 
 	ctx := claimsContext()
 
-	req, err := http.NewRequest("POST", "/token", nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/token", nil)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act
@@ -580,10 +557,8 @@ func TestHandlePostGitCredentials_ClaimValidationError(t *testing.T) {
 	// request body in git-credentials format
 	body := strings.NewReader("protocol=https\nhost=github.com\npath=org/repo\n\n")
 
-	req, err := http.NewRequest("POST", "/git-credentials", body)
+	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", body)
 	require.NoError(t, err)
-
-	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 
 	// act

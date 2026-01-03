@@ -114,10 +114,8 @@ func TestMiddleware(t *testing.T) {
 
 			ctx, _ := audit.Context(context.Background())
 
-			request, err := http.NewRequest(http.MethodGet, "", nil)
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, "", nil)
 			require.NoError(t, err)
-
-			request = request.WithContext(ctx)
 
 			audience := "an-actor-demands-an"
 			if len(test.claims.Audience) > 0 {
