@@ -14,7 +14,7 @@ lint: mod
 
 .PHONY: test
 test: mod
-	go test -cover ./...
+	go test -cover ./... -covermode=atomic
 
 .PHONY: test-ci
 test-ci: mod
