@@ -115,6 +115,12 @@ linters:
           - govet
         path: internal/github/fieldmapper_test\.go
 
+      # Exclude QF1003 in ref.go (switch would prevent variable redeclaration across branches)
+      - text: "QF1003"
+        linters:
+          - staticcheck
+        path: internal/profile/ref\.go
+
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
