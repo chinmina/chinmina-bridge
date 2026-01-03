@@ -114,10 +114,8 @@ func TestMiddleware(t *testing.T) {
 
 			ctx, _ := audit.Context(context.Background())
 
-			request, err := http.NewRequest(http.MethodGet, "", nil)
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, "", nil)
 			require.NoError(t, err)
-
-			request = request.WithContext(ctx)
 
 			audience := "an-actor-demands-an"
 			if len(test.claims.Audience) > 0 {
@@ -182,8 +180,8 @@ func custom(org, pipeline string) BuildkiteClaims {
 		BuildBranch: "default-buildbranch",
 		BuildCommit: "default-buildcommit",
 		StepKey:     "default-stepkey",
-		JobId:       "default-jobid",
-		AgentId:     "default-agentid",
+		JobID:       "default-jobid",
+		AgentID:     "default-agentid",
 	}
 
 	claims.OrganizationSlug = org

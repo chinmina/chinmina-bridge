@@ -13,10 +13,10 @@ import (
 
 type ProfileTokenVendor func(ctx context.Context, ref profile.ProfileRef, repo string) VendorResult
 
-// Given a pipeline, return the https version of the repository URL
+// RepositoryLookup given a pipeline, returns the https version of the repository URL.
 type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug string) (string, error)
 
-// Vend a token for the given repository URL. The URL must be a https URL to a
+// TokenVendor vends a token for the given repository URL. The URL must be a https URL to a
 // GitHub repository that the vendor has permissions to access.
 type TokenVendor func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error)
 
@@ -100,10 +100,10 @@ func (vr VendorResult) Token() (ProfileToken, bool) {
 	return ProfileToken{}, false
 }
 
-var sshUrl = regexp.MustCompile(`^git@github\.com:([^/].+)$`)
+var sshURL = regexp.MustCompile(`^git@github\.com:([^/].+)$`)
 
 func TranslateSSHToHTTPS(url string) string {
-	groups := sshUrl.FindStringSubmatch(url)
+	groups := sshURL.FindStringSubmatch(url)
 	if groups == nil {
 		return url
 	}

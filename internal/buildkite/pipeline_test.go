@@ -18,7 +18,7 @@ func TestConfigFails(t *testing.T) {
 	t.Run("NoToken", func(t *testing.T) {
 		_, err := buildkite.New(config.BuildkiteConfig{
 			Token:  "",
-			ApiURL: "",
+			APIURL: "",
 		})
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "token must be configured for Buildkite API access")
@@ -27,7 +27,7 @@ func TestConfigFails(t *testing.T) {
 	t.Run("InvalidURL", func(t *testing.T) {
 		_, err := buildkite.New(config.BuildkiteConfig{
 			Token:  "asdbv",
-			ApiURL: "://",
+			APIURL: "://",
 		})
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "could not parse Buildkite API URL")
@@ -60,7 +60,7 @@ func TestRepositoryLookup_Succeeds(t *testing.T) {
 
 	bk, err := buildkite.New(config.BuildkiteConfig{
 		Token:  "expected-token",
-		ApiURL: svr.URL,
+		APIURL: svr.URL,
 	})
 	require.NoError(t, err)
 
@@ -101,7 +101,7 @@ func TestRepositoryLookup_SendsAuthToken(t *testing.T) {
 
 	bk, err := buildkite.New(config.BuildkiteConfig{
 		Token:  "expected-token",
-		ApiURL: svr.URL,
+		APIURL: svr.URL,
 	})
 	require.NoError(t, err)
 
@@ -132,7 +132,7 @@ func TestRepositoryLookup_FailsWhenRepoNotConfigured(t *testing.T) {
 
 	bk, err := buildkite.New(config.BuildkiteConfig{
 		Token:  "expected-token",
-		ApiURL: svr.URL,
+		APIURL: svr.URL,
 	})
 	require.NoError(t, err)
 
@@ -154,7 +154,7 @@ func TestRepositoryLookup_Fails(t *testing.T) {
 
 	bk, err := buildkite.New(config.BuildkiteConfig{
 		Token:  "expected-token",
-		ApiURL: svr.URL,
+		APIURL: svr.URL,
 	})
 	require.NoError(t, err)
 

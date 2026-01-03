@@ -71,8 +71,8 @@ func New(ctx context.Context, cfg config.GithubConfig, config ...ClientOption) (
 	)
 
 	// for testing use
-	if cfg.ApiURL != "" {
-		apiURL := cfg.ApiURL
+	if cfg.APIURL != "" {
+		apiURL := cfg.APIURL
 		if !strings.HasSuffix(apiURL, "/") {
 			apiURL += "/"
 		}

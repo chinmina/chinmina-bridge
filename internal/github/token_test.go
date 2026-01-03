@@ -69,7 +69,7 @@ func TestCreateAccessToken_Succeeds(t *testing.T) {
 	gh, err := github.New(
 		context.Background(),
 		config.GithubConfig{
-			ApiURL:         svr.URL,
+			APIURL:         svr.URL,
 			PrivateKey:     key,
 			ApplicationID:  10,
 			InstallationID: 20,
@@ -109,7 +109,7 @@ func TestCreateAccessToken_Succeeds_If_Some_URLs_Valid(t *testing.T) {
 	gh, err := github.New(
 		context.Background(),
 		config.GithubConfig{
-			ApiURL:         svr.URL,
+			APIURL:         svr.URL,
 			PrivateKey:     key,
 			ApplicationID:  10,
 			InstallationID: 20,
@@ -141,7 +141,7 @@ func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
 	gh, err := github.New(
 		context.Background(),
 		config.GithubConfig{
-			ApiURL:         svr.URL,
+			APIURL:         svr.URL,
 			PrivateKey:     key,
 			ApplicationID:  10,
 			InstallationID: 20,
@@ -180,7 +180,7 @@ func TestTransportOptions(t *testing.T) {
 	// generate valid key for testing
 	key := generateKey(t)
 	cfg := config.GithubConfig{
-		ApiURL:         svr.URL,
+		APIURL:         svr.URL,
 		PrivateKey:     key,
 		ApplicationID:  10,
 		InstallationID: 20,
@@ -211,7 +211,7 @@ func TestTransportOptions(t *testing.T) {
 	_, err = github.New(
 		context.Background(),
 		config.GithubConfig{
-			ApiURL:         svr.URL,
+			APIURL:         svr.URL,
 			PrivateKey:     "badkey",
 			ApplicationID:  10,
 			InstallationID: 20,
@@ -238,7 +238,7 @@ func TestGetFileContent_Succeeds(t *testing.T) {
 
 	gh, err := github.New(
 		context.Background(),
-		config.GithubConfig{ApiURL: svr.URL},
+		config.GithubConfig{APIURL: svr.URL},
 		withPlainTransport,
 	)
 	require.NoError(t, err)
@@ -269,7 +269,7 @@ func TestGetFileContent_Fails_On_Directory(t *testing.T) {
 
 	gh, err := github.New(
 		context.Background(),
-		config.GithubConfig{ApiURL: svr.URL},
+		config.GithubConfig{APIURL: svr.URL},
 		withPlainTransport,
 	)
 	require.NoError(t, err)
@@ -292,7 +292,7 @@ func TestGetFileContent_Fails_On_API_Error(t *testing.T) {
 
 	gh, err := github.New(
 		context.Background(),
-		config.GithubConfig{ApiURL: svr.URL},
+		config.GithubConfig{APIURL: svr.URL},
 		withPlainTransport,
 	)
 	require.NoError(t, err)
@@ -316,7 +316,7 @@ func TestGetFileContent_Fails_On_No_Content(t *testing.T) {
 
 	gh, err := github.New(
 		context.Background(),
-		config.GithubConfig{ApiURL: svr.URL},
+		config.GithubConfig{APIURL: svr.URL},
 		withPlainTransport,
 	)
 	require.NoError(t, err)

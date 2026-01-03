@@ -197,7 +197,7 @@ func Middleware() func(next http.Handler) http.Handler {
 	}
 }
 
-// Get the log entry for the current request. This is safe to use even if the
+// Log gets the log entry for the current request. This is safe to use even if the
 // context does not create an entry: it is never nil.
 func Log(ctx context.Context) *Entry {
 	_, e := Context(ctx)

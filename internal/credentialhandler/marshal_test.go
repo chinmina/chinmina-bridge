@@ -2,6 +2,7 @@ package credentialhandler_test
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -210,6 +211,30 @@ func TestWriteProperties(t *testing.T) {
 			assert.Equal(t, c.expected, strings.Split(w.String(), "\n"), w.String())
 		})
 	}
+}
+
+// failingWriter always returns an error on Write
+type failingWriter struct{}
+
+func (f *failingWriter) Write(p []byte) (n int, err error) {
+	return 0, errors.New("write failed: disk full")
+}
+
+func TestWriteProperties_PropagatesWriteError(t *testing.T) {
+	// arrange
+	m := credentialhandler.NewMap(3)
+	m.Set("protocol", "https")
+	m.Set("host", "github.com")
+	m.Set("path", "org/repo")
+
+	w := &failingWriter{}
+
+	// act
+	err := credentialhandler.WriteProperties(m, w)
+
+	// assert
+	require.Error(t, err, "WriteProperties should return error when writer fails")
+	assert.Contains(t, err.Error(), "write failed", "error should describe the write failure")
 }
 
 func TestConstructURL(t *testing.T) {

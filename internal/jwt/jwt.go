@@ -93,7 +93,7 @@ func ClaimsFromContext(ctx context.Context) *validator.ValidatedClaims {
 	return claims
 }
 
-// Get the custom Buildkite claims from the context, as added by the JWT
+// BuildkiteClaimsFromContext gets the custom Buildkite claims from the context, as added by the JWT
 // middleware. This will return nil if the claims are not present.
 func BuildkiteClaimsFromContext(ctx context.Context) *BuildkiteClaims {
 	claims := ClaimsFromContext(ctx)

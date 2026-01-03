@@ -84,15 +84,15 @@ func Configure(ctx context.Context, cfg config.ObserveConfig) (shutdown func(con
 	return
 }
 
-func HttpTransport(wrapped http.RoundTripper, cfg config.ObserveConfig) http.RoundTripper {
-	if !cfg.Enabled || !cfg.HttpTransportEnabled {
+func HTTPTransport(wrapped http.RoundTripper, cfg config.ObserveConfig) http.RoundTripper {
+	if !cfg.Enabled || !cfg.HTTPTransportEnabled {
 		return wrapped
 	}
 
 	var clientTraceOptionFunc func(context.Context) *httptrace.ClientTrace
 
-	if cfg.HttpConnectionTraceEnabled {
-		clientTraceOptionFunc = clientHttpTrace
+	if cfg.HTTPConnectionTraceEnabled {
+		clientTraceOptionFunc = clientHTTPTrace
 	}
 
 	return otelhttp.NewTransport(
@@ -101,7 +101,7 @@ func HttpTransport(wrapped http.RoundTripper, cfg config.ObserveConfig) http.Rou
 	)
 }
 
-func clientHttpTrace(ctx context.Context) *httptrace.ClientTrace {
+func clientHTTPTrace(ctx context.Context) *httptrace.ClientTrace {
 	return otelhttptrace.NewClientTrace(
 		ctx,
 		otelhttptrace.WithoutSubSpans(),

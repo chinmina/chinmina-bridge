@@ -60,8 +60,8 @@ func main() {
 		BuildBranch:      "main",
 		BuildCommit:      "abc123",
 		StepKey:          "step1",
-		JobId:            "job1",
-		AgentId:          "agent1",
+		JobID:            "job1",
+		AgentID:          "agent1",
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating JWT: %v\n", err)

@@ -8,9 +8,13 @@ mod:
 format:
 	go fmt ./...
 
+.PHONY: lint
+lint: mod
+	golangci-lint run
+
 .PHONY: test
 test: mod
-	go test -cover ./...
+	go test -cover ./... -covermode=atomic
 
 .PHONY: test-ci
 test-ci: mod
@@ -36,7 +40,7 @@ run: build
 	dist/chinmina-bridge-local
 
 .PHONY: agent
-agent: build format test
+agent: build format test lint
 
 .PHONY: docker
 docker: build

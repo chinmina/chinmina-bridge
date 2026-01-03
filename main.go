@@ -110,8 +110,8 @@ func launchServer() error {
 		return fmt.Errorf("telemetry bootstrap failed: %w", err)
 	}
 
-	http.DefaultTransport = observe.HttpTransport(
-		configureHttpTransport(cfg.Server),
+	http.DefaultTransport = observe.HTTPTransport(
+		configureHTTPTransport(cfg.Server),
 		cfg.Observe,
 	)
 	http.DefaultClient = &http.Client{
@@ -144,15 +144,19 @@ func launchServer() error {
 
 	// start the server
 	server := &http.Server{
-		Addr:           fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:        handler,
-		MaxHeaderBytes: 20 << 10, // 20 KB
+		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
+		Handler:           handler,
+		MaxHeaderBytes:    20 << 10,      // 20 KB
+		ReadHeaderTimeout: 20 * time.Second, // Prevent Slowloris attacks
 	}
 
 	server.RegisterOnShutdown(func() {
 		log.Info().Msg("telemetry: shutting down")
-		shutdownTelemetry(ctx)
-		log.Info().Msg("telemetry: shutdown complete")
+		if err := shutdownTelemetry(ctx); err != nil {
+			log.Warn().Err(err).Msg("telemetry: shutdown failed")
+		} else {
+			log.Info().Msg("telemetry: shutdown complete")
+		}
 	})
 
 	err = serveHTTP(cfg.Server, server)
@@ -198,11 +202,11 @@ func logBuildInfo() {
 	ev.Msg("build information")
 }
 
-func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
+func configureHTTPTransport(cfg config.ServerConfig) *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
-	transport.MaxIdleConns = cfg.OutgoingHttpMaxIdleConns
-	transport.MaxConnsPerHost = cfg.OutgoingHttpMaxConnsPerHost
+	transport.MaxIdleConns = cfg.OutgoingHTTPMaxIdleConns
+	transport.MaxConnsPerHost = cfg.OutgoingHTTPMaxConnsPerHost
 
 	return transport
 }

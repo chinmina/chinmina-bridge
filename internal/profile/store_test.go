@@ -100,7 +100,7 @@ func TestFetchOrganizationProfile_CanBeCalledMultipleTimes(t *testing.T) {
 	}
 
 	// Call multiple times
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
 		require.NoError(t, err)
 		assert.NotEmpty(t, profiles.digest)
@@ -303,7 +303,7 @@ func TestProfileStore_Concurrency(t *testing.T) {
 	numGoroutines := 100
 	wg.Add(numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 
