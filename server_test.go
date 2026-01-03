@@ -66,7 +66,9 @@ func TestServeHTTP_ShutdownSignal(t *testing.T) {
 	defer cancel()
 	go func() {
 		<-startupTimer.Done()
-		syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+		if err := syscall.Kill(syscall.Getpid(), syscall.SIGINT); err != nil {
+			t.Errorf("failed to send SIGINT: %v", err)
+		}
 	}()
 
 	serverCfg := config.ServerConfig{Port: -1, ShutdownTimeoutSeconds: 25}

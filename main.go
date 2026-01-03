@@ -152,8 +152,11 @@ func launchServer() error {
 
 	server.RegisterOnShutdown(func() {
 		log.Info().Msg("telemetry: shutting down")
-		shutdownTelemetry(ctx)
-		log.Info().Msg("telemetry: shutdown complete")
+		if err := shutdownTelemetry(ctx); err != nil {
+			log.Warn().Err(err).Msg("telemetry: shutdown failed")
+		} else {
+			log.Info().Msg("telemetry: shutdown complete")
+		}
 	})
 
 	err = serveHTTP(cfg.Server, server)
