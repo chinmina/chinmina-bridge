@@ -103,6 +103,11 @@ linters:
         linters:
           - misspell
 
+      # Exclude setClaimField from complexity check (justified by nature of mapping function)
+      - text: "setClaimField"
+        linters:
+          - gocyclo
+
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
