@@ -85,13 +85,13 @@ func Configure(ctx context.Context, cfg config.ObserveConfig) (shutdown func(con
 }
 
 func HttpTransport(wrapped http.RoundTripper, cfg config.ObserveConfig) http.RoundTripper {
-	if !cfg.Enabled || !cfg.HttpTransportEnabled {
+	if !cfg.Enabled || !cfg.HTTPTransportEnabled {
 		return wrapped
 	}
 
 	var clientTraceOptionFunc func(context.Context) *httptrace.ClientTrace
 
-	if cfg.HttpConnectionTraceEnabled {
+	if cfg.HTTPConnectionTraceEnabled {
 		clientTraceOptionFunc = clientHttpTrace
 	}
 

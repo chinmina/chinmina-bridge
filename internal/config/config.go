@@ -18,8 +18,8 @@ type ServerConfig struct {
 	Port                   int `env:"SERVER_PORT, default=8080"`
 	ShutdownTimeoutSeconds int `env:"SERVER_SHUTDOWN_TIMEOUT_SECS, default=25"`
 
-	OutgoingHttpMaxIdleConns    int    `env:"SERVER_OUTGOING_MAX_IDLE_CONNS, default=100"`
-	OutgoingHttpMaxConnsPerHost int    `env:"SERVER_OUTGOING_MAX_CONNS_PER_HOST, default=20"`
+	OutgoingHTTPMaxIdleConns    int    `env:"SERVER_OUTGOING_MAX_IDLE_CONNS, default=100"`
+	OutgoingHTTPMaxConnsPerHost int    `env:"SERVER_OUTGOING_MAX_CONNS_PER_HOST, default=20"`
 	OrgProfile                  string `env:"GITHUB_ORG_PROFILE"`
 }
 
@@ -53,8 +53,8 @@ type ObserveConfig struct {
 	ServiceName                string `env:"OBSERVE_SERVICE_NAME, default=chinmina-bridge"`
 	TraceBatchTimeoutSeconds   int    `env:"OBSERVE_TRACE_BATCH_TIMEOUT_SECS, default=20"`
 	MetricReadIntervalSeconds  int    `env:"OBSERVE_METRIC_READ_INTERVAL_SECS, default=60"`
-	HttpTransportEnabled       bool   `env:"OBSERVE_HTTP_TRANSPORT_ENABLED, default=true"`
-	HttpConnectionTraceEnabled bool   `env:"OBSERVE_CONNECTION_TRACE_ENABLED, default=true"`
+	HTTPTransportEnabled       bool   `env:"OBSERVE_HTTP_TRANSPORT_ENABLED, default=true"`
+	HTTPConnectionTraceEnabled bool   `env:"OBSERVE_CONNECTION_TRACE_ENABLED, default=true"`
 }
 
 func Load(ctx context.Context) (cfg Config, err error) {

@@ -205,8 +205,8 @@ func logBuildInfo() {
 func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
-	transport.MaxIdleConns = cfg.OutgoingHttpMaxIdleConns
-	transport.MaxConnsPerHost = cfg.OutgoingHttpMaxConnsPerHost
+	transport.MaxIdleConns = cfg.OutgoingHTTPMaxIdleConns
+	transport.MaxConnsPerHost = cfg.OutgoingHTTPMaxConnsPerHost
 
 	return transport
 }
