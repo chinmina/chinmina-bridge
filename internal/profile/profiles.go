@@ -1,6 +1,9 @@
 package profile
 
-import "slices"
+import (
+	"maps"
+	"slices"
+)
 
 // --- Attribute types (leaf types) ---
 
@@ -166,15 +169,11 @@ func NewAuthorizedProfile[T any](matcher Matcher, attrs T) AuthorizedProfile[T] 
 func NewProfileStoreOf[T any](profiles map[string]AuthorizedProfile[T], invalidProfiles map[string]error) ProfileStoreOf[T] {
 	// Copy the profiles map to ensure immutability
 	profilesCopy := make(map[string]AuthorizedProfile[T], len(profiles))
-	for k, v := range profiles {
-		profilesCopy[k] = v
-	}
+	maps.Copy(profilesCopy, profiles)
 
 	// Copy the invalidProfiles map to ensure immutability
 	invalidProfilesCopy := make(map[string]error, len(invalidProfiles))
-	for k, v := range invalidProfiles {
-		invalidProfilesCopy[k] = v
-	}
+	maps.Copy(invalidProfilesCopy, invalidProfiles)
 
 	return ProfileStoreOf[T]{
 		profiles:        profilesCopy,
