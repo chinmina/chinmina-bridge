@@ -108,6 +108,13 @@ linters:
         linters:
           - gocyclo
 
+      # Exclude unused unexported fields in fieldmapper test (intentional test fixtures)
+      - text: "field unexported"
+        linters:
+          - unused
+          - govet
+        path: internal/github/fieldmapper_test\.go
+
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
