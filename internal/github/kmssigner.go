@@ -65,7 +65,7 @@ func (s KMSSigner) Sign(claims jwt.Claims) (string, error) {
 	return tok, err
 }
 
-// Defines a golang-jwt compatible signing method that uses AWS KMS.
+// KMSSigningMethod defines a golang-jwt compatible signing method that uses AWS KMS.
 type KMSSigningMethod struct {
 	client KMSClient
 	hash   crypto.Hash
