@@ -4,14 +4,14 @@ organization:
       match:
         - claim: pipeline_slug
           value: "silk-prod"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:write"]
 
     - name: "staging"
       match:
         - claim: pipeline_slug
           value: "silk-staging"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:write"]
 
     # Duplicate name - should be marked as invalid
@@ -19,5 +19,5 @@ organization:
       match:
         - claim: pipeline_slug
           value: "cotton-prod"
-      repositories: ["acme/cotton"]
+      repositories: ["cotton"]
       permissions: ["contents:read"]

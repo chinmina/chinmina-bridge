@@ -18,8 +18,8 @@ func TestOrganizationProfileAttr_HasRepository_Match(t *testing.T) {
 	}{
 		{
 			name:         "exact match in list",
-			repositories: []string{"acme/repo1", "acme/repo2"},
-			repo:         "acme/repo1",
+			repositories: []string{"repo1", "repo2"},
+			repo:         "repo1",
 			expected:     true,
 		},
 		{
@@ -48,18 +48,18 @@ func TestOrganizationProfileAttr_HasRepository_NoMatch(t *testing.T) {
 	}{
 		{
 			name:         "partial match fails",
-			repositories: []string{"acme/repo"},
+			repositories: []string{"repo"},
 			repo:         "acme",
 		},
 		{
 			name:         "over-match fails",
-			repositories: []string{"acme/repo"},
-			repo:         "acme/repo-extra",
+			repositories: []string{"repo"},
+			repo:         "repo-extra",
 		},
 		{
 			name:         "empty list fails",
 			repositories: []string{},
-			repo:         "acme/repo",
+			repo:         "repo",
 		},
 	}
 
@@ -82,13 +82,13 @@ func TestOrganizationProfileAttr_GetRepositories_SpecificRepos(t *testing.T) {
 	}{
 		{
 			name:         "single repository",
-			repositories: []string{"acme/repo1"},
-			expected:     []string{"acme/repo1"},
+			repositories: []string{"repo1"},
+			expected:     []string{"repo1"},
 		},
 		{
 			name:         "multiple repositories",
-			repositories: []string{"acme/repo1", "acme/repo2", "other/repo3"},
-			expected:     []string{"acme/repo1", "acme/repo2", "other/repo3"},
+			repositories: []string{"repo1", "repo2", "repo3"},
+			expected:     []string{"repo1", "repo2", "repo3"},
 		},
 		{
 			name:         "empty list",
@@ -120,7 +120,7 @@ func TestOrganizationProfileAttr_GetRepositories_Wildcard(t *testing.T) {
 func TestAuthorizedProfile_Match_Success(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"acme/silk"},
+		Repositories: []string{"silk"},
 		Permissions:  []string{"contents:read"},
 	}
 	profile := NewAuthorizedProfile(matcher, attrs)
@@ -139,7 +139,7 @@ func TestAuthorizedProfile_Match_Success(t *testing.T) {
 func TestAuthorizedProfile_Match_ClaimValueMismatch(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"acme/silk"},
+		Repositories: []string{"silk"},
 	}
 	profile := NewAuthorizedProfile(matcher, attrs)
 
@@ -160,7 +160,7 @@ func TestAuthorizedProfile_Match_ClaimValueMismatch(t *testing.T) {
 func TestAuthorizedProfile_Match_ClaimNotFound(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"acme/silk"},
+		Repositories: []string{"silk"},
 	}
 	profile := NewAuthorizedProfile(matcher, attrs)
 
@@ -181,7 +181,7 @@ func TestAuthorizedProfile_Match_ClaimNotFound(t *testing.T) {
 func TestAuthorizedProfile_Match_ValidationError(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"acme/silk"},
+		Repositories: []string{"silk"},
 	}
 	profile := NewAuthorizedProfile(matcher, attrs)
 
@@ -205,7 +205,7 @@ func TestProfileStoreOf_NewAndGet_OrganizationProfile(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	profiles := map[string]AuthorizedProfile[OrganizationProfileAttr]{
 		"test-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-			Repositories: []string{"acme/silk"},
+			Repositories: []string{"silk"},
 			Permissions:  []string{"contents:read"},
 		}),
 	}
@@ -214,7 +214,7 @@ func TestProfileStoreOf_NewAndGet_OrganizationProfile(t *testing.T) {
 
 	profile, err := store.Get("test-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
 	assert.Equal(t, []string{"contents:read"}, profile.Attrs.Permissions)
 }
 
@@ -262,7 +262,7 @@ func TestProfileStoreOf_Immutability(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	sourceProfiles := map[string]AuthorizedProfile[OrganizationProfileAttr]{
 		"test-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-			Repositories: []string{"acme/silk"},
+			Repositories: []string{"silk"},
 			Permissions:  []string{"contents:read"},
 		}),
 	}
@@ -288,7 +288,7 @@ func TestProfiles_NewProfiles(t *testing.T) {
 	orgProfiles := NewProfileStoreOf(
 		map[string]AuthorizedProfile[OrganizationProfileAttr]{
 			"test-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"acme/silk"},
+				Repositories: []string{"silk"},
 			}),
 		},
 		nil,
@@ -307,7 +307,7 @@ func TestProfiles_GetOrgProfile_Success(t *testing.T) {
 	orgProfiles := NewProfileStoreOf(
 		map[string]AuthorizedProfile[OrganizationProfileAttr]{
 			"test-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"acme/silk"},
+				Repositories: []string{"silk"},
 				Permissions:  []string{"contents:read"},
 			}),
 		},
@@ -319,7 +319,7 @@ func TestProfiles_GetOrgProfile_Success(t *testing.T) {
 
 	profile, err := profiles.GetOrgProfile("test-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
 	assert.Equal(t, []string{"contents:read"}, profile.Attrs.Permissions)
 }
 
@@ -361,7 +361,7 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 	orgProfiles := NewProfileStoreOf(
 		map[string]AuthorizedProfile[OrganizationProfileAttr]{
 			"valid-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"acme/test"},
+				Repositories: []string{"test"},
 				Permissions:  []string{"contents:read"},
 			}),
 		},
@@ -386,7 +386,7 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 	// GetOrgProfile should work for valid profile
 	validProfile, err := profiles.GetOrgProfile("valid-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/test"}, validProfile.Attrs.Repositories)
+	assert.Equal(t, []string{"test"}, validProfile.Attrs.Repositories)
 
 	// GetOrgProfile should return error for invalid profile
 	_, err = profiles.GetOrgProfile("invalid-profile")
@@ -411,11 +411,11 @@ func TestProfiles_Stats(t *testing.T) {
 	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](
 		map[string]AuthorizedProfile[OrganizationProfileAttr]{
 			"profile-one": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"acme/repo1"},
+				Repositories: []string{"repo1"},
 				Permissions:  []string{"contents:read"},
 			}),
 			"profile-two": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"acme/repo2"},
+				Repositories: []string{"repo2"},
 				Permissions:  []string{"contents:write"},
 			}),
 		},
@@ -460,7 +460,7 @@ func TestProfiles_Stats(t *testing.T) {
 func TestNewAuthorizedProfile(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"acme/silk"},
+		Repositories: []string{"silk"},
 		Permissions:  []string{"contents:read"},
 	}
 
@@ -481,7 +481,7 @@ func TestProfileStoreOf_Mixed(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	validProfiles := map[string]AuthorizedProfile[OrganizationProfileAttr]{
 		"valid-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-			Repositories: []string{"acme/silk"},
+			Repositories: []string{"silk"},
 		}),
 	}
 	invalidProfiles := map[string]error{
@@ -493,7 +493,7 @@ func TestProfileStoreOf_Mixed(t *testing.T) {
 	// Valid profile should be accessible
 	profile, err := store.Get("valid-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
 
 	// Invalid profile should return ProfileUnavailableError
 	_, err = store.Get("invalid-profile")

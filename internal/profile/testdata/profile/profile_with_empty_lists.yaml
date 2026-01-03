@@ -5,7 +5,7 @@ organization:
       match:
         - claim: pipeline_slug
           value: "test-pipeline"
-      repositories: ["acme/test"]
+      repositories: ["test"]
       permissions: ["contents:read"]
 
     # Invalid - empty repositories
@@ -21,7 +21,7 @@ organization:
       match:
         - claim: pipeline_slug
           value: "test-pipeline"
-      repositories: ["acme/test"]
+      repositories: ["test"]
       permissions: []
 
     # Invalid - both empty

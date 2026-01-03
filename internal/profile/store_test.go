@@ -34,7 +34,7 @@ func TestFetchOrganizationProfile_Success(t *testing.T) {
 	validYAML := `organization:
   profiles:
     - name: "test-profile"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:read"]
 
 pipeline:
@@ -56,14 +56,14 @@ pipeline:
 	// Verify profile can be accessed
 	profile, err := profiles.GetOrgProfile("test-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
 }
 
 func TestFetchOrganizationProfile_ReturnsCorrectDigest(t *testing.T) {
 	validYAML := `organization:
   profiles:
     - name: "test-profile"
-      repositories: ["acme/test"]
+      repositories: ["test"]
       permissions: ["contents:read"]
 `
 
@@ -89,7 +89,7 @@ func TestFetchOrganizationProfile_CanBeCalledMultipleTimes(t *testing.T) {
 	validYAML := `organization:
   profiles:
     - name: "test-profile"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:read"]
 `
 
@@ -121,7 +121,7 @@ func TestProfileStore_GetOrganizationProfile_Success(t *testing.T) {
 	validYAML := `organization:
   profiles:
     - name: "test-profile"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:read", "pull_requests:write"]
 `
 
@@ -142,7 +142,7 @@ func TestProfileStore_GetOrganizationProfile_Success(t *testing.T) {
 	// Retrieve profile
 	profile, err := store.GetOrganizationProfile("test-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
 	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, profile.Attrs.Permissions)
 }
 
@@ -150,7 +150,7 @@ func TestProfileStore_GetOrganizationProfile_NotFound(t *testing.T) {
 	validYAML := `organization:
   profiles:
     - name: "test-profile"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:read"]
 `
 
@@ -208,7 +208,7 @@ func TestProfileStore_GetPipelineProfile_Success(t *testing.T) {
 	validYAML := `organization:
   profiles:
     - name: "test-profile"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:read"]
 
 pipeline:
@@ -248,7 +248,7 @@ func TestProfileStore_GetPipelineProfile_NotFound(t *testing.T) {
 	validYAML := `organization:
   profiles:
     - name: "test-profile"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:read"]
 
 pipeline:
@@ -282,7 +282,7 @@ func TestProfileStore_Concurrency(t *testing.T) {
 	validYAML := `organization:
   profiles:
     - name: "test-profile"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:read"]
 `
 
@@ -330,14 +330,14 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 	yaml1 := `organization:
   profiles:
     - name: "profile-v1"
-      repositories: ["acme/v1"]
+      repositories: ["v1"]
       permissions: ["contents:read"]
 `
 
 	yaml2 := `organization:
   profiles:
     - name: "profile-v2"
-      repositories: ["acme/v2"]
+      repositories: ["v2"]
       permissions: ["contents:write"]
 `
 
@@ -357,7 +357,7 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 
 	profile1, err := store.GetOrganizationProfile("profile-v1")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/v1"}, profile1.Attrs.Repositories)
+	assert.Equal(t, []string{"v1"}, profile1.Attrs.Repositories)
 
 	// Update with second version
 	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh)
@@ -371,14 +371,14 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 	// New profile should be accessible
 	profile2, err := store.GetOrganizationProfile("profile-v2")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/v2"}, profile2.Attrs.Repositories)
+	assert.Equal(t, []string{"v2"}, profile2.Attrs.Repositories)
 }
 
 func TestProfileStore_Update_NoChange(t *testing.T) {
 	yaml1 := `organization:
   profiles:
     - name: "profile-v1"
-      repositories: ["acme/v1"]
+      repositories: ["v1"]
       permissions: ["contents:read"]
 `
 
@@ -402,7 +402,7 @@ func TestProfileStore_Update_NoChange(t *testing.T) {
 	// Verify profile is still accessible
 	profile, err := store.GetOrganizationProfile("profile-v1")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/v1"}, profile.Attrs.Repositories)
+	assert.Equal(t, []string{"v1"}, profile.Attrs.Repositories)
 }
 
 func TestFetchOrganizationProfile_InvalidYAML(t *testing.T) {
@@ -424,14 +424,14 @@ func TestLoad_EndToEnd(t *testing.T) {
       match:
         - claim: pipeline_slug
           value: "silk-prod"
-      repositories: ["acme/silk"]
+      repositories: ["silk"]
       permissions: ["contents:write"]
 
     - name: "staging-profile"
       match:
         - claim: pipeline_slug
           valuePattern: ".*-staging"
-      repositories: ["acme/silk", "acme/cotton"]
+      repositories: ["silk", "cotton"]
       permissions: ["contents:read"]
 
 pipeline:
@@ -455,7 +455,7 @@ pipeline:
 	// Verify prod profile
 	prodProfile, err := profiles.GetOrgProfile("prod-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/silk"}, prodProfile.Attrs.Repositories)
+	assert.Equal(t, []string{"silk"}, prodProfile.Attrs.Repositories)
 	assert.Equal(t, []string{"contents:write"}, prodProfile.Attrs.Permissions)
 
 	// Test prod profile matching
@@ -466,7 +466,7 @@ pipeline:
 	// Verify staging profile
 	stagingProfile, err := profiles.GetOrgProfile("staging-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"acme/silk", "acme/cotton"}, stagingProfile.Attrs.Repositories)
+	assert.Equal(t, []string{"silk", "cotton"}, stagingProfile.Attrs.Repositories)
 
 	// Test staging profile matching with regex
 	claims = mapClaimLookup{"pipeline_slug": "silk-staging"}
