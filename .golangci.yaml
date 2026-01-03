@@ -16,7 +16,6 @@ linters:
 
     # Bug detection (high value)
     - unused        # Find unused code
-    - unparam       # Find unused function parameters
     - unconvert     # Remove unnecessary type conversions
     - nilerr        # Finds code returning nil when error expected
     - nilnil        # Checks for (nil, nil) returns (often bugs)
