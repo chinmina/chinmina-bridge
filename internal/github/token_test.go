@@ -376,6 +376,68 @@ func TestGetRepoNames_Fails(t *testing.T) {
 	}
 }
 
+func TestValidateScope(t *testing.T) {
+	tests := []struct {
+		name        string
+		scope       string
+		expectError bool
+		errorText   string
+	}{
+		{
+			name:        "valid scope with read",
+			scope:       "contents:read",
+			expectError: false,
+		},
+		{
+			name:        "valid scope with write",
+			scope:       "issues:write",
+			expectError: false,
+		},
+		{
+			name:        "missing colon",
+			scope:       "contents",
+			expectError: true,
+			errorText:   "malformed scope",
+		},
+		{
+			name:        "empty string",
+			scope:       "",
+			expectError: true,
+			errorText:   "malformed scope",
+		},
+		{
+			name:        "invalid field",
+			scope:       "invalid_field:read",
+			expectError: true,
+			errorText:   "invalid permission field",
+		},
+		{
+			name:        "invalid action",
+			scope:       "contents:admin",
+			expectError: true,
+			errorText:   "invalid permission action",
+		},
+		{
+			name:        "empty action",
+			scope:       "contents:",
+			expectError: true,
+			errorText:   "invalid permission action",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := github.ValidateScope(tt.scope)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorText)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func JSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	res, _ := json.Marshal(payload)

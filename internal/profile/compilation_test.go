@@ -811,3 +811,186 @@ func TestCompilePipelineProfiles_InvalidMatchRule(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
 }
+
+func TestCompile_OrganizationProfile_InvalidPermissions(t *testing.T) {
+	yamlContent := `
+organization:
+  profiles:
+    - name: invalid-permission-format
+      repositories:
+        - acme/repo
+      permissions:
+        - "contents"  # Missing colon
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+    - name: invalid-permission-field
+      repositories:
+        - acme/repo
+      permissions:
+        - "invalid_field:read"  # Field doesn't exist
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+    - name: invalid-permission-action
+      repositories:
+        - acme/repo
+      permissions:
+        - "contents:admin"  # Invalid action
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+    - name: valid-profile
+      repositories:
+        - acme/repo
+      permissions:
+        - "contents:read"
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+pipeline:
+  defaults:
+    permissions:
+      - "contents:read"
+`
+
+	config, digest, err := parse(yamlContent)
+	require.NoError(t, err)
+
+	profiles, err := compile(config, digest, "local")
+	require.NoError(t, err)
+
+	result := profiles.orgProfiles
+
+	// All invalid profiles should be marked as invalid
+	assert.Equal(t, 1, result.ProfileCount())       // Only valid-profile
+	assert.Equal(t, 3, result.InvalidProfileCount()) // Three invalid profiles
+
+	// Valid profile should be accessible
+	validProfile, err := result.Get("valid-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, validProfile.Attrs.Permissions)
+
+	// Invalid profiles should not be accessible
+	_, err = result.Get("invalid-permission-format")
+	assert.Error(t, err)
+
+	_, err = result.Get("invalid-permission-field")
+	assert.Error(t, err)
+
+	_, err = result.Get("invalid-permission-action")
+	assert.Error(t, err)
+}
+
+func TestCompile_PipelineProfile_InvalidPermissions(t *testing.T) {
+	yamlContent := `
+organization:
+  profiles:
+    - name: org-profile
+      repositories:
+        - acme/repo
+      permissions:
+        - "contents:read"
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+pipeline:
+  defaults:
+    permissions:
+      - "contents:read"
+
+  profiles:
+    - name: invalid-permission-format
+      permissions:
+        - "issues"  # Missing colon
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+    - name: invalid-permission-field
+      permissions:
+        - "nonexistent:write"  # Field doesn't exist
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+    - name: invalid-permission-action
+      permissions:
+        - "pull_requests:delete"  # Invalid action
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+    - name: valid-profile
+      permissions:
+        - "issues:write"
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+`
+
+	config, digest, err := parse(yamlContent)
+	require.NoError(t, err)
+
+	profiles, err := compile(config, digest, "local")
+	require.NoError(t, err)
+
+	result := profiles.pipelineProfiles
+
+	// All invalid profiles should be marked as invalid
+	assert.Equal(t, 2, result.ProfileCount())       // valid-profile + default
+	assert.Equal(t, 3, result.InvalidProfileCount()) // Three invalid profiles
+
+	// Valid profile should be accessible
+	validProfile, err := result.Get("valid-profile")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"issues:write"}, validProfile.Attrs.Permissions)
+
+	// Default profile should still exist
+	defaultProfile, err := result.Get("default")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+
+	// Invalid profiles should not be accessible
+	_, err = result.Get("invalid-permission-format")
+	assert.Error(t, err)
+
+	_, err = result.Get("invalid-permission-field")
+	assert.Error(t, err)
+
+	_, err = result.Get("invalid-permission-action")
+	assert.Error(t, err)
+}
+
+func TestCompile_InvalidDefaultPermissions(t *testing.T) {
+	yamlContent := `
+organization:
+  profiles:
+    - name: org-profile
+      repositories:
+        - acme/repo
+      permissions:
+        - "contents:read"
+      match:
+        - claim: pipeline_slug
+          value: test-pipeline
+
+pipeline:
+  defaults:
+    permissions:
+      - "invalid_field:read"  # Invalid field in defaults
+`
+
+	config, digest, err := parse(yamlContent)
+	require.NoError(t, err)
+
+	_, err = compile(config, digest, "local")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid default permissions")
+	assert.Contains(t, err.Error(), "invalid permission field")
+}
