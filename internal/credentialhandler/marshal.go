@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -71,7 +72,9 @@ func WriteProperties(props *ArrayMap, w io.Writer) error {
 	b.WriteByte('\n')
 
 	// write after serialization, to avoid partial output
-	b.WriteTo(w)
+	if _, err := b.WriteTo(w); err != nil {
+		return fmt.Errorf("failed to write properties: %w", err)
+	}
 
 	return nil
 }
