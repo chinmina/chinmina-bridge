@@ -1,0 +1,104 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  go: "1.22"
+
+linters:
+  enable:
+    # Core static analysis (essential)
+    - govet         # Standard Go vet checks
+    - staticcheck   # Comprehensive static analysis
+    - errcheck      # Check error returns
+    - ineffassign   # Detect ineffectual assignments
+    - modernize     # Suggest modern Go constructs
+
+    # Bug detection (high value)
+    - unused        # Find unused code
+    - unparam       # Find unused function parameters
+    - unconvert     # Remove unnecessary type conversions
+    - nilerr        # Finds code returning nil when error expected
+    - nilnil        # Checks for (nil, nil) returns (often bugs)
+    - bodyclose     # HTTP response body must be closed
+    - noctx         # HTTP requests should use context
+    - wastedassign  # Find wasted assignments
+
+    # Code quality & modernization
+    - gocyclo       # Cyclomatic complexity
+    - misspell      # Fix typos
+    - prealloc      # Suggest slice preallocations
+    - revive        # Flexible linting framework
+
+    # Additional useful checks
+    - gocritic      # Comprehensive diagnostics
+    - gosec         # Security issues (some noise, but valuable)
+
+  disable:
+    - depguard      # Dependency restrictions (too project-specific)
+    - dupl          # Code duplication (too noisy)
+
+  settings:
+    staticcheck:
+      checks: ["all", "-ST1000"]  # Disable package comment requirement
+
+    govet:
+      enable-all: true
+      disable:
+        - shadow         # Variable shadowing can be intentional
+        - fieldalignment # Struct field ordering for memory savings - not worth readability cost
+
+    revive:
+      rules:
+        - name: unexported-return
+          disabled: true  # Allow unexported types in returns
+
+    gocyclo:
+      min-complexity: 15
+
+    errcheck:
+      exclude-functions:
+        - (*testing.T).Error
+        - (*testing.T).Fatal
+        - (*testing.T).Fatalf
+        - (*testing.T).Log
+        - (*testing.T).Logf
+        - (*testing.T).Errorf
+
+    gocritic:
+      enabled-checks:
+        # Diagnostic checks (bug detection)
+        - nilValReturn
+        - octalLiteral
+        - weakCond
+        # Performance checks
+        - appendCombine
+        - hugeParam
+        - rangeValCopy
+      disabled-checks:
+        - ifElseChain      # Stylistic, not bugs
+        - singleCaseSwitch # Sometimes clearer
+
+    gosec:
+      excludes:
+        - G104  # Duplicate of errcheck
+        - G307  # Defer file.Close() without checking error (too noisy)
+
+  exclusions:
+    rules:
+      # Reduce noise in tests
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - gosec
+          - gocritic
+
+      # Allow dynamic errors in certain contexts
+      - text: "G204"  # Subprocess with variable (command injection)
+        linters:
+          - gosec
+        path: _test\.go
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

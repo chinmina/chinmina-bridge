@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: read # used for golangci-lint with 'only-new-issues' option
 
 jobs:
   build:
@@ -27,3 +30,16 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  golangci:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version-file: .tool-versions
