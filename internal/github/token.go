@@ -212,11 +212,7 @@ func GetRepoNames(repositoryURLs []string) ([]string, error) {
 }
 
 var getPermissionsMapper = sync.OnceValue(func() *FieldMapper[github.InstallationPermissions] {
-	mapper, err := NewFieldMapper[github.InstallationPermissions]()
-	if err != nil {
-		panic(fmt.Sprintf("failed to create permissions mapper: %v", err))
-	}
-	return mapper
+	return MustFieldMapper[github.InstallationPermissions]()
 })
 
 var validPermissionActions = []string{"read", "write"}
@@ -244,7 +240,9 @@ func ValidateScope(scope string) error {
 }
 
 // scopesToPermissions converts validated scopes to InstallationPermissions.
-// It assumes all scopes have already been validated and are in the correct format.
+// ValidateScope should be called on each scope before calling this function to
+// improve error reporting. If validated, errors from this function are
+// unlikely.
 func scopesToPermissions(scopes []string) (*github.InstallationPermissions, error) {
 	mapper := getPermissionsMapper()
 	permissions, err := mapper.SetAll(scopes)

@@ -67,6 +67,17 @@ func NewFieldMapper[T any]() (*FieldMapper[T], error) {
 	return &FieldMapper[T]{fields: fields}, nil
 }
 
+// MustFieldMapper is like NewFieldMapper but panics if there is an error. Since
+// types don't change at runtime, this is the generally recommended way to
+// create a FieldMapper so long as it's exercised in unit tests.
+func MustFieldMapper[T any]() *FieldMapper[T] {
+	fm, err := NewFieldMapper[T]()
+	if err != nil {
+		panic(fmt.Errorf("could not create field mapper: %w", err))
+	}
+	return fm
+}
+
 // Has returns true if the field exists in T.
 func (fm *FieldMapper[T]) Has(field string) bool {
 	_, ok := fm.fields[field]
