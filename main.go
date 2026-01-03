@@ -110,7 +110,7 @@ func launchServer() error {
 		return fmt.Errorf("telemetry bootstrap failed: %w", err)
 	}
 
-	http.DefaultTransport = observe.HttpTransport(
+	http.DefaultTransport = observe.HTTPTransport(
 		configureHttpTransport(cfg.Server),
 		cfg.Observe,
 	)

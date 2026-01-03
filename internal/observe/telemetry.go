@@ -84,7 +84,7 @@ func Configure(ctx context.Context, cfg config.ObserveConfig) (shutdown func(con
 	return
 }
 
-func HttpTransport(wrapped http.RoundTripper, cfg config.ObserveConfig) http.RoundTripper {
+func HTTPTransport(wrapped http.RoundTripper, cfg config.ObserveConfig) http.RoundTripper {
 	if !cfg.Enabled || !cfg.HTTPTransportEnabled {
 		return wrapped
 	}
