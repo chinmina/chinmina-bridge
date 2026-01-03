@@ -166,7 +166,7 @@ func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 	m.Set("path", "org/repo")
 
 	body := &bytes.Buffer{}
-	credentialhandler.WriteProperties(m, body)
+	require.NoError(t, credentialhandler.WriteProperties(m, body))
 	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", body)
 	require.NoError(t, err)
 	rr := httptest.NewRecorder()
@@ -196,7 +196,7 @@ func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
 	m.Set("path", "org/repo")
 
 	body := &bytes.Buffer{}
-	credentialhandler.WriteProperties(m, body)
+	require.NoError(t, credentialhandler.WriteProperties(m, body))
 	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", body)
 	require.NoError(t, err)
 	rr := httptest.NewRecorder()
@@ -246,7 +246,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnReadFailure(t *testing.T) {
 	m.Set("path", "org/repo")
 
 	body := &bytes.Buffer{}
-	credentialhandler.WriteProperties(m, body)
+	require.NoError(t, credentialhandler.WriteProperties(m, body))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", body)
 	require.NoError(t, err)
@@ -276,7 +276,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnVendorFailure(t *testing.T) {
 	m.Set("path", "org/repo")
 
 	body := &bytes.Buffer{}
-	credentialhandler.WriteProperties(m, body)
+	require.NoError(t, credentialhandler.WriteProperties(m, body))
 	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", body)
 	require.NoError(t, err)
 	rr := httptest.NewRecorder()
@@ -322,7 +322,7 @@ func TestHandlePostGitCredentialsWithRepoProfile_ReturnsTokenOnSuccess(t *testin
 			m.Set("path", "org/repo")
 
 			body := &bytes.Buffer{}
-			credentialhandler.WriteProperties(m, body)
+			require.NoError(t, credentialhandler.WriteProperties(m, body))
 			req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials/"+tc.profileParam, body)
 			require.NoError(t, err)
 
@@ -385,7 +385,7 @@ func TestHandlePostGitCredentialsWithProfile_ReturnsTokenOnSuccess(t *testing.T)
 	m.Set("path", "org/repo")
 
 	body := &bytes.Buffer{}
-	credentialhandler.WriteProperties(m, body)
+	require.NoError(t, credentialhandler.WriteProperties(m, body))
 	req, err := http.NewRequestWithContext(ctx, "POST", "/organization/git-credentials/test-profile", body)
 	require.NoError(t, err)
 
