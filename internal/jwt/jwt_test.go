@@ -180,8 +180,8 @@ func custom(org, pipeline string) BuildkiteClaims {
 		BuildBranch: "default-buildbranch",
 		BuildCommit: "default-buildcommit",
 		StepKey:     "default-stepkey",
-		JobId:       "default-jobid",
-		AgentId:     "default-agentid",
+		JobID:       "default-jobid",
+		AgentID:     "default-agentid",
 	}
 
 	claims.OrganizationSlug = org

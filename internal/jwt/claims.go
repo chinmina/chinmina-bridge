@@ -78,8 +78,8 @@ type BuildkiteClaims struct {
 	BuildTag         string            `json:"build_tag"`
 	BuildCommit      string            `json:"build_commit"`
 	StepKey          string            `json:"step_key"`
-	JobId            string            `json:"job_id"`
-	AgentId          string            `json:"agent_id"`
+	JobID            string            `json:"job_id"`
+	AgentID          string            `json:"agent_id"`
 	ClusterID        string            `json:"cluster_id"`
 	ClusterName      string            `json:"cluster_name"`
 	QueueID          string            `json:"queue_id"`
@@ -101,8 +101,8 @@ func (c *BuildkiteClaims) Validate(ctx context.Context) error {
 		{"build_branch", c.BuildBranch},
 		{"build_commit", c.BuildCommit},
 		// step_key may be nil
-		{"job_id", c.JobId},
-		{"agent_id", c.AgentId},
+		{"job_id", c.JobID},
+		{"agent_id", c.AgentID},
 	}
 
 	missing := []string{}
@@ -185,9 +185,9 @@ func (c *BuildkiteClaims) setClaimField(key string, value any) error {
 	case "step_key":
 		err = setField(&c.StepKey, value)
 	case "job_id":
-		err = setField(&c.JobId, value)
+		err = setField(&c.JobID, value)
 	case "agent_id":
-		err = setField(&c.AgentId, value)
+		err = setField(&c.AgentID, value)
 	case "cluster_id":
 		err = setField(&c.ClusterID, value)
 	case "cluster_name":
