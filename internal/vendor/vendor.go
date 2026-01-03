@@ -100,10 +100,10 @@ func (vr VendorResult) Token() (ProfileToken, bool) {
 	return ProfileToken{}, false
 }
 
-var sshUrl = regexp.MustCompile(`^git@github\.com:([^/].+)$`)
+var sshURL = regexp.MustCompile(`^git@github\.com:([^/].+)$`)
 
 func TranslateSSHToHTTPS(url string) string {
-	groups := sshUrl.FindStringSubmatch(url)
+	groups := sshURL.FindStringSubmatch(url)
 	if groups == nil {
 		return url
 	}

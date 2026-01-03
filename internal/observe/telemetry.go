@@ -92,7 +92,7 @@ func HTTPTransport(wrapped http.RoundTripper, cfg config.ObserveConfig) http.Rou
 	var clientTraceOptionFunc func(context.Context) *httptrace.ClientTrace
 
 	if cfg.HTTPConnectionTraceEnabled {
-		clientTraceOptionFunc = clientHttpTrace
+		clientTraceOptionFunc = clientHTTPTrace
 	}
 
 	return otelhttp.NewTransport(
@@ -101,7 +101,7 @@ func HTTPTransport(wrapped http.RoundTripper, cfg config.ObserveConfig) http.Rou
 	)
 }
 
-func clientHttpTrace(ctx context.Context) *httptrace.ClientTrace {
+func clientHTTPTrace(ctx context.Context) *httptrace.ClientTrace {
 	return otelhttptrace.NewClientTrace(
 		ctx,
 		otelhttptrace.WithoutSubSpans(),

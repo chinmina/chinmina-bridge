@@ -111,7 +111,7 @@ func launchServer() error {
 	}
 
 	http.DefaultTransport = observe.HTTPTransport(
-		configureHttpTransport(cfg.Server),
+		configureHTTPTransport(cfg.Server),
 		cfg.Observe,
 	)
 	http.DefaultClient = &http.Client{
@@ -202,7 +202,7 @@ func logBuildInfo() {
 	ev.Msg("build information")
 }
 
-func configureHttpTransport(cfg config.ServerConfig) *http.Transport {
+func configureHTTPTransport(cfg config.ServerConfig) *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 
 	transport.MaxIdleConns = cfg.OutgoingHTTPMaxIdleConns
