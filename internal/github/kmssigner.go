@@ -123,7 +123,7 @@ func (k KMSSigningMethod) Sign(signingString string, key any) (string, error) {
 	return encodedSig, nil
 }
 
-func (k KMSSigningMethod) Verify(signingString string, signature string, key interface{}) error {
+func (k KMSSigningMethod) Verify(signingString string, signature string, key any) error {
 	// Not implemented as we are only signing JWTs for GitHub access, not
 	// verifying them
 	return errors.New("not implemented")
