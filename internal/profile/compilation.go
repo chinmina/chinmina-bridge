@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -34,6 +35,12 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 		if len(prof.Permissions) == 0 {
 			err := fmt.Errorf("permissions list must be non-empty")
 			invalidProfiles[prof.Name] = err
+			continue
+		}
+
+		// Validate permissions format
+		if err := validatePermissions(prof.Permissions); err != nil {
+			invalidProfiles[prof.Name] = fmt.Errorf("invalid permissions: %w", err)
 			continue
 		}
 
@@ -110,6 +117,12 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 			continue
 		}
 
+		// Validate permissions format
+		if err := validatePermissions(prof.Permissions); err != nil {
+			invalidProfiles[prof.Name] = fmt.Errorf("invalid permissions: %w", err)
+			continue
+		}
+
 		// Compile match rules (empty rules are allowed)
 		matcher, err := compileMatchRules(prof.Match)
 		if err != nil {
@@ -163,7 +176,8 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 // compile transforms profileConfig into runtime Profiles.
 // Invalid profiles are tracked in ProfileStoreOf's invalidProfiles map.
 // The digest is passed through to the returned Profiles.
-func compile(config profileConfig, digest string, location string) Profiles {
+// Returns an error if the default pipeline permissions are invalid.
+func compile(config profileConfig, digest string, location string) (Profiles, error) {
 	// Compile organization profiles
 	orgProfiles := compileOrganizationProfiles(config.Organization.Profiles)
 
@@ -173,11 +187,28 @@ func compile(config profileConfig, digest string, location string) Profiles {
 		pipelineDefaults = []string{"contents:read"}
 	}
 
+	// Validate pipeline default permissions
+	if err := validatePermissions(pipelineDefaults); err != nil {
+		return Profiles{}, fmt.Errorf("invalid default permissions for pipeline profiles: %w", err)
+	}
+
 	// Compile pipeline profiles
 	pipelineProfiles := compilePipelineProfiles(config.Pipeline.Profiles, pipelineDefaults)
 
 	// Create and return Profiles
-	return NewProfiles(orgProfiles, pipelineProfiles, digest, location)
+	return NewProfiles(orgProfiles, pipelineProfiles, digest, location), nil
+}
+
+// validatePermissions validates an array of permissions in "field:value" format.
+// Returns a combined error containing all validation failures, or nil if all are valid.
+func validatePermissions(permissions []string) error {
+	var errs []error
+	for _, perm := range permissions {
+		if err := github.ValidateScope(perm); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // duplicateNameValidator creates a validator function that checks for duplicate profile names.

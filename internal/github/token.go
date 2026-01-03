@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
@@ -16,8 +16,6 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-github/v80/github"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 )
 
 type Client struct {
@@ -127,7 +125,7 @@ func (c Client) GetFileContent(ctx context.Context, owner string, repo string, p
 }
 
 func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
-	tokenPermissions, err := ScopesToPermissions(scopes)
+	tokenPermissions, err := scopesToPermissions(scopes)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -143,6 +141,7 @@ func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scope
 	}
 
 	log.Info().Int("limit", r.Rate.Limit).Int("remaining", r.Rate.Remaining).Msg("github token API rate")
+
 	return tok.GetToken(), tok.GetExpiresAt().Time, nil
 }
 
@@ -212,69 +211,45 @@ func GetRepoNames(repositoryURLs []string) ([]string, error) {
 	return repoNames, nil
 }
 
-func ScopesToPermissions(scopes []string) (*github.InstallationPermissions, error) {
-	validScopes := 0
-	validPermissionActions := []string{"read", "write"}
+var getPermissionsMapper = sync.OnceValue(func() *FieldMapper[github.InstallationPermissions] {
+	mapper, err := NewFieldMapper[github.InstallationPermissions]()
+	if err != nil {
+		panic(fmt.Sprintf("failed to create permissions mapper: %v", err))
+	}
+	return mapper
+})
 
-	permissions := &github.InstallationPermissions{}
-	permissionsValue := reflect.ValueOf(permissions).Elem()
+var validPermissionActions = []string{"read", "write"}
 
-	for _, scope := range scopes {
-		parts := strings.Split(scope, ":")
-		if len(parts) != 2 {
-			log.Warn().
-				Str("scope", scope).
-				Msg("malformed scope detected, skipping permission")
-			continue
-		}
-
-		// Snake case is how fields are represented in the struct, so this ensures the first part of the scope matches
-		key := snakeToPascalCase(parts[0])
-		action := parts[1]
-		field := permissionsValue.FieldByName(key)
-
-		isValidAspect := true
-		isValidAction := true
-		// Check if the scope includes a field in the InstallationPermissions struct
-		if !field.IsValid() {
-			isValidAspect = false
-			log.Warn().
-				Str("field", field.String()).
-				Msg("invalid permission aspect detected, skipping permission")
-		}
-
-		// Check if the scope's action includes one of the valid permission actions
-		if !slices.Contains(validPermissionActions, action) {
-			isValidAction = false
-			log.Warn().
-				Str("permission", action).
-				Msg("invalid permission action detected, skipping permission")
-		}
-
-		// If both are valid the scope is valid, so set this permission
-		if isValidAspect && isValidAction {
-			field.Set(reflect.ValueOf(github.String(action)))
-			validScopes++
-		}
+// ValidateScope validates a colon-separated scope string in the format "field:action".
+// It checks that the field exists in InstallationPermissions and that the action is
+// one of the allowed values ("read" or "write").
+// Returns an error if the scope is malformed or contains invalid field or action values.
+func ValidateScope(scope string) error {
+	field, action, hasAction := strings.Cut(scope, ":")
+	if !hasAction {
+		return fmt.Errorf("malformed scope %q: expected format \"field:action\"", scope)
 	}
 
-	if validScopes == 0 {
-		return permissions, errors.New("no valid permissions found")
+	mapper := getPermissionsMapper()
+	if !mapper.Has(field) {
+		return fmt.Errorf("invalid permission field %q", field)
 	}
 
-	return permissions, nil
+	if !slices.Contains(validPermissionActions, action) {
+		return fmt.Errorf("invalid permission action %q: must be one of %v", action, validPermissionActions)
+	}
+
+	return nil
 }
 
-func snakeToPascalCase(input string) string {
-	c := cases.Title(language.English)
-
-	parts := strings.Split(input, "_")
-	var result string
-
-	// Capitalises the first letter of each substring and append to the result
-	for _, part := range parts {
-		result += c.String(part)
+// scopesToPermissions converts validated scopes to InstallationPermissions.
+// It assumes all scopes have already been validated and are in the correct format.
+func scopesToPermissions(scopes []string) (*github.InstallationPermissions, error) {
+	mapper := getPermissionsMapper()
+	permissions, err := mapper.SetAll(scopes)
+	if err != nil {
+		return &github.InstallationPermissions{}, fmt.Errorf("failed to set permissions: %w", err)
 	}
-
-	return result
+	return &permissions, nil
 }

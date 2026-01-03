@@ -103,7 +103,10 @@ func load(ctx context.Context, gh GitHubClient, orgProfileLocation string) (Prof
 		return Profiles{}, err
 	}
 
-	profiles := compile(config, digest, orgProfileLocation)
+	profiles, err := compile(config, digest, orgProfileLocation)
+	if err != nil {
+		return Profiles{}, err
+	}
 
 	return profiles, nil
 }
