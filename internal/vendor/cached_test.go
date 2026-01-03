@@ -421,7 +421,7 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		c := calls[callIndex]
 		callIndex++
 
-		switch v := any(c).(type) {
+		switch v := c.(type) {
 		case nil:
 			// unmatched return
 			return vendor.NewVendorUnmatched()
