@@ -61,7 +61,7 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile
 			return
 		}
 
-		// write the reponse to the client as JSON, supplying the token and URL
+		// write the response to the client as JSON, supplying the token and URL
 		// of the repository it's vended for.
 		marshalledResponse, err := json.Marshal(tokenResponse)
 		if err != nil {
@@ -122,7 +122,7 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, expectedTyp
 			return
 		}
 
-		// write the reponse to the client in git credentials property format
+		// write the response to the client in git credentials property format
 		tokenURL, err := tokenResponse.URL()
 		if err != nil {
 			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("invalid repo URL: %w", err))
