@@ -151,7 +151,7 @@ func handleHealthCheck() http.Handler {
 
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 }
 
@@ -213,7 +213,7 @@ func drainRequestBody(r *http.Request) {
 	if r.Body != nil {
 		// 5kb max: after this we'll assume the client is broken or malicious
 		// and close the connection
-		io.CopyN(io.Discard, r.Body, 5*1024*1024)
+		_, _ = io.CopyN(io.Discard, r.Body, 5*1024*1024)
 	}
 }
 
