@@ -23,8 +23,8 @@ func New(cfg config.BuildkiteConfig) (p PipelineLookup, err error) {
 	}
 	p.token = cfg.Token
 
-	if cfg.ApiURL != "" {
-		u, perr := url.Parse(cfg.ApiURL)
+	if cfg.APIURL != "" {
+		u, perr := url.Parse(cfg.APIURL)
 		if perr != nil {
 			err = fmt.Errorf("could not parse Buildkite API URL: %w", perr)
 			return

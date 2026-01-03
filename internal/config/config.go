@@ -31,12 +31,12 @@ type AuthorizationConfig struct {
 }
 
 type BuildkiteConfig struct {
-	ApiURL string // internal only
+	APIURL string // internal only
 	Token  string `env:"BUILDKITE_API_TOKEN, required"`
 }
 
 type GithubConfig struct {
-	ApiURL string // internal only
+	APIURL string // internal only
 
 	PrivateKey    string `env:"GITHUB_APP_PRIVATE_KEY"`
 	PrivateKeyARN string `env:"GITHUB_APP_PRIVATE_KEY_ARN"`
