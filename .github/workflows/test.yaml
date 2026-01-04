@@ -1,4 +1,4 @@
-name: Test and coverage
+name: verification
 
 on:
   push:
@@ -13,6 +13,17 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        type: # define the types that will run
+          - unit
+          - integration
+        include: # add additional parameters for each type, keeps the matrix naming clean
+          - type: unit
+            arguments: ""
+          - type: integration
+            arguments: -tags=integration -run="^TestIntegration"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -22,13 +33,14 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: Run coverage
-        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic
+      - name: Run ${{ matrix.type }} tests
+        run: go test ${{ matrix.arguments }} -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          flags: ${{ matrix.type }}
 
   golangci:
     name: lint

@@ -22,12 +22,20 @@ make docker-down        # Stop docker-compose
 ### Testing
 
 ```bash
-make test               # Run all tests with coverage
-go test ./...           # Run all tests
+make test               # Run unit tests with coverage
+make integration        # Run integration tests only
+go test ./...           # Run all unit tests
 go test -v -run TestName ./path/to/package    # Run specific test
 go test ./... -race -coverprofile=coverage.out -covermode=atomic    # With race detector
 go tool cover -html=coverage.out    # View coverage report
 ```
+
+**Integration Tests:**
+- Integration tests use the `//go:build integration` build tag
+- All integration test functions must be named with the `TestIntegration` prefix
+- Run integration tests only: `make integration` or `go test -tags=integration -run="^TestIntegration" .`
+- Integration tests use `APITestHarness` which provides real HTTP handlers with mocked external services
+- Located in `api_integration_test.go` alongside unit tests in the same package
 
 ### Dependencies
 

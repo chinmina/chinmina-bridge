@@ -260,9 +260,9 @@ func TestHandlePostGitCredentials_ReturnsFailureOnReadFailure(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	// assert
-	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
 	// important to know that internal details aren't part of the error response
-	assert.Equal(t, "Internal Server Error\n", rr.Body.String())
+	assert.Equal(t, "", rr.Body.String())
 }
 
 func TestHandlePostGitCredentials_ReturnsFailureOnVendorFailure(t *testing.T) {
