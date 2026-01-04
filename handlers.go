@@ -92,7 +92,7 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, expectedTyp
 
 		requestedRepo, err := credentialhandler.ReadProperties(r.Body)
 		if err != nil {
-			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("read repository properties from client failed: %w", err))
+			writeTextError(r.Context(), w, fmt.Errorf("read repository properties from client failed: %w", err))
 			return
 		}
 
@@ -198,6 +198,12 @@ func errorStatus(err error) (int, string) {
 	if errors.As(err, &statuser) {
 		return statuser.Status()
 	}
+
+	var limitExceeded *http.MaxBytesError
+	if errors.As(err, &limitExceeded) {
+		return http.StatusRequestEntityTooLarge, http.StatusText(http.StatusRequestEntityTooLarge)
+	}
+
 	return http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError)
 }
 

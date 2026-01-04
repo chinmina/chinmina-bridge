@@ -46,7 +46,7 @@ func ReadProperties(r io.Reader) (*ArrayMap, error) {
 	}
 
 	if err := s.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read properties: %w", err)
 	}
 
 	return pairs, nil

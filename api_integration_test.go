@@ -823,9 +823,6 @@ func TestIntegrationRequestSizeLimit_GitCredentials(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	// Note: The current implementation returns 500 (Internal Server Error) when
-	// the request body exceeds the 20KB limit. This happens because
-	// credentialhandler.ReadProperties treats the "request body too large" error
-	// as an internal error. The HTTP standard would be 413 (Request Entity Too Large).
-	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	// entity too large is triggered by the request size middleware
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
 }
