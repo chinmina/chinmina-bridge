@@ -16,6 +16,10 @@ lint: mod
 test: mod
 	go test -cover ./... -covermode=atomic
 
+.PHONY: integration
+integration: mod
+	go test -tags=integration -cover ./... -covermode=atomic
+
 .PHONY: test-ci
 test-ci: mod
 	mkdir artifacts
