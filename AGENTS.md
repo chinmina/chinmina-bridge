@@ -186,6 +186,12 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 
 1. Run the agent make task: `make agent`. this gets dependencies, builds, formats and tests.
 
+## When committing
+
+1. use conventional commit messages, with appropriate prefixes. For example: `feat`, `fix`, `test`, `ci`.
+2. do not separate files in commits to align with a prefix: for example, if a `fix` has test changes, include the test changes in the `fix` commit.
+3. In a commit message, "why" the change is made is important. Add context and reasoning for choices made. "what" has changed is not important: that is shown by the diff.
+
 ## Additional Resources
 
 - Architecture and implementation: https://chinmina.github.io/introduction/
