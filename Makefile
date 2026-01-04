@@ -18,7 +18,7 @@ test: mod
 
 .PHONY: integration
 integration: mod
-	go test -tags=integration -cover ./... -covermode=atomic
+	go test -tags=integration -run="^TestIntegration" -cover ./... -covermode=atomic
 
 .PHONY: test-ci
 test-ci: mod

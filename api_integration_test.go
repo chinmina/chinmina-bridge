@@ -30,7 +30,7 @@ func TestIntegrationSetup(t *testing.T) {
 }
 
 // TestJWTHelpers verifies JWT generation helpers work correctly
-func TestJWTHelpers(t *testing.T) {
+func TestIntegrationJWTHelpers(t *testing.T) {
 	// Generate key pair
 	jwk := testhelpers.GenerateJWK(t)
 	if jwk == nil {
@@ -57,7 +57,7 @@ func TestJWTHelpers(t *testing.T) {
 }
 
 // TestMockServers verifies GitHub and Buildkite mock servers work correctly
-func TestMockServers(t *testing.T) {
+func TestIntegrationMockServers(t *testing.T) {
 	t.Run("GitHub mock server", func(t *testing.T) {
 		mock := testhelpers.SetupMockGitHubServer(t)
 		defer mock.Close()
@@ -190,7 +190,7 @@ func rsaPrivateKeyToPEM(t *testing.T, key *rsa.PrivateKey) string {
 }
 
 // TestAPIHarness verifies the API test harness sets up correctly
-func TestAPIHarness(t *testing.T) {
+func TestIntegrationAPIHarness(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -212,7 +212,7 @@ func TestAPIHarness(t *testing.T) {
 }
 
 // TestHealthCheck verifies the healthcheck endpoint works without authentication
-func TestHealthCheck(t *testing.T) {
+func TestIntegrationHealthCheck(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -232,7 +232,7 @@ func TestHealthCheck(t *testing.T) {
 }
 
 // TestPipelineToken_Success tests successful token vending via /token endpoint
-func TestPipelineToken_Success(t *testing.T) {
+func TestIntegrationPipelineToken_Success(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -301,7 +301,7 @@ func TestPipelineToken_Success(t *testing.T) {
 }
 
 // TestPipelineToken_DefaultProfile tests successful token vending with the default profile
-func TestPipelineToken_DefaultProfile(t *testing.T) {
+func TestIntegrationPipelineToken_DefaultProfile(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -360,7 +360,7 @@ func TestPipelineToken_DefaultProfile(t *testing.T) {
 }
 
 // TestPipelineToken_TokenFields verifies all fields in the token response
-func TestPipelineToken_TokenFields(t *testing.T) {
+func TestIntegrationPipelineToken_TokenFields(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -425,7 +425,7 @@ func TestPipelineToken_TokenFields(t *testing.T) {
 }
 
 // TestPipelineToken_MissingAuth tests 400 response when JWT is missing
-func TestPipelineToken_MissingAuth(t *testing.T) {
+func TestIntegrationPipelineToken_MissingAuth(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -450,7 +450,7 @@ func TestPipelineToken_MissingAuth(t *testing.T) {
 }
 
 // TestPipelineToken_InvalidJWT tests 401 response when JWT is invalid
-func TestPipelineToken_InvalidJWT(t *testing.T) {
+func TestIntegrationPipelineToken_InvalidJWT(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -476,7 +476,7 @@ func TestPipelineToken_InvalidJWT(t *testing.T) {
 }
 
 // TestPipelineToken_ProfileNotFound tests 404 response when profile doesn't exist
-func TestPipelineToken_ProfileNotFound(t *testing.T) {
+func TestIntegrationPipelineToken_ProfileNotFound(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -535,7 +535,7 @@ func TestPipelineToken_ProfileNotFound(t *testing.T) {
 // This scenario is adequately covered by unit tests in handlers_test.go
 
 // TestOrganizationToken_Success tests successful organization token vending
-func TestOrganizationToken_Success(t *testing.T) {
+func TestIntegrationOrganizationToken_Success(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -616,7 +616,7 @@ func TestOrganizationToken_Success(t *testing.T) {
 }
 
 // TestOrganizationToken_ProfileNotFound tests 404 when org profile doesn't exist
-func TestOrganizationToken_ProfileNotFound(t *testing.T) {
+func TestIntegrationOrganizationToken_ProfileNotFound(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -668,7 +668,7 @@ func TestOrganizationToken_ProfileNotFound(t *testing.T) {
 }
 
 // TestOrganizationToken_Unauthorized tests 401 when JWT is invalid
-func TestOrganizationToken_Unauthorized(t *testing.T) {
+func TestIntegrationOrganizationToken_Unauthorized(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -709,7 +709,7 @@ func TestOrganizationToken_Unauthorized(t *testing.T) {
 // Git Credentials Endpoint Tests
 // ============================================================================
 
-func TestPipelineGitCredentials_Success(t *testing.T) {
+func TestIntegrationPipelineGitCredentials_Success(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -799,7 +799,7 @@ func TestPipelineGitCredentials_Success(t *testing.T) {
 	t.Log("Pipeline git-credentials success test verified")
 }
 
-func TestPipelineGitCredentials_ExplicitProfile(t *testing.T) {
+func TestIntegrationPipelineGitCredentials_ExplicitProfile(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -860,7 +860,7 @@ func TestPipelineGitCredentials_ExplicitProfile(t *testing.T) {
 	t.Log("Pipeline git-credentials with explicit profile test verified")
 }
 
-func TestOrganizationGitCredentials_Success(t *testing.T) {
+func TestIntegrationOrganizationGitCredentials_Success(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -937,7 +937,7 @@ func TestOrganizationGitCredentials_Success(t *testing.T) {
 	t.Log("Organization git-credentials success test verified")
 }
 
-func TestPipelineGitCredentials_MissingAuth(t *testing.T) {
+func TestIntegrationPipelineGitCredentials_MissingAuth(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -962,7 +962,7 @@ func TestPipelineGitCredentials_MissingAuth(t *testing.T) {
 	t.Log("Pipeline git-credentials missing auth test verified")
 }
 
-func TestPipelineGitCredentials_InvalidJWT(t *testing.T) {
+func TestIntegrationPipelineGitCredentials_InvalidJWT(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -988,7 +988,7 @@ func TestPipelineGitCredentials_InvalidJWT(t *testing.T) {
 	t.Log("Pipeline git-credentials invalid JWT test verified")
 }
 
-func TestPipelineGitCredentials_ProfileNotFound(t *testing.T) {
+func TestIntegrationPipelineGitCredentials_ProfileNotFound(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
@@ -1036,7 +1036,7 @@ func TestPipelineGitCredentials_ProfileNotFound(t *testing.T) {
 // Request Size Limit Tests
 // ============================================================================
 
-func TestRequestSizeLimit_GitCredentials(t *testing.T) {
+func TestIntegrationRequestSizeLimit_GitCredentials(t *testing.T) {
 	harness := NewAPITestHarness(t)
 	defer harness.Close()
 
