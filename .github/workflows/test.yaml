@@ -19,11 +19,17 @@ jobs:
         type: # define the types that will run
           - unit
           - integration
-        include: # add additional parameters for each type, keeps the matrix naming clean
+          - fuzz
+        include: # add complete make target for each type
           - type: unit
-            arguments: ""
+            make-target: ci-unit
+            upload-coverage: true
           - type: integration
-            arguments: -tags=integration -run="^TestIntegration"
+            make-target: ci-integration
+            upload-coverage: true
+          - type: fuzz
+            make-target: ci-fuzz
+            upload-coverage: false
     steps:
       - uses: actions/checkout@v6
         with:
@@ -34,9 +40,10 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Run ${{ matrix.type }} tests
-        run: go test ${{ matrix.arguments }} -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: make ${{ matrix.make-target }}
 
       - name: Upload coverage to Codecov
+        if: matrix.upload-coverage
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

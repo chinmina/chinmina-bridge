@@ -1,5 +1,9 @@
 .DEFAULT_GOAL := build
 
+# Fuzz test durations
+FUZZING_LOCAL_SECS ?= 30
+FUZZING_CI_SECS ?= 10
+
 .PHONY: mod
 mod:
 	go mod download
@@ -20,11 +24,28 @@ test: mod
 integration: mod
 	go test -tags=integration -run="^TestIntegration" -cover ./... -covermode=atomic
 
-.PHONY: test-ci
-test-ci: mod
-	mkdir artifacts
-	go test ./... -covermode=atomic -coverprofile=artifacts/count.out
-	go tool cover -func=artifacts/count.out | tee artifacts/coverage.out
+.PHONY: fuzz
+fuzz: mod
+	@echo "Fuzzing internal/credentialhandler..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_LOCAL_SECS)s ./internal/credentialhandler
+	@echo "Fuzzing internal/jwt..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_LOCAL_SECS)s ./internal/jwt
+
+# CI targets - output coverage.out for codecov
+.PHONY: ci-unit
+ci-unit: mod
+	go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+.PHONY: ci-integration
+ci-integration: mod
+	go test -tags=integration -run="^TestIntegration" -race -coverprofile=coverage.out -covermode=atomic ./...
+
+.PHONY: ci-fuzz
+ci-fuzz: mod
+	@echo "Fuzzing internal/credentialhandler..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_CI_SECS)s ./internal/credentialhandler
+	@echo "Fuzzing internal/jwt..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_CI_SECS)s ./internal/jwt
 
 dist:
 	mkdir -p dist
