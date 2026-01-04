@@ -8,12 +8,15 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
+	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
@@ -700,4 +703,384 @@ func TestOrganizationToken_Unauthorized(t *testing.T) {
 	}
 
 	t.Log("Organization token unauthorized test verified")
+}
+
+// ============================================================================
+// Git Credentials Endpoint Tests
+// ============================================================================
+
+func TestPipelineGitCredentials_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Setup: Configure mock to return specific repository
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_testtoken123"
+
+	// Create valid JWT with Buildkite claims
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:abc123:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      42,
+		"build_branch":      "main",
+		"build_commit":      "abc123",
+		"step_key":          "build",
+		"job_id":            "job-456",
+		"agent_id":          "agent-789",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Make request with git credential format body
+	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
+	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials", reqBody)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify response
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d. Body: %s", resp.StatusCode, string(body))
+	}
+
+	if resp.Header.Get("Content-Type") != "text/plain" {
+		t.Errorf("expected Content-Type text/plain, got %s", resp.Header.Get("Content-Type"))
+	}
+
+	// Parse git credentials response
+	props, err := credentialhandler.ReadProperties(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to parse git credentials response: %v", err)
+	}
+
+	// Verify credential properties
+	protocol := props.Get("protocol")
+	if protocol != "https" {
+		t.Errorf("expected protocol 'https', got %s", protocol)
+	}
+
+	host := props.Get("host")
+	if host != "github.com" {
+		t.Errorf("expected host 'github.com', got %s", host)
+	}
+
+	path := props.Get("path")
+	if path != "test-org/test-repo" {
+		t.Errorf("expected path 'test-org/test-repo', got %s", path)
+	}
+
+	username := props.Get("username")
+	if username != "x-access-token" {
+		t.Errorf("expected username 'x-access-token', got %s", username)
+	}
+
+	password := props.Get("password")
+	if password != "ghs_testtoken123" {
+		t.Errorf("expected password 'ghs_testtoken123', got %s", password)
+	}
+
+	passwordExpiry := props.Get("password_expiry_utc")
+	if passwordExpiry == "" {
+		t.Errorf("expected password_expiry_utc to be set")
+	}
+
+	t.Log("Pipeline git-credentials success test verified")
+}
+
+func TestPipelineGitCredentials_ExplicitProfile(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Setup: Configure mock to return specific repository
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_testtoken456"
+
+	// Create valid JWT with Buildkite claims
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:abc123:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      42,
+		"build_branch":      "main",
+		"build_commit":      "abc123",
+		"step_key":          "build",
+		"job_id":            "job-456",
+		"agent_id":          "agent-789",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Make request with explicit default profile
+	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
+	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials/default", reqBody)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify response
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d. Body: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse git credentials response
+	props, err := credentialhandler.ReadProperties(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to parse git credentials response: %v", err)
+	}
+
+	// Verify token is correct
+	password := props.Get("password")
+	if password != "ghs_testtoken456" {
+		t.Errorf("expected password 'ghs_testtoken456', got %s", password)
+	}
+
+	t.Log("Pipeline git-credentials with explicit profile test verified")
+}
+
+func TestOrganizationGitCredentials_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Load organization profiles from YAML
+	yamlContent, err := os.ReadFile("testdata/org-profiles-basic.yaml")
+	if err != nil {
+		t.Fatalf("failed to read test profile YAML: %v", err)
+	}
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	if err != nil {
+		t.Fatalf("failed to compile profiles: %v", err)
+	}
+	harness.ProfileStore.Update(profiles)
+
+	// Setup: Configure mock to return token
+	harness.GitHubMock.Token = "ghs_orgtoken789"
+
+	// Create valid JWT with Buildkite claims
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:abc123:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      42,
+		"build_branch":      "main",
+		"build_commit":      "abc123",
+		"step_key":          "build",
+		"job_id":            "job-456",
+		"agent_id":          "agent-789",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Make request for organization profile git credentials
+	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/repo1\n\n")
+	req, err := http.NewRequest("POST", harness.Server.URL+"/organization/git-credentials/test-org-profile", reqBody)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify response
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d. Body: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse git credentials response
+	props, err := credentialhandler.ReadProperties(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to parse git credentials response: %v", err)
+	}
+
+	// Verify token and path
+	password := props.Get("password")
+	if password != "ghs_orgtoken789" {
+		t.Errorf("expected password 'ghs_orgtoken789', got %s", password)
+	}
+
+	path := props.Get("path")
+	if path != "test-org/repo1" {
+		t.Errorf("expected path 'test-org/repo1', got %s", path)
+	}
+
+	t.Log("Organization git-credentials success test verified")
+}
+
+func TestPipelineGitCredentials_MissingAuth(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Make request without Authorization header
+	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
+	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials", reqBody)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify 400 Bad Request
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+
+	t.Log("Pipeline git-credentials missing auth test verified")
+}
+
+func TestPipelineGitCredentials_InvalidJWT(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Make request with invalid JWT
+	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
+	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials", reqBody)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer invalid.jwt.token")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify 401 Unauthorized
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", resp.StatusCode)
+	}
+
+	t.Log("Pipeline git-credentials invalid JWT test verified")
+}
+
+func TestPipelineGitCredentials_ProfileNotFound(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Create valid JWT with Buildkite claims
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:abc123:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      42,
+		"build_branch":      "main",
+		"build_commit":      "abc123",
+		"step_key":          "build",
+		"job_id":            "job-456",
+		"agent_id":          "agent-789",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Make request with non-existent profile
+	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
+	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials/nonexistent", reqBody)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify 404 Not Found
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+
+	t.Log("Pipeline git-credentials profile not found test verified")
+}
+
+// ============================================================================
+// Request Size Limit Tests
+// ============================================================================
+
+func TestRequestSizeLimit_GitCredentials(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Create valid JWT with Buildkite claims
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:abc123:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      42,
+		"build_branch":      "main",
+		"build_commit":      "abc123",
+		"step_key":          "build",
+		"job_id":            "job-456",
+		"agent_id":          "agent-789",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Create oversized request body (larger than 20KB)
+	largeBody := strings.Repeat("x", 21*1024)
+	reqBody := strings.NewReader(largeBody)
+	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials", reqBody)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Note: The current implementation returns 500 (Internal Server Error) when
+	// the request body exceeds the 20KB limit. This happens because
+	// credentialhandler.ReadProperties treats the "request body too large" error
+	// as an internal error. The HTTP standard would be 413 (Request Entity Too Large).
+	if resp.StatusCode != http.StatusInternalServerError {
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("expected status 500, got %d. Body: %s", resp.StatusCode, string(body))
+	}
+
+	t.Log("Request size limit git-credentials test verified")
 }
