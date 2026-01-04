@@ -22,20 +22,19 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestIntegrationSetup verifies the integration test framework is configured correctly
 func TestIntegrationSetup(t *testing.T) {
-	t.Log("Integration test framework initialized successfully")
 }
 
 // TestJWTHelpers verifies JWT generation helpers work correctly
 func TestIntegrationJWTHelpers(t *testing.T) {
 	// Generate key pair
 	jwk := testhelpers.GenerateJWK(t)
-	if jwk == nil {
-		t.Fatal("expected JWK to be generated")
-	}
+	require.NotNil(t, jwk, "expected JWK to be generated")
 
 	// Setup JWKS server
 	jwksServer := testhelpers.SetupJWKSServer(t, jwk)
@@ -49,11 +48,7 @@ func TestIntegrationJWTHelpers(t *testing.T) {
 
 	// Generate JWT
 	token := testhelpers.CreateJWT(t, jwk, jwksServer.URL, claims)
-	if token == "" {
-		t.Fatal("expected token to be generated")
-	}
-
-	t.Log("JWT helpers verified successfully")
+	require.NotEmpty(t, token, "expected token to be generated")
 }
 
 // TestMockServers verifies GitHub and Buildkite mock servers work correctly
@@ -63,16 +58,10 @@ func TestIntegrationMockServers(t *testing.T) {
 		defer mock.Close()
 
 		// Verify server is running
-		if mock.Server.URL == "" {
-			t.Fatal("expected server URL to be set")
-		}
+		require.NotEmpty(t, mock.Server.URL, "expected server URL to be set")
 
 		// Verify default response values
-		if mock.Token != "test-github-token" {
-			t.Errorf("expected default token, got %s", mock.Token)
-		}
-
-		t.Log("GitHub mock server verified")
+		assert.Equal(t, "test-github-token", mock.Token)
 	})
 
 	t.Run("Buildkite mock server", func(t *testing.T) {
@@ -80,16 +69,10 @@ func TestIntegrationMockServers(t *testing.T) {
 		defer mock.Close()
 
 		// Verify server is running
-		if mock.Server.URL == "" {
-			t.Fatal("expected server URL to be set")
-		}
+		require.NotEmpty(t, mock.Server.URL, "expected server URL to be set")
 
 		// Verify default response values
-		if mock.RepositoryURL != "https://github.com/test-org/test-repo" {
-			t.Errorf("expected default repo URL, got %s", mock.RepositoryURL)
-		}
-
-		t.Log("Buildkite mock server verified")
+		assert.Equal(t, "https://github.com/test-org/test-repo", mock.RepositoryURL)
 	})
 }
 
@@ -153,9 +136,7 @@ func NewAPITestHarness(t *testing.T) *APITestHarness {
 	}
 
 	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore)
-	if err != nil {
-		t.Fatalf("failed to configure server routes: %v", err)
-	}
+	require.NoError(t, err)
 
 	harness.Server = httptest.NewServer(handler)
 
@@ -195,20 +176,10 @@ func TestIntegrationAPIHarness(t *testing.T) {
 	defer harness.Close()
 
 	// Verify all components are initialized
-	if harness.Server == nil {
-		t.Fatal("expected API server to be initialized")
-	}
-	if harness.JWKSServer == nil {
-		t.Fatal("expected JWKS server to be initialized")
-	}
-	if harness.GitHubMock == nil {
-		t.Fatal("expected GitHub mock to be initialized")
-	}
-	if harness.BuildkiteMock == nil {
-		t.Fatal("expected Buildkite mock to be initialized")
-	}
-
-	t.Log("API harness verified successfully")
+	require.NotNil(t, harness.Server, "expected API server to be initialized")
+	require.NotNil(t, harness.JWKSServer, "expected JWKS server to be initialized")
+	require.NotNil(t, harness.GitHubMock, "expected GitHub mock to be initialized")
+	require.NotNil(t, harness.BuildkiteMock, "expected Buildkite mock to be initialized")
 }
 
 // TestHealthCheck verifies the healthcheck endpoint works without authentication
@@ -218,17 +189,11 @@ func TestIntegrationHealthCheck(t *testing.T) {
 
 	// Make request to healthcheck endpoint (no auth required)
 	resp, err := http.Get(harness.Server.URL + "/healthcheck")
-	if err != nil {
-		t.Fatalf("failed to make healthcheck request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify response
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	t.Log("Healthcheck endpoint verified")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 // TestPipelineToken_Success tests successful token vending via /token endpoint
@@ -260,44 +225,28 @@ func TestIntegrationPipelineToken_Success(t *testing.T) {
 
 	// Make request
 	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Parse response body (do this first to see error messages)
 	var tokenResponse map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil && resp.StatusCode == http.StatusOK {
-		t.Fatalf("failed to decode response: %v", err)
+		require.NoError(t, err)
 	}
 
 	// Verify response
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d. Response: %v", resp.StatusCode, tokenResponse)
-	}
+	require.Equal(t, http.StatusOK, resp.StatusCode, "Response: %v", tokenResponse)
 
-	if resp.Header.Get("Content-Type") != "application/json" {
-		t.Errorf("expected Content-Type application/json, got %s", resp.Header.Get("Content-Type"))
-	}
+	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
 	// Verify token response structure
-	if tokenResponse["token"] != "ghs_testtoken123" {
-		t.Errorf("expected token 'ghs_testtoken123', got %v", tokenResponse["token"])
-	}
-	if tokenResponse["organizationSlug"] != "test-org" {
-		t.Errorf("expected organizationSlug 'test-org', got %v", tokenResponse["organizationSlug"])
-	}
-	if tokenResponse["profile"] != "repo:default" {
-		t.Errorf("expected profile 'repo:default', got %v", tokenResponse["profile"])
-	}
-
-	t.Log("Pipeline token success test verified")
+	assert.Equal(t, "ghs_testtoken123", tokenResponse["token"])
+	assert.Equal(t, "test-org", tokenResponse["organizationSlug"])
+	assert.Equal(t, "repo:default", tokenResponse["profile"])
 }
 
 // TestPipelineToken_DefaultProfile tests successful token vending with the default profile
@@ -328,35 +277,22 @@ func TestIntegrationPipelineToken_DefaultProfile(t *testing.T) {
 
 	// Make request with explicit default profile parameter
 	req, err := http.NewRequest("POST", harness.Server.URL+"/token/default", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify response
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var tokenResponse map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	err = json.NewDecoder(resp.Body).Decode(&tokenResponse)
+	require.NoError(t, err)
 
-	if tokenResponse["profile"] != "repo:default" {
-		t.Errorf("expected profile 'repo:default', got %v", tokenResponse["profile"])
-	}
-	if tokenResponse["token"] != "ghs_defaulttoken" {
-		t.Errorf("expected token 'ghs_defaulttoken', got %v", tokenResponse["token"])
-	}
-
-	t.Log("Pipeline token with default profile verified")
+	assert.Equal(t, "repo:default", tokenResponse["profile"])
+	assert.Equal(t, "ghs_defaulttoken", tokenResponse["token"])
 }
 
 // TestPipelineToken_TokenFields verifies all fields in the token response
@@ -386,42 +322,25 @@ func TestIntegrationPipelineToken_TokenFields(t *testing.T) {
 
 	// Make request
 	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify response
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var tokenResponse map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	err = json.NewDecoder(resp.Body).Decode(&tokenResponse)
+	require.NoError(t, err)
 
 	// Verify all expected fields are present
-	if tokenResponse["token"] == nil {
-		t.Error("expected token field to be present")
-	}
-	if tokenResponse["expiry"] == nil {
-		t.Error("expected expiry field to be present")
-	}
-	if tokenResponse["organizationSlug"] != "test-org" {
-		t.Errorf("expected organizationSlug 'test-org', got %v", tokenResponse["organizationSlug"])
-	}
-	if tokenResponse["profile"] == nil {
-		t.Error("expected profile field to be present")
-	}
-
-	t.Log("Pipeline token fields verified")
+	assert.NotNil(t, tokenResponse["token"], "expected token field to be present")
+	assert.NotNil(t, tokenResponse["expiry"], "expected expiry field to be present")
+	assert.Equal(t, "test-org", tokenResponse["organizationSlug"])
+	assert.NotNil(t, tokenResponse["profile"], "expected profile field to be present")
 }
 
 // TestPipelineToken_MissingAuth tests 400 response when JWT is missing
@@ -431,22 +350,14 @@ func TestIntegrationPipelineToken_MissingAuth(t *testing.T) {
 
 	// Make request without Authorization header
 	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify 400 Bad Request (missing auth header)
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", resp.StatusCode)
-	}
-
-	t.Log("Pipeline token missing auth test verified")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 // TestPipelineToken_InvalidJWT tests 401 response when JWT is invalid
@@ -456,23 +367,15 @@ func TestIntegrationPipelineToken_InvalidJWT(t *testing.T) {
 
 	// Make request with invalid JWT
 	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer invalid.jwt.token")
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify 401 Unauthorized
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("expected status 401, got %d", resp.StatusCode)
-	}
-
-	t.Log("Pipeline token invalid JWT test verified")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
 // TestPipelineToken_ProfileNotFound tests 404 response when profile doesn't exist
@@ -501,33 +404,22 @@ func TestIntegrationPipelineToken_ProfileNotFound(t *testing.T) {
 
 	// Request non-existent profile
 	req, err := http.NewRequest("POST", harness.Server.URL+"/token/nonexistent", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify 404 Not Found
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected status 404, got %d", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 
 	// Verify JSON error response
 	var errorResponse map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
-		t.Fatalf("failed to decode error response: %v", err)
-	}
+	err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+	require.NoError(t, err)
 
-	if errorResponse["error"] != "profile not found" {
-		t.Errorf("expected error 'profile not found', got %v", errorResponse["error"])
-	}
-
-	t.Log("Pipeline token profile not found test verified")
+	assert.Equal(t, "profile not found", errorResponse["error"])
 }
 
 // Note: 403 Forbidden testing requires custom profiles with match conditions.
@@ -541,14 +433,10 @@ func TestIntegrationOrganizationToken_Success(t *testing.T) {
 
 	// Load organization profiles from YAML (tests full parse/compile pipeline)
 	yamlContent, err := os.ReadFile("testdata/org-profiles-basic.yaml")
-	if err != nil {
-		t.Fatalf("failed to read test profile YAML: %v", err)
-	}
+	require.NoError(t, err)
 
 	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
-	if err != nil {
-		t.Fatalf("failed to compile profiles: %v", err)
-	}
+	require.NoError(t, err)
 	harness.ProfileStore.Update(profiles)
 
 	harness.GitHubMock.Token = "ghs_orgtoken123"
@@ -572,47 +460,28 @@ func TestIntegrationOrganizationToken_Success(t *testing.T) {
 
 	// Request organization token
 	req, err := http.NewRequest("POST", harness.Server.URL+"/organization/token/test-org-profile", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify response
-	if resp.StatusCode != http.StatusOK {
-		body := make([]byte, 1024)
-		n, _ := resp.Body.Read(body)
-		t.Fatalf("expected status 200, got %d. Response: %s", resp.StatusCode, string(body[:n]))
-	}
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var tokenResponse map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	err = json.NewDecoder(resp.Body).Decode(&tokenResponse)
+	require.NoError(t, err)
 
 	// Verify token response
-	if tokenResponse["token"] != "ghs_orgtoken123" {
-		t.Errorf("expected token 'ghs_orgtoken123', got %v", tokenResponse["token"])
-	}
-	if tokenResponse["organizationSlug"] != "test-org" {
-		t.Errorf("expected organizationSlug 'test-org', got %v", tokenResponse["organizationSlug"])
-	}
-	if tokenResponse["profile"] != "org:test-org-profile" {
-		t.Errorf("expected profile 'org:test-org-profile', got %v", tokenResponse["profile"])
-	}
+	assert.Equal(t, "ghs_orgtoken123", tokenResponse["token"])
+	assert.Equal(t, "test-org", tokenResponse["organizationSlug"])
+	assert.Equal(t, "org:test-org-profile", tokenResponse["profile"])
 
 	// Verify repositories list
 	repos, ok := tokenResponse["repositories"].([]interface{})
-	if !ok || len(repos) != 2 {
-		t.Errorf("expected 2 repositories, got %v", tokenResponse["repositories"])
-	}
-
-	t.Log("Organization token success test verified")
+	assert.True(t, ok && len(repos) == 2, "expected 2 repositories, got %v", tokenResponse["repositories"])
 }
 
 // TestOrganizationToken_ProfileNotFound tests 404 when org profile doesn't exist
@@ -639,32 +508,21 @@ func TestIntegrationOrganizationToken_ProfileNotFound(t *testing.T) {
 
 	// Request non-existent organization profile
 	req, err := http.NewRequest("POST", harness.Server.URL+"/organization/token/nonexistent", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify 404 Not Found
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected status 404, got %d", resp.StatusCode)
-	}
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 
 	var errorResponse map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
-		t.Fatalf("failed to decode error response: %v", err)
-	}
+	err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+	require.NoError(t, err)
 
-	if errorResponse["error"] != "profile not found" {
-		t.Errorf("expected error 'profile not found', got %v", errorResponse["error"])
-	}
-
-	t.Log("Organization token profile not found test verified")
+	assert.Equal(t, "profile not found", errorResponse["error"])
 }
 
 // TestOrganizationToken_Unauthorized tests 401 when JWT is invalid
@@ -674,35 +532,23 @@ func TestIntegrationOrganizationToken_Unauthorized(t *testing.T) {
 
 	// Load organization profiles from YAML
 	yamlContent, err := os.ReadFile("testdata/org-profiles-basic.yaml")
-	if err != nil {
-		t.Fatalf("failed to read test profile YAML: %v", err)
-	}
+	require.NoError(t, err)
 
 	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
-	if err != nil {
-		t.Fatalf("failed to compile profiles: %v", err)
-	}
+	require.NoError(t, err)
 	harness.ProfileStore.Update(profiles)
 
 	// Make request with invalid JWT
 	req, err := http.NewRequest("POST", harness.Server.URL+"/organization/token/test-org-profile", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer invalid.jwt.token")
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify 401 Unauthorized
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("expected status 401, got %d", resp.StatusCode)
-	}
-
-	t.Log("Organization token unauthorized test verified")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
 // ============================================================================
@@ -738,65 +584,29 @@ func TestIntegrationPipelineGitCredentials_Success(t *testing.T) {
 	// Make request with git credential format body
 	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
 	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials", reqBody)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify response
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected status 200, got %d. Body: %s", resp.StatusCode, string(body))
-	}
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	if resp.Header.Get("Content-Type") != "text/plain" {
-		t.Errorf("expected Content-Type text/plain, got %s", resp.Header.Get("Content-Type"))
-	}
+	assert.Equal(t, "text/plain", resp.Header.Get("Content-Type"))
 
 	// Parse git credentials response
 	props, err := credentialhandler.ReadProperties(resp.Body)
-	if err != nil {
-		t.Fatalf("failed to parse git credentials response: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Verify credential properties
-	protocol := props.Get("protocol")
-	if protocol != "https" {
-		t.Errorf("expected protocol 'https', got %s", protocol)
-	}
-
-	host := props.Get("host")
-	if host != "github.com" {
-		t.Errorf("expected host 'github.com', got %s", host)
-	}
-
-	path := props.Get("path")
-	if path != "test-org/test-repo" {
-		t.Errorf("expected path 'test-org/test-repo', got %s", path)
-	}
-
-	username := props.Get("username")
-	if username != "x-access-token" {
-		t.Errorf("expected username 'x-access-token', got %s", username)
-	}
-
-	password := props.Get("password")
-	if password != "ghs_testtoken123" {
-		t.Errorf("expected password 'ghs_testtoken123', got %s", password)
-	}
-
-	passwordExpiry := props.Get("password_expiry_utc")
-	if passwordExpiry == "" {
-		t.Errorf("expected password_expiry_utc to be set")
-	}
-
-	t.Log("Pipeline git-credentials success test verified")
+	assert.Equal(t, "https", props.Get("protocol"))
+	assert.Equal(t, "github.com", props.Get("host"))
+	assert.Equal(t, "test-org/test-repo", props.Get("path"))
+	assert.Equal(t, "x-access-token", props.Get("username"))
+	assert.Equal(t, "ghs_testtoken123", props.Get("password"))
+	assert.NotEmpty(t, props.Get("password_expiry_utc"), "expected password_expiry_utc to be set")
 }
 
 func TestIntegrationPipelineGitCredentials_ExplicitProfile(t *testing.T) {
@@ -828,36 +638,22 @@ func TestIntegrationPipelineGitCredentials_ExplicitProfile(t *testing.T) {
 	// Make request with explicit default profile
 	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
 	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials/default", reqBody)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify response
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected status 200, got %d. Body: %s", resp.StatusCode, string(body))
-	}
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Parse git credentials response
 	props, err := credentialhandler.ReadProperties(resp.Body)
-	if err != nil {
-		t.Fatalf("failed to parse git credentials response: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Verify token is correct
-	password := props.Get("password")
-	if password != "ghs_testtoken456" {
-		t.Errorf("expected password 'ghs_testtoken456', got %s", password)
-	}
-
-	t.Log("Pipeline git-credentials with explicit profile test verified")
+	assert.Equal(t, "ghs_testtoken456", props.Get("password"))
 }
 
 func TestIntegrationOrganizationGitCredentials_Success(t *testing.T) {
@@ -866,14 +662,10 @@ func TestIntegrationOrganizationGitCredentials_Success(t *testing.T) {
 
 	// Load organization profiles from YAML
 	yamlContent, err := os.ReadFile("testdata/org-profiles-basic.yaml")
-	if err != nil {
-		t.Fatalf("failed to read test profile YAML: %v", err)
-	}
+	require.NoError(t, err)
 
 	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
-	if err != nil {
-		t.Fatalf("failed to compile profiles: %v", err)
-	}
+	require.NoError(t, err)
 	harness.ProfileStore.Update(profiles)
 
 	// Setup: Configure mock to return token
@@ -900,41 +692,23 @@ func TestIntegrationOrganizationGitCredentials_Success(t *testing.T) {
 	// Make request for organization profile git credentials
 	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/repo1\n\n")
 	req, err := http.NewRequest("POST", harness.Server.URL+"/organization/git-credentials/test-org-profile", reqBody)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify response
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected status 200, got %d. Body: %s", resp.StatusCode, string(body))
-	}
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Parse git credentials response
 	props, err := credentialhandler.ReadProperties(resp.Body)
-	if err != nil {
-		t.Fatalf("failed to parse git credentials response: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Verify token and path
-	password := props.Get("password")
-	if password != "ghs_orgtoken789" {
-		t.Errorf("expected password 'ghs_orgtoken789', got %s", password)
-	}
-
-	path := props.Get("path")
-	if path != "test-org/repo1" {
-		t.Errorf("expected path 'test-org/repo1', got %s", path)
-	}
-
-	t.Log("Organization git-credentials success test verified")
+	assert.Equal(t, "ghs_orgtoken789", props.Get("password"))
+	assert.Equal(t, "test-org/repo1", props.Get("path"))
 }
 
 func TestIntegrationPipelineGitCredentials_MissingAuth(t *testing.T) {
@@ -944,22 +718,14 @@ func TestIntegrationPipelineGitCredentials_MissingAuth(t *testing.T) {
 	// Make request without Authorization header
 	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
 	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials", reqBody)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify 400 Bad Request
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", resp.StatusCode)
-	}
-
-	t.Log("Pipeline git-credentials missing auth test verified")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestIntegrationPipelineGitCredentials_InvalidJWT(t *testing.T) {
@@ -969,23 +735,15 @@ func TestIntegrationPipelineGitCredentials_InvalidJWT(t *testing.T) {
 	// Make request with invalid JWT
 	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
 	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials", reqBody)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer invalid.jwt.token")
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify 401 Unauthorized
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("expected status 401, got %d", resp.StatusCode)
-	}
-
-	t.Log("Pipeline git-credentials invalid JWT test verified")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
 func TestIntegrationPipelineGitCredentials_ProfileNotFound(t *testing.T) {
@@ -1013,23 +771,15 @@ func TestIntegrationPipelineGitCredentials_ProfileNotFound(t *testing.T) {
 	// Make request with non-existent profile
 	reqBody := strings.NewReader("protocol=https\nhost=github.com\npath=test-org/test-repo\n\n")
 	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials/nonexistent", reqBody)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Verify 404 Not Found
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected status 404, got %d", resp.StatusCode)
-	}
-
-	t.Log("Pipeline git-credentials profile not found test verified")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
 // ============================================================================
@@ -1062,25 +812,16 @@ func TestIntegrationRequestSizeLimit_GitCredentials(t *testing.T) {
 	largeBody := strings.Repeat("x", 21*1024)
 	reqBody := strings.NewReader(largeBody)
 	req, err := http.NewRequest("POST", harness.Server.URL+"/git-credentials", reqBody)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	// Note: The current implementation returns 500 (Internal Server Error) when
 	// the request body exceeds the 20KB limit. This happens because
 	// credentialhandler.ReadProperties treats the "request body too large" error
 	// as an internal error. The HTTP standard would be 413 (Request Entity Too Large).
-	if resp.StatusCode != http.StatusInternalServerError {
-		body, _ := io.ReadAll(resp.Body)
-		t.Errorf("expected status 500, got %d. Body: %s", resp.StatusCode, string(body))
-	}
-
-	t.Log("Request size limit git-credentials test verified")
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 }
