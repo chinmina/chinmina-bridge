@@ -89,7 +89,6 @@ func SetupMockBuildkiteServer(t *testing.T) *MockBuildkiteServer {
 			return
 		}
 
-		org := r.PathValue("organization")
 		pipeline := r.PathValue("pipeline")
 
 		response := struct {
@@ -101,9 +100,6 @@ func SetupMockBuildkiteServer(t *testing.T) *MockBuildkiteServer {
 			Slug:       pipeline,
 			Repository: mock.RepositoryURL,
 		}
-
-		// Add org to response for verification if needed
-		_ = org
 
 		WriteJSON(w, response)
 	})
