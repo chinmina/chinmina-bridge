@@ -20,6 +20,10 @@ test: mod
 integration: mod
 	go test -tags=integration -run="^TestIntegration" -cover ./... -covermode=atomic
 
+.PHONY: fuzz
+fuzz: mod
+	go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=30s ./internal/credentialhandler/...
+
 .PHONY: test-ci
 test-ci: mod
 	mkdir artifacts
