@@ -9,3 +9,12 @@ ignore:
   - "internal/observe/telemetry.go"
   # bootstrap only
   - "main.go"
+
+flag_management:
+  default_rules:
+    carryforward: true
+  individual_flags:
+    - name: unit
+      carryforward: true
+    - name: integration
+      carryforward: true
