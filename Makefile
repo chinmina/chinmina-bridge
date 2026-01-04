@@ -22,7 +22,10 @@ integration: mod
 
 .PHONY: fuzz
 fuzz: mod
-	go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=30s ./internal/credentialhandler/...
+	@echo "Fuzzing internal/credentialhandler..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=30s ./internal/credentialhandler
+	@echo "Fuzzing internal/jwt..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=30s ./internal/jwt
 
 .PHONY: test-ci
 test-ci: mod
