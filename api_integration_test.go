@@ -6,13 +6,16 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
+	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
@@ -90,14 +93,14 @@ func TestMockServers(t *testing.T) {
 // APITestHarness manages the complete test environment for API integration tests.
 // It sets up mock servers, generates JWTs, and provides the API server for testing.
 type APITestHarness struct {
-	t              *testing.T
-	Server         *httptest.Server
-	JWKSServer     *httptest.Server
-	GitHubMock     *testhelpers.MockGitHubServer
-	BuildkiteMock  *testhelpers.MockBuildkiteServer
-	ProfileStore   *profile.ProfileStore
-	jwk            *jose.JSONWebKey
-	privateKeyPEM  string
+	t             *testing.T
+	Server        *httptest.Server
+	JWKSServer    *httptest.Server
+	GitHubMock    *testhelpers.MockGitHubServer
+	BuildkiteMock *testhelpers.MockBuildkiteServer
+	ProfileStore  *profile.ProfileStore
+	jwk           *jose.JSONWebKey
+	privateKeyPEM string
 }
 
 // NewAPITestHarness creates a complete test harness with all mock servers and the API server.
@@ -223,4 +226,478 @@ func TestHealthCheck(t *testing.T) {
 	}
 
 	t.Log("Healthcheck endpoint verified")
+}
+
+// TestPipelineToken_Success tests successful token vending via /token endpoint
+func TestPipelineToken_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Setup: Configure mock to return specific repository
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_testtoken123"
+
+	// Create valid JWT with Buildkite claims
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:abc123:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      42,
+		"build_branch":      "main",
+		"build_commit":      "abc123",
+		"step_key":          "build",
+		"job_id":            "job-456",
+		"agent_id":          "agent-789",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Make request
+	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Parse response body (do this first to see error messages)
+	var tokenResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil && resp.StatusCode == http.StatusOK {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Verify response
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d. Response: %v", resp.StatusCode, tokenResponse)
+	}
+
+	if resp.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %s", resp.Header.Get("Content-Type"))
+	}
+
+	// Verify token response structure
+	if tokenResponse["token"] != "ghs_testtoken123" {
+		t.Errorf("expected token 'ghs_testtoken123', got %v", tokenResponse["token"])
+	}
+	if tokenResponse["organizationSlug"] != "test-org" {
+		t.Errorf("expected organizationSlug 'test-org', got %v", tokenResponse["organizationSlug"])
+	}
+	if tokenResponse["profile"] != "repo:default" {
+		t.Errorf("expected profile 'repo:default', got %v", tokenResponse["profile"])
+	}
+
+	t.Log("Pipeline token success test verified")
+}
+
+// TestPipelineToken_DefaultProfile tests successful token vending with the default profile
+func TestPipelineToken_DefaultProfile(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// The harness already has default profiles configured
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_defaulttoken"
+
+	// Create JWT
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:def456:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      43,
+		"build_branch":      "main",
+		"build_commit":      "def456",
+		"job_id":            "job-999",
+		"agent_id":          "agent-888",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Make request with explicit default profile parameter
+	req, err := http.NewRequest("POST", harness.Server.URL+"/token/default", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify response
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var tokenResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if tokenResponse["profile"] != "repo:default" {
+		t.Errorf("expected profile 'repo:default', got %v", tokenResponse["profile"])
+	}
+	if tokenResponse["token"] != "ghs_defaulttoken" {
+		t.Errorf("expected token 'ghs_defaulttoken', got %v", tokenResponse["token"])
+	}
+
+	t.Log("Pipeline token with default profile verified")
+}
+
+// TestPipelineToken_TokenFields verifies all fields in the token response
+func TestPipelineToken_TokenFields(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/api-service"
+	harness.GitHubMock.Token = "ghs_verifyfields123"
+
+	// Create JWT
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:api-deploy:ref:refs/heads/production:commit:abc789:step:deploy",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "api-deploy",
+		"pipeline_id":       "pipeline-456",
+		"build_number":      100,
+		"build_branch":      "production",
+		"build_commit":      "abc789",
+		"job_id":            "job-111",
+		"agent_id":          "agent-222",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Make request
+	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify response
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var tokenResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Verify all expected fields are present
+	if tokenResponse["token"] == nil {
+		t.Error("expected token field to be present")
+	}
+	if tokenResponse["expiry"] == nil {
+		t.Error("expected expiry field to be present")
+	}
+	if tokenResponse["organizationSlug"] != "test-org" {
+		t.Errorf("expected organizationSlug 'test-org', got %v", tokenResponse["organizationSlug"])
+	}
+	if tokenResponse["profile"] == nil {
+		t.Error("expected profile field to be present")
+	}
+
+	t.Log("Pipeline token fields verified")
+}
+
+// TestPipelineToken_MissingAuth tests 400 response when JWT is missing
+func TestPipelineToken_MissingAuth(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Make request without Authorization header
+	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify 400 Bad Request (missing auth header)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+
+	t.Log("Pipeline token missing auth test verified")
+}
+
+// TestPipelineToken_InvalidJWT tests 401 response when JWT is invalid
+func TestPipelineToken_InvalidJWT(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Make request with invalid JWT
+	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer invalid.jwt.token")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify 401 Unauthorized
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", resp.StatusCode)
+	}
+
+	t.Log("Pipeline token invalid JWT test verified")
+}
+
+// TestPipelineToken_ProfileNotFound tests 404 response when profile doesn't exist
+func TestPipelineToken_ProfileNotFound(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+
+	// Create valid JWT
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:abc123:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      1,
+		"build_branch":      "main",
+		"build_commit":      "abc123",
+		"job_id":            "job-111",
+		"agent_id":          "agent-222",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Request non-existent profile
+	req, err := http.NewRequest("POST", harness.Server.URL+"/token/nonexistent", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify 404 Not Found
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+
+	// Verify JSON error response
+	var errorResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+
+	if errorResponse["error"] != "profile not found" {
+		t.Errorf("expected error 'profile not found', got %v", errorResponse["error"])
+	}
+
+	t.Log("Pipeline token profile not found test verified")
+}
+
+// Note: 403 Forbidden testing requires custom profiles with match conditions.
+// The default profile has no conditions, so claim validation isn't triggered.
+// This scenario is adequately covered by unit tests in handlers_test.go
+
+// TestOrganizationToken_Success tests successful organization token vending
+func TestOrganizationToken_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Load organization profiles from YAML (tests full parse/compile pipeline)
+	yamlContent, err := os.ReadFile("testdata/org-profiles-basic.yaml")
+	if err != nil {
+		t.Fatalf("failed to read test profile YAML: %v", err)
+	}
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	if err != nil {
+		t.Fatalf("failed to compile profiles: %v", err)
+	}
+	harness.ProfileStore.Update(profiles)
+
+	harness.GitHubMock.Token = "ghs_orgtoken123"
+
+	// Create valid JWT
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:abc123:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      1,
+		"build_branch":      "main",
+		"build_commit":      "abc123",
+		"job_id":            "job-111",
+		"agent_id":          "agent-222",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Request organization token
+	req, err := http.NewRequest("POST", harness.Server.URL+"/organization/token/test-org-profile", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify response
+	if resp.StatusCode != http.StatusOK {
+		body := make([]byte, 1024)
+		n, _ := resp.Body.Read(body)
+		t.Fatalf("expected status 200, got %d. Response: %s", resp.StatusCode, string(body[:n]))
+	}
+
+	var tokenResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Verify token response
+	if tokenResponse["token"] != "ghs_orgtoken123" {
+		t.Errorf("expected token 'ghs_orgtoken123', got %v", tokenResponse["token"])
+	}
+	if tokenResponse["organizationSlug"] != "test-org" {
+		t.Errorf("expected organizationSlug 'test-org', got %v", tokenResponse["organizationSlug"])
+	}
+	if tokenResponse["profile"] != "org:test-org-profile" {
+		t.Errorf("expected profile 'org:test-org-profile', got %v", tokenResponse["profile"])
+	}
+
+	// Verify repositories list
+	repos, ok := tokenResponse["repositories"].([]interface{})
+	if !ok || len(repos) != 2 {
+		t.Errorf("expected 2 repositories, got %v", tokenResponse["repositories"])
+	}
+
+	t.Log("Organization token success test verified")
+}
+
+// TestOrganizationToken_ProfileNotFound tests 404 when org profile doesn't exist
+func TestOrganizationToken_ProfileNotFound(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Create valid JWT
+	claims := testhelpers.ValidClaims(josejwt.Claims{
+		Audience: []string{"test-audience"},
+		Subject:  "org:test-org:pipeline:test-pipeline:ref:refs/heads/main:commit:abc123:step:build",
+	})
+	buildkiteClaims := map[string]interface{}{
+		"organization_slug": "test-org",
+		"pipeline_slug":     "test-pipeline",
+		"pipeline_id":       "pipeline-123",
+		"build_number":      1,
+		"build_branch":      "main",
+		"build_commit":      "abc123",
+		"job_id":            "job-111",
+		"agent_id":          "agent-222",
+	}
+	token := harness.GenerateToken(claims, buildkiteClaims)
+
+	// Request non-existent organization profile
+	req, err := http.NewRequest("POST", harness.Server.URL+"/organization/token/nonexistent", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify 404 Not Found
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+
+	var errorResponse map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+
+	if errorResponse["error"] != "profile not found" {
+		t.Errorf("expected error 'profile not found', got %v", errorResponse["error"])
+	}
+
+	t.Log("Organization token profile not found test verified")
+}
+
+// TestOrganizationToken_Unauthorized tests 401 when JWT is invalid
+func TestOrganizationToken_Unauthorized(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	defer harness.Close()
+
+	// Load organization profiles from YAML
+	yamlContent, err := os.ReadFile("testdata/org-profiles-basic.yaml")
+	if err != nil {
+		t.Fatalf("failed to read test profile YAML: %v", err)
+	}
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	if err != nil {
+		t.Fatalf("failed to compile profiles: %v", err)
+	}
+	harness.ProfileStore.Update(profiles)
+
+	// Make request with invalid JWT
+	req, err := http.NewRequest("POST", harness.Server.URL+"/organization/token/test-org-profile", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer invalid.jwt.token")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to make request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify 401 Unauthorized
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", resp.StatusCode)
+	}
+
+	t.Log("Organization token unauthorized test verified")
 }

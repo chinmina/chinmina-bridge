@@ -110,4 +110,3 @@ func ValidClaims(claims josejwt.Claims) josejwt.Claims {
 
 	return claims
 }
-

@@ -1,0 +1,14 @@
+organization:
+  profiles:
+    - name: test-org-profile
+      repositories:
+        - repo1
+        - repo2
+      permissions:
+        - contents:write
+        - pull_requests:write
+
+pipeline:
+  defaults:
+    permissions:
+      - contents:read
