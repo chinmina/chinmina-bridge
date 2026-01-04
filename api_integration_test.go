@@ -343,39 +343,44 @@ func TestIntegrationPipelineToken_TokenFields(t *testing.T) {
 	assert.NotNil(t, tokenResponse["profile"], "expected profile field to be present")
 }
 
-// TestPipelineToken_MissingAuth tests 400 response when JWT is missing
-func TestIntegrationPipelineToken_MissingAuth(t *testing.T) {
-	harness := NewAPITestHarness(t)
-	defer harness.Close()
+// TestPipelineToken_AuthErrors tests auth error responses
+func TestIntegrationPipelineToken_AuthErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		authHeader     string
+		expectedStatus int
+	}{
+		{
+			name:           "missing auth header",
+			authHeader:     "",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "invalid JWT",
+			authHeader:     "Bearer invalid.jwt.token",
+			expectedStatus: http.StatusUnauthorized,
+		},
+	}
 
-	// Make request without Authorization header
-	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			harness := NewAPITestHarness(t)
+			defer harness.Close()
 
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
+			req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
+			require.NoError(t, err)
 
-	// Verify 400 Bad Request (missing auth header)
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-}
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
 
-// TestPipelineToken_InvalidJWT tests 401 response when JWT is invalid
-func TestIntegrationPipelineToken_InvalidJWT(t *testing.T) {
-	harness := NewAPITestHarness(t)
-	defer harness.Close()
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
 
-	// Make request with invalid JWT
-	req, err := http.NewRequest("POST", harness.Server.URL+"/token", nil)
-	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer invalid.jwt.token")
-
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	// Verify 401 Unauthorized
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
+		})
+	}
 }
 
 // TestPipelineToken_ProfileNotFound tests 404 response when profile doesn't exist
