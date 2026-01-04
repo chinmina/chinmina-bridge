@@ -3,7 +3,6 @@ package testhelpers
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -81,17 +80,13 @@ func SetupJWKSServer(t *testing.T, jwk *jose.JSONWebKey) *httptest.Server {
 			}{
 				JWKSURI: server.URL + "/.well-known/jwks.json",
 			}
-			if err := json.NewEncoder(w).Encode(wk); err != nil {
-				t.Fatal(err)
-			}
+			WriteJSON(w, wk)
 		case "/.well-known/jwks.json":
-			if err := json.NewEncoder(w).Encode(jose.JSONWebKeySet{
+			WriteJSON(w, jose.JSONWebKeySet{
 				Keys: []jose.JSONWebKey{jwk.Public()},
-			}); err != nil {
-				t.Fatal(err)
-			}
+			})
 		default:
-			t.Fatalf("unexpected JWKS server request: %s", r.URL.String())
+			http.Error(w, "unexpected JWKS server request: "+r.URL.String(), http.StatusInternalServerError)
 		}
 	})
 
