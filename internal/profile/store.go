@@ -26,7 +26,7 @@ func NewDefaultProfiles() Profiles {
 	// Create pipeline profiles map with only "default"
 	pipelineProfiles := map[string]AuthorizedProfile[PipelineProfileAttr]{
 		"default": NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
-			Permissions: []string{"contents:read"},
+			Permissions: []string{"contents:read", "metadata:read"},
 		}),
 	}
 

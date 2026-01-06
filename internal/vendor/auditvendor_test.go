@@ -17,7 +17,7 @@ func TestAuditor_Success(t *testing.T) {
 	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{
 			Repositories:        []string{"https://example.com/repo"},
-			Permissions:         []string{"contents:read"},
+			Permissions:         []string{"contents:read", "metadata:read"},
 			VendedRepositoryURL: "https://example.com/repo",
 			Expiry:              vendedDate,
 		})
@@ -38,7 +38,7 @@ func TestAuditor_Success(t *testing.T) {
 
 	expectedToken := vendor.ProfileToken{
 		Repositories:        []string{"https://example.com/repo"},
-		Permissions:         []string{"contents:read"},
+		Permissions:         []string{"contents:read", "metadata:read"},
 		VendedRepositoryURL: "https://example.com/repo",
 		Expiry:              vendedDate,
 	}
@@ -49,7 +49,7 @@ func TestAuditor_Success(t *testing.T) {
 		Error:            "",
 		VendedRepository: "https://example.com/repo",
 		Repositories:     []string{"https://example.com/repo"},
-		Permissions:      []string{"contents:read"},
+		Permissions:      []string{"contents:read", "metadata:read"},
 	}
 	// ExpirySecs is dynamic based on current time, so check separately
 	assert.Equal(t, expected.Error, entry.Error)
@@ -73,7 +73,7 @@ func TestAuditor_Success(t *testing.T) {
 		Error:            "",
 		VendedRepository: "https://example.com/repo",
 		Repositories:     []string{"https://example.com/repo"},
-		Permissions:      []string{"contents:read"},
+		Permissions:      []string{"contents:read", "metadata:read"},
 	}
 	// ExpirySecs is dynamic based on current time, so check separately
 	assert.Equal(t, expected.Error, entry.Error)
@@ -152,7 +152,7 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{
 			Repositories:        []string{"https://example.com/repo"},
-			Permissions:         []string{"contents:read"},
+			Permissions:         []string{"contents:read", "metadata:read"},
 			VendedRepositoryURL: "https://example.com/repo",
 			Profile:             ref.ShortString(),
 			Expiry:              time.Now().Add(1 * time.Hour),

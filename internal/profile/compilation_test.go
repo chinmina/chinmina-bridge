@@ -370,13 +370,13 @@ func TestCompile_PipelineDefaultsFallback(t *testing.T) {
 		{
 			name:             "configured defaults",
 			filename:         "testdata/profile/profile_with_defaults.yaml",
-			expectedDefaults: []string{"contents:read", "pull_requests:write"},
+			expectedDefaults: []string{"contents:read", "pull_requests:write", "metadata:read"},
 			description:      "should use configured defaults when present",
 		},
 		{
 			name:             "fallback defaults",
 			filename:         "testdata/profile/profile_with_match_rules.yaml",
-			expectedDefaults: []string{"contents:read"},
+			expectedDefaults: []string{"contents:read", "metadata:read"},
 			description:      "should fallback to contents:read when not configured",
 		},
 	}
@@ -613,7 +613,7 @@ func TestCompilePipelineProfiles_ReservedNameRejection(t *testing.T) {
 	// "valid-profile" should be accessible
 	validProfile, err := result.Get("valid-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, validProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:read", "pull_requests:write", "metadata:read"}, validProfile.Attrs.Permissions)
 
 	// Check that the user-defined "default" was rejected
 	assert.Equal(t, 1, result.InvalidProfileCount(), "user-defined 'default' should be marked invalid")
@@ -632,7 +632,7 @@ func TestCompilePipelineProfiles_EmptyMatchRulesPass(t *testing.T) {
 
 	profile, err := result.Get("open-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:read"}, profile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, profile.Attrs.Permissions)
 
 	// Empty match rules should match any claims
 	claims := mapClaimLookup{"pipeline_slug": "any-pipeline"}
@@ -687,7 +687,7 @@ func TestCompilePipelineProfiles_DuplicateNames(t *testing.T) {
 	// With duplicate names, the last profile wins (second's attributes overwrite first)
 	duplicateProfile, err := result.Get("duplicate")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"pull_requests:write"}, duplicateProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"pull_requests:write", "metadata:read"}, duplicateProfile.Attrs.Permissions)
 
 	// Second duplicate was rejected, verify invalid count
 	assert.Equal(t, 1, result.InvalidProfileCount(), "second duplicate should be marked invalid")
@@ -708,13 +708,13 @@ func TestCompilePipelineProfiles_DefaultProfileCreation(t *testing.T) {
 			name:                "default profile with custom permissions",
 			profiles:            []pipelineProfile{},
 			defaultPermissions:  []string{"contents:read", "pull_requests:write"},
-			expectedPermissions: []string{"contents:read", "pull_requests:write"},
+			expectedPermissions: []string{"contents:read", "pull_requests:write", "metadata:read"},
 		},
 		{
 			name:                "default profile with single permission",
 			profiles:            []pipelineProfile{},
 			defaultPermissions:  []string{"contents:read"},
-			expectedPermissions: []string{"contents:read"},
+			expectedPermissions: []string{"contents:read", "metadata:read"},
 		},
 		{
 			name: "default profile exists alongside user profiles",
@@ -725,7 +725,7 @@ func TestCompilePipelineProfiles_DefaultProfileCreation(t *testing.T) {
 				},
 			},
 			defaultPermissions:  []string{"contents:read"},
-			expectedPermissions: []string{"contents:read"},
+			expectedPermissions: []string{"contents:read", "metadata:read"},
 		},
 	}
 
@@ -804,12 +804,12 @@ func TestCompilePipelineProfiles_InvalidMatchRule(t *testing.T) {
 	// "valid-profile" should still be accessible
 	validProfile, err := result.Get("valid-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:write"}, validProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:write", "metadata:read"}, validProfile.Attrs.Permissions)
 
 	// Default profile should still exist with default permissions
 	defaultProfile, err := result.Get("default")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaultProfile.Attrs.Permissions)
 }
 
 func TestCompile_OrganizationProfile_InvalidPermissions(t *testing.T) {
@@ -873,7 +873,7 @@ pipeline:
 	// Valid profile should be accessible
 	validProfile, err := result.Get("valid-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:read"}, validProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, validProfile.Attrs.Permissions)
 
 	// Invalid profiles should not be accessible
 	_, err = result.Get("invalid-permission-format")
@@ -1026,12 +1026,12 @@ pipeline:
 	// Valid profile should be accessible
 	validProfile, err := result.Get("valid-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"issues:write"}, validProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"issues:write", "metadata:read"}, validProfile.Attrs.Permissions)
 
 	// Default profile should still exist
 	defaultProfile, err := result.Get("default")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaultProfile.Attrs.Permissions)
 
 	// Invalid profiles should not be accessible
 	_, err = result.Get("invalid-permission-format")
@@ -1070,4 +1070,160 @@ pipeline:
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid default permissions")
 	assert.Contains(t, err.Error(), "invalid permission field")
+}
+
+func TestEnsureMetadataRead(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions []string
+		expected    []string
+	}{
+		{
+			name:        "adds metadata:read when not present",
+			permissions: []string{"contents:read"},
+			expected:    []string{"contents:read", "metadata:read"},
+		},
+		{
+			name:        "does not duplicate metadata:read",
+			permissions: []string{"contents:read", "metadata:read"},
+			expected:    []string{"contents:read", "metadata:read"},
+		},
+		{
+			name:        "adds to empty list",
+			permissions: []string{},
+			expected:    []string{"metadata:read"},
+		},
+		{
+			name:        "preserves order when adding",
+			permissions: []string{"pull_requests:write", "issues:read"},
+			expected:    []string{"pull_requests:write", "issues:read", "metadata:read"},
+		},
+		{
+			name:        "handles metadata:read in middle",
+			permissions: []string{"contents:read", "metadata:read", "issues:read"},
+			expected:    []string{"contents:read", "metadata:read", "issues:read"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ensureMetadataRead(tt.permissions)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestCompilePipelineProfiles_MetadataReadAutoAdded(t *testing.T) {
+	tests := []struct {
+		name                string
+		profiles            []pipelineProfile
+		defaultPermissions  []string
+		profileName         string
+		expectedPermissions []string
+	}{
+		{
+			name: "adds metadata:read to pipeline profile",
+			profiles: []pipelineProfile{
+				{
+					Name:        "custom",
+					Permissions: []string{"contents:read"},
+				},
+			},
+			defaultPermissions:  []string{"contents:read"},
+			profileName:         "custom",
+			expectedPermissions: []string{"contents:read", "metadata:read"},
+		},
+		{
+			name: "does not duplicate metadata:read in pipeline profile",
+			profiles: []pipelineProfile{
+				{
+					Name:        "custom",
+					Permissions: []string{"contents:read", "metadata:read"},
+				},
+			},
+			defaultPermissions:  []string{"contents:read"},
+			profileName:         "custom",
+			expectedPermissions: []string{"contents:read", "metadata:read"},
+		},
+		{
+			name:                "adds metadata:read to default profile",
+			profiles:            []pipelineProfile{},
+			defaultPermissions:  []string{"contents:read"},
+			profileName:         "default",
+			expectedPermissions: []string{"contents:read", "metadata:read"},
+		},
+		{
+			name:                "does not duplicate in default profile",
+			profiles:            []pipelineProfile{},
+			defaultPermissions:  []string{"contents:read", "metadata:read"},
+			profileName:         "default",
+			expectedPermissions: []string{"contents:read", "metadata:read"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions)
+
+			profile, err := result.Get(tt.profileName)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedPermissions, profile.Attrs.Permissions)
+		})
+	}
+}
+
+func TestCompileOrganizationProfiles_MetadataReadAutoAdded(t *testing.T) {
+	tests := []struct {
+		name                string
+		profiles            []organizationProfile
+		profileName         string
+		expectedPermissions []string
+	}{
+		{
+			name: "adds metadata:read to organization profile",
+			profiles: []organizationProfile{
+				{
+					Name:         "org-profile",
+					Repositories: []string{"repo1"},
+					Permissions:  []string{"contents:read"},
+				},
+			},
+			profileName:         "org-profile",
+			expectedPermissions: []string{"contents:read", "metadata:read"},
+		},
+		{
+			name: "does not duplicate metadata:read",
+			profiles: []organizationProfile{
+				{
+					Name:         "org-profile",
+					Repositories: []string{"repo1"},
+					Permissions:  []string{"contents:read", "metadata:read"},
+				},
+			},
+			profileName:         "org-profile",
+			expectedPermissions: []string{"contents:read", "metadata:read"},
+		},
+		{
+			name: "adds metadata:read with multiple permissions",
+			profiles: []organizationProfile{
+				{
+					Name:         "org-profile",
+					Repositories: []string{"repo1", "repo2"},
+					Permissions:  []string{"pull_requests:write", "issues:read"},
+				},
+			},
+			profileName:         "org-profile",
+			expectedPermissions: []string{"pull_requests:write", "issues:read", "metadata:read"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := compileOrganizationProfiles(tt.profiles)
+
+			profile, err := result.Get(tt.profileName)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedPermissions, profile.Attrs.Permissions)
+		})
+	}
 }

@@ -156,7 +156,7 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
-		Permissions:         []string{"contents:read"},
+		Permissions:         []string{"contents:read", "metadata:read"},
 		Profile:             "repo:default",
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
@@ -192,7 +192,7 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"pipeline-repo"},
-		Permissions:         []string{"contents:read"},
+		Permissions:         []string{"contents:read", "metadata:read"},
 		Profile:             "repo:default",
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
@@ -226,7 +226,7 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
-		Permissions:         []string{"contents:read"},
+		Permissions:         []string{"contents:read", "metadata:read"},
 		Profile:             "repo:default",
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
@@ -247,7 +247,7 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 		return "vended-token-value", vendedDate, nil
 	})
 
-	configuredPermissions := []string{"contents:read", "pull_requests:write", "actions:read"}
+	configuredPermissions := []string{"contents:read", "pull_requests:write", "actions:read", "metadata:read"}
 	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, multiplePermissionsYAML), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
@@ -303,7 +303,7 @@ func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
 		return "vended-token-value", vendedDate, nil
 	})
 
-	multiplePermissions := []string{"contents:read", "pull_requests:read", "issues:read", "statuses:write"}
+	multiplePermissions := []string{"contents:read", "pull_requests:read", "issues:read", "statuses:write", "metadata:read"}
 	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, multiplePermissionsExtendedYAML), repoLookup, tokenVendor)
 
 	ref := profile.ProfileRef{
@@ -353,14 +353,14 @@ func TestRepoVendor_NamedProfileLookupSuccess(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
-		Permissions:         []string{"contents:write", "pull_requests:write"},
+		Permissions:         []string{"contents:write", "pull_requests:write", "metadata:read"},
 		Profile:             "repo:high-access",
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
 		VendedRepositoryURL: "https://github.com/org/repo-url",
 	})
 	// Verify the high-access profile permissions were used
-	assert.Equal(t, []string{"contents:write", "pull_requests:write"}, capturedPermissions)
+	assert.Equal(t, []string{"contents:write", "pull_requests:write", "metadata:read"}, capturedPermissions)
 }
 
 func TestRepoVendor_ProfileMatchSuccess(t *testing.T) {
@@ -389,7 +389,7 @@ func TestRepoVendor_ProfileMatchSuccess(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		Repositories:        []string{"repo-url"},
-		Permissions:         []string{"contents:read", "security_events:write"},
+		Permissions:         []string{"contents:read", "security_events:write", "metadata:read"},
 		Profile:             "repo:with-match-rules",
 		Expiry:              vendedDate,
 		OrganizationSlug:    "organization-slug",
