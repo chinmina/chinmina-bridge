@@ -85,7 +85,7 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 
 		attrs := OrganizationProfileAttr{
 			Repositories: p.Repositories,
-			Permissions:  p.Permissions,
+			Permissions:  ensureMetadataRead(p.Permissions),
 		}
 
 		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
@@ -164,7 +164,7 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 		}
 
 		attrs := PipelineProfileAttr{
-			Permissions: p.Permissions,
+			Permissions: ensureMetadataRead(p.Permissions),
 		}
 
 		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
@@ -174,7 +174,7 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 	// Empty match rules means it matches all pipelines
 	defaultMatcher, _ := compileMatchRules(nil) // Empty rules always succeed
 	validProfiles["default"] = NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
-		Permissions: defaultPermissions,
+		Permissions: ensureMetadataRead(defaultPermissions),
 	})
 
 	return NewProfileStoreOf(validProfiles, invalidProfiles)
@@ -216,6 +216,17 @@ func validatePermissions(permissions []string) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// ensureMetadataRead ensures metadata:read is always present in permissions.
+// This mirrors fine-grained token behavior and reduces surprises when using
+// tokens with the REST API.
+func ensureMetadataRead(permissions []string) []string {
+	const metadataRead = "metadata:read"
+	if slices.Contains(permissions, metadataRead) {
+		return permissions
+	}
+	return append(permissions, metadataRead)
 }
 
 // validateRepositories validates that the repositories list follows the required format:

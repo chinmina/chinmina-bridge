@@ -89,7 +89,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
 		Profile:             "org:read-plugins",
 		Repositories:        []string{"any-repo", "another-secret-repo"},
-		Permissions:         []string{"contents:read", "packages:read"},
+		Permissions:         []string{"contents:read", "packages:read", "metadata:read"},
 	})
 
 	// second call hits (even though it's for a different pipeline), return first value
@@ -99,7 +99,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
 		Profile:             "org:read-plugins",
 		Repositories:        []string{"any-repo", "another-secret-repo"},
-		Permissions:         []string{"contents:read", "packages:read"},
+		Permissions:         []string{"contents:read", "packages:read", "metadata:read"},
 	})
 }
 
@@ -409,7 +409,7 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		},
 		"org:read-plugins": {
 			repositories: []string{"any-repo", "another-secret-repo"},
-			permissions:  []string{"contents:read", "packages:read"},
+			permissions:  []string{"contents:read", "packages:read", "metadata:read"},
 		},
 	}
 

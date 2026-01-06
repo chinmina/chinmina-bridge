@@ -143,7 +143,7 @@ func TestProfileStore_GetOrganizationProfile_Success(t *testing.T) {
 	profile, err := store.GetOrganizationProfile("test-profile")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
-	assert.Equal(t, []string{"contents:read", "pull_requests:write"}, profile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:read", "pull_requests:write", "metadata:read"}, profile.Attrs.Permissions)
 }
 
 func TestProfileStore_GetOrganizationProfile_NotFound(t *testing.T) {
@@ -236,12 +236,12 @@ pipeline:
 	// Retrieve pipeline profile
 	profile, err := store.GetPipelineProfile("high-access")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:write", "pull_requests:write"}, profile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:write", "pull_requests:write", "metadata:read"}, profile.Attrs.Permissions)
 
 	// Also verify "default" profile exists (created from defaults)
 	defaultProfile, err := store.GetPipelineProfile("default")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaultProfile.Attrs.Permissions)
 }
 
 func TestProfileStore_GetPipelineProfile_NotFound(t *testing.T) {
@@ -456,7 +456,7 @@ pipeline:
 	prodProfile, err := profiles.GetOrgProfile("prod-profile")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"silk"}, prodProfile.Attrs.Repositories)
-	assert.Equal(t, []string{"contents:write"}, prodProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:write", "metadata:read"}, prodProfile.Attrs.Permissions)
 
 	// Test prod profile matching
 	claims := mapClaimLookup{"pipeline_slug": "silk-prod"}
@@ -476,7 +476,7 @@ pipeline:
 	// Verify pipeline defaults via default profile
 	defaultProfile, err := profiles.GetPipelineProfile("default")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaultProfile.Attrs.Permissions)
 }
 
 func TestNewDefaultProfiles(t *testing.T) {
@@ -485,7 +485,7 @@ func TestNewDefaultProfiles(t *testing.T) {
 	// Verify default pipeline profile exists
 	defaultProfile, err := profiles.GetPipelineProfile("default")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"contents:read"}, defaultProfile.Attrs.Permissions)
+	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaultProfile.Attrs.Permissions)
 
 	// Verify default profile matches any claims (universal matcher)
 	claims := mapClaimLookup{"pipeline_slug": "any-pipeline"}
