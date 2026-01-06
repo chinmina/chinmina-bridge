@@ -17,7 +17,7 @@ func NewProfileStore() *ProfileStore {
 }
 
 // NewDefaultProfiles creates a minimal default Profiles with only the "default"
-// pipeline profile using hard-coded default permissions ["contents:read"].
+// pipeline profile using hard-coded default permissions ["contents:read", "metadata:read"].
 // This provides a baseline profile set so the ProfileStore is never unloaded.
 func NewDefaultProfiles() Profiles {
 	// Create universal matcher (empty match rules always match)
