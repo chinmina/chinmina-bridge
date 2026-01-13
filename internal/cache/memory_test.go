@@ -5,37 +5,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMemoryGet_NotFound(t *testing.T) {
 	ctx := context.Background()
-	cache, err := NewMemory(time.Minute, 100)
+	cache, err := NewMemory[CacheTestDummy](time.Minute, 100)
 	require.NoError(t, err)
 
 	token, found, err := cache.Get(ctx, "nonexistent")
 
 	assert.NoError(t, err)
 	assert.False(t, found)
-	assert.Equal(t, vendor.ProfileToken{}, token)
+	assert.Equal(t, CacheTestDummy{}, token)
 }
 
 func TestMemorySetAndGet_Success(t *testing.T) {
 	ctx := context.Background()
-	cache, err := NewMemory(time.Minute, 100)
+	cache, err := NewMemory[CacheTestDummy](time.Minute, 100)
 	require.NoError(t, err)
 
-	expectedToken := vendor.ProfileToken{
-		OrganizationSlug:    "acme",
-		Profile:             "default",
-		VendedRepositoryURL: "https://github.com/acme/repo",
-		Repositories:        []string{"acme/repo"},
-		Permissions:         []string{"contents:read"},
-		Token:               "ghs_test123",
-		Expiry:              time.Now().Add(time.Hour),
-	}
+	expectedToken := CacheTestDummy{Data: "testdata"}
 
 	err = cache.Set(ctx, "test-key", expectedToken)
 	require.NoError(t, err)
@@ -49,16 +40,12 @@ func TestMemorySetAndGet_Success(t *testing.T) {
 
 func TestMemoryInvalidate_RemovesToken(t *testing.T) {
 	ctx := context.Background()
-	cache, err := NewMemory(time.Minute, 100)
+	cache, err := NewMemory[CacheTestDummy](time.Minute, 100)
 	require.NoError(t, err)
 
-	token := vendor.ProfileToken{
-		OrganizationSlug: "acme",
-		Token:            "ghs_test123",
-		Expiry:           time.Now().Add(time.Hour),
-	}
+	dummy := CacheTestDummy{Data: "testdata"}
 
-	err = cache.Set(ctx, "test-key", token)
+	err = cache.Set(ctx, "test-key", dummy)
 	require.NoError(t, err)
 
 	err = cache.Invalidate(ctx, "test-key")
@@ -72,16 +59,12 @@ func TestMemoryInvalidate_RemovesToken(t *testing.T) {
 func TestMemoryTTLExpiry(t *testing.T) {
 	ctx := context.Background()
 	// Use very short TTL for testing
-	cache, err := NewMemory(100*time.Millisecond, 100)
+	cache, err := NewMemory[CacheTestDummy](100*time.Millisecond, 100)
 	require.NoError(t, err)
 
-	token := vendor.ProfileToken{
-		OrganizationSlug: "acme",
-		Token:            "ghs_test123",
-		Expiry:           time.Now().Add(time.Hour),
-	}
+	dummy := CacheTestDummy{Data: "testdata"}
 
-	err = cache.Set(ctx, "test-key", token)
+	err = cache.Set(ctx, "test-key", dummy)
 	require.NoError(t, err)
 
 	// Verify token is present immediately
@@ -96,4 +79,10 @@ func TestMemoryTTLExpiry(t *testing.T) {
 	_, found, err = cache.Get(ctx, "test-key")
 	assert.NoError(t, err)
 	assert.False(t, found)
+}
+
+// CacheTestDummy is a simple struct used for testing the generic memory cache.
+// It is used instead of ProfileToken to avoid a cyclic dependency in tests.
+type CacheTestDummy struct {
+	Data string
 }
