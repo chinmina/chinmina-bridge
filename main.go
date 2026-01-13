@@ -11,6 +11,7 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/buildkite"
+	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
@@ -55,10 +56,11 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 		return nil, fmt.Errorf("github configuration failed: %w", err)
 	}
 
-	vendorCache, err := vendor.Cached(45 * time.Minute)
+	tokenCache, err := cache.NewMemory[vendor.ProfileToken](45*time.Minute, 10_000)
 	if err != nil {
-		return nil, fmt.Errorf("vendor cache configuration failed: %w", err)
+		return nil, fmt.Errorf("token cache configuration failed: %w", err)
 	}
+	vendorCache := vendor.Cached(tokenCache, orgProfile)
 
 	// Pipeline routes use repoVendor (defaults to "default" profile)
 	// The bare (non-profile) routes are for backward compatibility

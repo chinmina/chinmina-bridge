@@ -2,13 +2,12 @@ package vendor
 
 import (
 	"context"
+	"fmt"
 	"slices"
-	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
-	"github.com/maypok86/otter/v2"
-	"github.com/maypok86/otter/v2/stats"
 	"github.com/rs/zerolog/log"
 )
 
@@ -17,23 +16,16 @@ import (
 // cause multiple token requests, In this case, the last one returned wins. In
 // this use case, given that concurrent calls are likely to be less common, the
 // additional tokens issued are worth gains made skipping locking.
-func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, error) {
-	counter := stats.NewCounter()
-	cache := otter.
-		Must(&otter.Options[string, ProfileToken]{
-			MaximumSize:      10_000,
-			StatsRecorder:    counter,
-			ExpiryCalculator: otter.ExpiryCreating[string, ProfileToken](ttl),
-		})
-
+func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) func(ProfileTokenVendor) ProfileTokenVendor {
 	return func(v ProfileTokenVendor) ProfileTokenVendor {
 		return func(ctx context.Context, ref profile.ProfileRef, requestedRepository string) VendorResult {
-			// Cache key is the URN format of the ProfileRef
-			key := ref.String()
+			// Cache key includes digest prefix for config version namespacing
+			key := fmt.Sprintf("%s:%s", digester.Digest(), ref.String())
 
-			if cachedEntry, ok := cache.GetEntry(key); ok {
-				cachedToken := cachedEntry.Value
-
+			cachedToken, found, err := tokenCache.Get(ctx, key)
+			if err != nil {
+				log.Warn().Err(err).Str("key", key).Msg("cache get failed")
+			} else if found {
 				log.Debug().Time("expiry", cachedToken.Expiry).
 					Str("key", key).
 					Msg("hit: existing token found for pipeline")
@@ -48,8 +40,10 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 					Str("requestedRepository", requestedRepository).
 					Msg("dropping cached token due to repository mismatch: will request new token")
 
-					// the delete is required as "set" is not guaranteed to write to the cache
-				cache.Invalidate(key)
+				// the delete is required as "set" is not guaranteed to write to the cache
+				if err := tokenCache.Invalidate(ctx, key); err != nil {
+					log.Warn().Err(err).Str("key", key).Msg("cache invalidate failed")
+				}
 			}
 
 			// cache miss: request and cache
@@ -57,12 +51,14 @@ func Cached(ttl time.Duration) (func(ProfileTokenVendor) ProfileTokenVendor, err
 
 			// Only cache successful results
 			if token, tokenVended := result.Token(); tokenVended {
-				cache.Set(key, token)
+				if err := tokenCache.Set(ctx, key, token); err != nil {
+					log.Warn().Err(err).Str("key", key).Msg("cache set failed")
+				}
 			}
 
 			return result
 		}
-	}, nil
+	}
 }
 
 func checkTokenRepository(cachedToken ProfileToken, requestedRepository string) (ProfileToken, bool) {

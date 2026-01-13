@@ -9,15 +9,12 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCacheMissOnFirstRequest(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -38,9 +35,7 @@ func TestCacheMissOnFirstRequest(t *testing.T) {
 func TestCacheMissWithNilResponse(t *testing.T) {
 	wrapped := sequenceVendor("first-call", nil)
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -72,9 +67,7 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -106,9 +99,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 func TestCacheHitOnSecondRequest(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -141,9 +132,7 @@ var defaultTTL = 60 * time.Minute
 func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -175,9 +164,7 @@ func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 func TestCacheMissWithRepoChange(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -217,9 +204,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref1 := profile.ProfileRef{
@@ -265,9 +250,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 func TestCacheMissWithExpiredItem(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(time.Nanosecond) // near instant expiration
-	require.NoError(t, err)
-
+	c := newTestCached(t, time.Nanosecond, "test-digest") // near instant expiration
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -301,9 +284,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 func TestCacheProfileWithDifferentRepo(t *testing.T) {
 	wrapped := sequenceVendor("first-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -336,9 +317,7 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 func TestReturnsErrorForWrapperError(t *testing.T) {
 	wrapped := sequenceVendor(E{"failed"})
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -355,9 +334,7 @@ func TestReturnsErrorForWrapperError(t *testing.T) {
 func TestCacheMissWithNilVendorResponse(t *testing.T) {
 	wrapped := sequenceVendor(nil, "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{

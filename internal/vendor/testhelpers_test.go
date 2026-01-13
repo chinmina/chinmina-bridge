@@ -2,11 +2,31 @@ package vendor_test
 
 import (
 	"testing"
+	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// mockDigester returns a fixed digest for testing
+type mockDigester struct {
+	digest string
+}
+
+func (m mockDigester) Digest() string {
+	return m.digest
+}
+
+// newTestCached creates a Cached vendor with the specified TTL and digest
+func newTestCached(t *testing.T, ttl time.Duration, digest string) func(vendor.ProfileTokenVendor) vendor.ProfileTokenVendor {
+	t.Helper()
+	tokenCache, err := cache.NewMemory[vendor.ProfileToken](ttl, 10_000)
+	require.NoError(t, err)
+	digester := mockDigester{digest: digest}
+	return vendor.Cached(tokenCache, digester)
+}
 
 // assertVendorSuccess verifies that vending succeeded and returns the expected token
 func assertVendorSuccess(t *testing.T, result vendor.VendorResult, expected vendor.ProfileToken) {
