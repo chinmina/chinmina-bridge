@@ -24,7 +24,7 @@ import (
 	"github.com/justinas/alice"
 )
 
-func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *profile.ProfileStore) (http.Handler, error) {
+func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *profile.ProfileStore) (http.Handler, func() error, error) {
 	// wrap a mux such that HTTP telemetry is configured by default
 	muxWithoutTelemetry := http.NewServeMux()
 	mux := observe.NewMux(muxWithoutTelemetry)
@@ -34,7 +34,7 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 
 	authorizer, err := jwt.Middleware(cfg.Authorization)
 	if err != nil {
-		return nil, fmt.Errorf("authorizer configuration failed: %w", err)
+		return nil, nil, fmt.Errorf("authorizer configuration failed: %w", err)
 	}
 
 	// The request body size is fairly limited to prevent accidental or
@@ -48,18 +48,26 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	// setup token handler and dependencies
 	bk, err := buildkite.New(cfg.Buildkite)
 	if err != nil {
-		return nil, fmt.Errorf("buildkite configuration failed: %w", err)
+		return nil, nil, fmt.Errorf("buildkite configuration failed: %w", err)
 	}
 
 	gh, err := github.New(ctx, cfg.Github)
 	if err != nil {
-		return nil, fmt.Errorf("github configuration failed: %w", err)
+		return nil, nil, fmt.Errorf("github configuration failed: %w", err)
 	}
 
-	tokenCache, err := cache.NewMemory[vendor.ProfileToken](45*time.Minute, 10_000)
+	// Configure cache backend based on CACHE_TYPE
+	tokenCache, cacheCleanup, err := cache.NewFromConfig[vendor.ProfileToken](
+		ctx,
+		cfg.Cache,
+		cfg.Valkey,
+		45*time.Minute,
+		10_000,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("token cache configuration failed: %w", err)
+		return nil, nil, fmt.Errorf("cache configuration failed: %w", err)
 	}
+
 	vendorCache := vendor.Cached(tokenCache, orgProfile)
 
 	// Pipeline routes use repoVendor (defaults to "default" profile)
@@ -82,7 +90,7 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	// healthchecks are not included in telemetry or authorization
 	muxWithoutTelemetry.Handle("GET /healthcheck", standardRouteMiddleware.Then(handleHealthCheck()))
 
-	return mux, nil
+	return mux, cacheCleanup, nil
 }
 
 func main() {
@@ -121,7 +129,7 @@ func launchServer() error {
 	}
 
 	// setup routing and dependencies
-	handler, err := configureServerRoutes(ctx, cfg, orgProfile)
+	handler, cacheCleanup, err := configureServerRoutes(ctx, cfg, orgProfile)
 	if err != nil {
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
@@ -153,6 +161,13 @@ func launchServer() error {
 	}
 
 	server.RegisterOnShutdown(func() {
+		log.Info().Msg("cache: shutting down")
+		if err := cacheCleanup(); err != nil {
+			log.Warn().Err(err).Msg("cache: shutdown failed")
+		} else {
+			log.Info().Msg("cache: shutdown complete")
+		}
+
 		log.Info().Msg("telemetry: shutting down")
 		if err := shutdownTelemetry(ctx); err != nil {
 			log.Warn().Err(err).Msg("telemetry: shutdown failed")
