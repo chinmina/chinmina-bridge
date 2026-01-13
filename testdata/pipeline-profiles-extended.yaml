@@ -1,0 +1,6 @@
+pipeline:
+  defaults:
+    permissions:
+      - contents:read
+      - metadata:read
+      - pull_requests:write
