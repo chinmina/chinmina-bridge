@@ -86,6 +86,7 @@ type APITestHarness struct {
 	ProfileStore  *profile.ProfileStore
 	jwk           *jose.JSONWebKey
 	privateKeyPEM string
+	cacheCleanup  func() error
 }
 
 // NewAPITestHarness creates a complete test harness with all mock servers and the API server.
@@ -120,6 +121,9 @@ func NewAPITestHarness(t *testing.T) *APITestHarness {
 			APIURL: harness.BuildkiteMock.Server.URL,
 			Token:  "test-buildkite-token",
 		},
+		Cache: config.CacheConfig{
+			Type: "memory", // Default to memory cache for tests
+		},
 		Github: config.GithubConfig{
 			APIURL:         harness.GitHubMock.Server.URL,
 			PrivateKey:     harness.privateKeyPEM,
@@ -134,9 +138,10 @@ func NewAPITestHarness(t *testing.T) *APITestHarness {
 		},
 	}
 
-	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore)
+	handler, cleanup, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore)
 	require.NoError(t, err)
 
+	harness.cacheCleanup = cleanup
 	harness.Server = httptest.NewServer(handler)
 
 	return harness
@@ -144,6 +149,9 @@ func NewAPITestHarness(t *testing.T) *APITestHarness {
 
 // Close shuts down all mock servers and the API server.
 func (h *APITestHarness) Close() {
+	if h.cacheCleanup != nil {
+		_ = h.cacheCleanup()
+	}
 	h.Server.Close()
 	h.JWKSServer.Close()
 	h.GitHubMock.Close()
