@@ -9,9 +9,11 @@ import (
 type Config struct {
 	Authorization AuthorizationConfig
 	Buildkite     BuildkiteConfig
+	Cache         CacheConfig
 	Github        GithubConfig
 	Observe       ObserveConfig
 	Server        ServerConfig
+	Valkey        ValkeyConfig
 }
 
 type ServerConfig struct {
@@ -21,6 +23,25 @@ type ServerConfig struct {
 	OutgoingHTTPMaxIdleConns    int    `env:"SERVER_OUTGOING_MAX_IDLE_CONNS, default=100"`
 	OutgoingHTTPMaxConnsPerHost int    `env:"SERVER_OUTGOING_MAX_CONNS_PER_HOST, default=20"`
 	OrgProfile                  string `env:"GITHUB_ORG_PROFILE"`
+}
+
+// CacheConfig specifies which cache backend to use.
+type CacheConfig struct {
+	// Type selects the cache implementation: "memory" (default) or "valkey"
+	Type string `env:"CACHE_TYPE, default=memory"`
+}
+
+// ValkeyConfig contains settings for the Valkey distributed cache.
+// Only used when CACHE_TYPE=valkey.
+type ValkeyConfig struct {
+	// Address is the Valkey server address (host:port)
+	Address string `env:"VALKEY_ADDRESS"`
+
+	// UseIAMAuth enables AWS IAM authentication for ElastiCache
+	UseIAMAuth bool `env:"VALKEY_USE_IAM_AUTH"`
+
+	// TLS enables TLS connections (required for IAM auth)
+	TLS bool `env:"VALKEY_TLS, default=true"`
 }
 
 type AuthorizationConfig struct {
