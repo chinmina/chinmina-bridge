@@ -23,6 +23,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,6 +44,13 @@ type APITestHarness struct {
 
 // APITestHarnessOption configures the API test harness.
 type APITestHarnessOption func(*config.Config)
+
+// WithValkeyCache configures the test harness to use a Valkey cache container.
+func WithValkeyCache() APITestHarnessOption {
+	return func(cfg *config.Config) {
+		cfg.Cache.Type = "valkey"
+	}
+}
 
 // NewAPITestHarness creates a complete test harness with all mock servers and the API server.
 // Use options to customize the configuration (e.g., WithValkeyCache).
@@ -81,6 +89,9 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 			APIURL: harness.BuildkiteMock.Server.URL,
 			Token:  "test-buildkite-token",
 		},
+		Cache: config.CacheConfig{
+			Type: "memory", // Default to memory cache for tests
+		},
 		Github: config.GithubConfig{
 			APIURL:         harness.GitHubMock.Server.URL,
 			PrivateKey:     harness.privateKeyPEM,
@@ -100,13 +111,22 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 		opt(&cfg)
 	}
 
-	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore)
+	if cfg.Cache.Type == "valkey" {
+		address := testhelpers.RunValkeyContainer(t)
+		cfg.Valkey.Address = address
+		cfg.Valkey.TLS = false
+	}
+
+	handler, cleanup, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore)
 	require.NoError(t, err)
 
 	harness.Server = httptest.NewServer(handler)
 
 	// Register cleanup handlers
 	t.Cleanup(func() {
+		if cleanup != nil {
+			assert.NoError(t, cleanup())
+		}
 		harness.Server.Close()
 		harness.JWKSServer.Close()
 		harness.GitHubMock.Close()

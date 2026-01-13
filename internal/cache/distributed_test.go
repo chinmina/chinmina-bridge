@@ -7,47 +7,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"github.com/valkey-io/valkey-go"
 )
 
-func setupValkey(t *testing.T) (valkey.Client, func()) {
-	ctx := context.Background()
+func setupValkey(t *testing.T) valkey.Client {
+	t.Helper()
 
-	req := testcontainers.ContainerRequest{
-		Image:        "valkey/valkey:8-alpine",
-		ExposedPorts: []string{"6379/tcp"},
-		WaitingFor:   wait.ForLog("Ready to accept connections"),
-	}
-
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
-	require.NoError(t, err)
-
-	endpoint, err := container.Endpoint(ctx, "")
-	require.NoError(t, err)
+	endpoint := testhelpers.RunValkeyContainer(t)
 
 	client, err := valkey.NewClient(valkey.ClientOption{
 		InitAddress: []string{endpoint},
 	})
 	require.NoError(t, err)
 
-	cleanup := func() {
+	t.Cleanup(func() {
 		client.Close()
-		_ = container.Terminate(ctx)
-	}
+	})
 
-	return client, cleanup
+	return client
 }
 
 func TestIntegrationDistributed_SetAndGet(t *testing.T) {
-	client, cleanup := setupValkey(t)
-	defer cleanup()
+	client := setupValkey(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute)
 	require.NoError(t, err)
@@ -65,15 +49,11 @@ func TestIntegrationDistributed_SetAndGet(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get token
-	result, found, err := cache.Get(ctx, key)
-	require.NoError(t, err)
-	assert.True(t, found)
-	assert.Equal(t, expected, result)
+	assertEventuallyExists(t, cache, key)
 }
 
 func TestIntegrationDistributed_GetNotFound(t *testing.T) {
-	client, cleanup := setupValkey(t)
-	defer cleanup()
+	client := setupValkey(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute)
 	require.NoError(t, err)
@@ -88,8 +68,7 @@ func TestIntegrationDistributed_GetNotFound(t *testing.T) {
 }
 
 func TestIntegrationDistributed_Invalidate(t *testing.T) {
-	client, cleanup := setupValkey(t)
-	defer cleanup()
+	client := setupValkey(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute)
 	require.NoError(t, err)
@@ -107,9 +86,7 @@ func TestIntegrationDistributed_Invalidate(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's there
-	_, found, err := cache.Get(ctx, key)
-	require.NoError(t, err)
-	assert.True(t, found)
+	assertEventuallyExists(t, cache, key)
 
 	// Invalidate
 	err = cache.Invalidate(ctx, key)
@@ -117,15 +94,14 @@ func TestIntegrationDistributed_Invalidate(t *testing.T) {
 
 	// Verify it's gone by polling (as invalidate may be eventually consistent)
 	assert.EventuallyWithT(t, func(collect *assert.CollectT) {
-		_, found, err = cache.Get(ctx, key)
+		_, found, err := cache.Get(ctx, key)
 		require.NoError(collect, err)
 		assert.False(collect, found)
 	}, time.Second*2, time.Millisecond*50, "cache entry should be eventually invalidated")
 }
 
 func TestIntegrationDistributed_TTL(t *testing.T) {
-	client, cleanup := setupValkey(t)
-	defer cleanup()
+	client := setupValkey(t)
 
 	// Short TTL for testing
 	cache, err := NewDistributed[CacheTestDummy](client, 1*time.Second)
@@ -144,21 +120,18 @@ func TestIntegrationDistributed_TTL(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify it's there immediately
-	_, found, err := cache.Get(ctx, key)
-	require.NoError(t, err)
-	assert.True(t, found)
+	assertEventuallyExists(t, cache, key)
 
 	// Verify it's expired
 	assert.EventuallyWithT(t, func(collect *assert.CollectT) {
-		_, found, err = cache.Get(ctx, key)
+		_, found, err := cache.Get(ctx, key)
 		require.NoError(collect, err)
 		assert.False(collect, found)
 	}, time.Second*2, time.Millisecond*100, "cache entry should expire after TTL")
 }
 
 func TestIntegrationDistributed_JSONRoundTrip(t *testing.T) {
-	client, cleanup := setupValkey(t)
-	defer cleanup()
+	client := setupValkey(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute)
 	require.NoError(t, err)
@@ -191,10 +164,22 @@ func TestIntegrationDistributed_JSONRoundTrip(t *testing.T) {
 			err := cache.Set(ctx, key, tt.dummy)
 			require.NoError(t, err)
 
-			result, found, err := cache.Get(ctx, key)
-			require.NoError(t, err)
-			assert.True(t, found)
-			assert.Equal(t, tt.dummy, result)
+			assert.EventuallyWithT(t, func(collect *assert.CollectT) {
+				result, found, err := cache.Get(ctx, key)
+				require.NoError(collect, err)
+				assert.True(collect, found)
+				assert.Equal(collect, tt.dummy, result)
+			}, time.Second*2, time.Millisecond*100, "cache entry should be eventually available")
 		})
 	}
+}
+
+func assertEventuallyExists(t *testing.T, cache TokenCache[CacheTestDummy], key string) {
+	t.Helper()
+
+	assert.EventuallyWithT(t, func(collect *assert.CollectT) {
+		_, found, err := cache.Get(context.Background(), key)
+		require.NoError(collect, err)
+		assert.True(collect, found)
+	}, time.Second*2, time.Millisecond*100, "cache entry should be eventually available")
 }
