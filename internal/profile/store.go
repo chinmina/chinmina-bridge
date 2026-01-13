@@ -61,6 +61,15 @@ func (p *ProfileStore) GetPipelineProfile(name string) (AuthorizedProfile[Pipeli
 	return p.profiles.GetPipelineProfile(name)
 }
 
+// Digest returns the content digest of the currently loaded profiles.
+// This digest changes when profile configuration changes, allowing
+// cache keys to be namespaced by configuration version.
+func (p *ProfileStore) Digest() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.profiles.Digest()
+}
+
 // Update the currently stored profiles. Logs at info level if the
 // profile content changed (based on digest), or at debug level if unchanged.
 func (p *ProfileStore) Update(profiles Profiles) {

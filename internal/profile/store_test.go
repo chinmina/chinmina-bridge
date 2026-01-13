@@ -276,6 +276,72 @@ pipeline:
 	assert.Equal(t, "nonexistent", notFoundErr.Name)
 }
 
+func TestProfileStore_Digest(t *testing.T) {
+	validYAML := `organization:
+  profiles:
+    - name: "test-profile"
+      repositories: ["silk"]
+      permissions: ["contents:read"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:silk:profile.yaml": validYAML,
+		},
+	}
+
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	require.NoError(t, err)
+
+	store := NewProfileStore()
+	store.Update(profiles)
+
+	// Verify store returns the same digest as the underlying profiles
+	assert.Equal(t, profiles.Digest(), store.Digest())
+	assert.NotEmpty(t, store.Digest())
+}
+
+func TestProfileStore_Digest_ChangesWithUpdate(t *testing.T) {
+	yaml1 := `organization:
+  profiles:
+    - name: "profile-v1"
+      repositories: ["v1"]
+      permissions: ["contents:read"]
+`
+
+	yaml2 := `organization:
+  profiles:
+    - name: "profile-v2"
+      repositories: ["v2"]
+      permissions: ["contents:write"]
+`
+
+	gh := &mockGitHubClient{
+		files: map[string]string{
+			"acme:test:v1.yaml": yaml1,
+			"acme:test:v2.yaml": yaml2,
+		},
+	}
+
+	store := NewProfileStore()
+
+	// Load first version
+	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh)
+	require.NoError(t, err)
+	store.Update(profiles1)
+	digest1 := store.Digest()
+
+	// Update with different content
+	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh)
+	require.NoError(t, err)
+	store.Update(profiles2)
+	digest2 := store.Digest()
+
+	// Digests should be different
+	assert.NotEqual(t, digest1, digest2)
+	assert.Equal(t, profiles2.Digest(), digest2)
+}
+
 func TestProfileStore_Concurrency(t *testing.T) {
 	// Simple smoke test that multiple goroutines can access the store concurrently
 	// without panics. Actual race conditions are caught by `go test -race`.
@@ -317,8 +383,9 @@ func TestProfileStore_Concurrency(t *testing.T) {
 				return
 			}
 
-			// Also exercise GetPipelineProfile
+			// Also exercise GetPipelineProfile and Digest
 			_, _ = store.GetPipelineProfile("default")
+			_ = store.Digest()
 		}()
 	}
 
