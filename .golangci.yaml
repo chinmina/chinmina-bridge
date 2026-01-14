@@ -76,7 +76,6 @@ linters:
       disabled-checks:
         - ifElseChain      # Stylistic, not bugs
         - singleCaseSwitch # Sometimes clearer
-        - hugeParam        # Not a current concern
 
     gosec:
       excludes:
