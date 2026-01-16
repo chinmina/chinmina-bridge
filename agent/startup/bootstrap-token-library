@@ -5,7 +5,7 @@ set -euo pipefail
 echo "installing Chinmina token library plugin"
 
 plugin_repo="https://github.com/chinmina/chinmina-token-buildkite-plugin.git"
-plugin_version="v1.2.0"
+plugin_version="v1.4.0"
 plugin_dir="/buildkite/plugins/chinmina-token-buildkite-plugin"
 
 [[ -d "${plugin_dir}" ]] && rm -rf "${plugin_dir}"
