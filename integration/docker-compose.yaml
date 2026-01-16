@@ -1,26 +1,33 @@
-x-buildkite-agent: &buildkite-agent
-  image: buildkite/agent:3
-  depends_on:
-    - chinmina-bridge
-  command: ["start"]
-  environment:
-    - BUILDKITE_AGENT_TOKEN
-    - BUILDKITE_AGENT_TAGS
-    - TMPDIR=/tmp
-  volumes:
-    - "../agent/startup:/docker-entrypoint.d:ro"
-    - "../agent/hooks:/buildkite/hooks:ro"
+#
+# By default, this definition will start a load-balanced set of Chinmina containers and multiple agents.
+#
+# Use a docker-compose.override.yaml file to easily override scaling and other settings. For example:
+#
+# ```yaml
+# services:
+#   buildkite-agent:
+#     scale: 5
+#
+#   chinmina-bridge-worker:
+#     scale: 20
+# ```
+#
+
 
 services:
-  # spawn any number of buildkite agents by re-using the same definition
-  buildkite-agent-1:
-    <<: *buildkite-agent
-  buildkite-agent-2:
-    <<: *buildkite-agent
-  # buildkite-agent-3:
-  #   <<: *buildkite-agent
-  # buildkite-agent-4:
-  #   <<: *buildkite-agent
+  buildkite-agent:
+    scale: 2
+    image: buildkite/agent:3
+    depends_on:
+      - chinmina-bridge
+    command: ["start"]
+    environment:
+      - BUILDKITE_AGENT_TOKEN
+      - BUILDKITE_AGENT_TAGS
+      - TMPDIR=/tmp
+    volumes:
+      - "../agent/startup:/docker-entrypoint.d:ro"
+      - "../agent/hooks:/buildkite/hooks:ro"
 
   chinmina-bridge:
     image: alpine
