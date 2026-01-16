@@ -16,7 +16,7 @@
 
 services:
   buildkite-agent:
-    scale: 2
+    scale: 1
     image: buildkite/agent:3
     depends_on:
       - chinmina-bridge
@@ -29,7 +29,21 @@ services:
       - "../agent/startup:/docker-entrypoint.d:ro"
       - "../agent/hooks:/buildkite/hooks:ro"
 
-  chinmina-bridge:
+  chinmina-bridge: # ingress container
+    image: traefik:v3
+    depends_on:
+      - chinmina-bridge-worker
+    command:
+      - "--api.insecure=true" # Enable Dashboard
+      - "--providers.docker=true" # Enable Docker Auto-discovery
+      - "--providers.docker.exposedbydefault=false" # Don't expose containers unless explicitly told
+    ports:
+      - "18889:8080"  # dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # allows traefik to see other containers
+
+  chinmina-bridge-worker:
+    scale: 1
     image: alpine
     depends_on:
       - aspire
@@ -59,6 +73,10 @@ services:
       - AWS_DEFAULT_REGION
     volumes:
       - "..:/src"
+    labels: # labelling allows scaled replicas to be routed via traefik
+      - "traefik.enable=true"
+      - "traefik.http.routers.chinmina.rule=PathPrefix(`/`)"
+      - "traefik.http.services.chinmina.loadbalancer.server.port=80"
 
   # .NET Aspire dashboard all in one for local OTEL tracing, using in-memory storage which is
   # not persisted.
