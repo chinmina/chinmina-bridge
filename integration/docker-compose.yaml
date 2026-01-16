@@ -1,28 +1,59 @@
-x-buildkite-agent: &buildkite-agent
-  image: buildkite/agent:3
-  depends_on:
-    - chinmina-bridge
-  command: ["start"]
-  environment:
-    - BUILDKITE_AGENT_TOKEN
-    - BUILDKITE_AGENT_TAGS
-    - TMPDIR=/tmp
-  volumes:
-    - "../agent/startup:/docker-entrypoint.d:ro"
-    - "../agent/hooks:/buildkite/hooks:ro"
+#
+# By default, this definition will start a load-balanced set of Chinmina containers and multiple agents.
+#
+# Use a docker-compose.override.yaml file to easily override scaling and other settings. For example:
+#
+# ```yaml
+# services:
+#   buildkite-agent:
+#     scale: 5
+#
+#   chinmina-bridge-worker:
+#     scale: 20
+# ```
+#
+
 
 services:
-  # spawn any number of buildkite agents by re-using the same definition
-  buildkite-agent-1:
-    <<: *buildkite-agent
-  buildkite-agent-2:
-    <<: *buildkite-agent
-  # buildkite-agent-3:
-  #   <<: *buildkite-agent
-  # buildkite-agent-4:
-  #   <<: *buildkite-agent
+  buildkite-agent:
+    scale: 1
+    image: buildkite/agent:3
+    depends_on:
+      - chinmina-bridge
+    command: ["start"]
+    environment:
+      - BUILDKITE_AGENT_TOKEN
+      - BUILDKITE_AGENT_TAGS
+      - TMPDIR=/tmp
+    volumes:
+      - "../agent/startup:/docker-entrypoint.d:ro"
+      - "../agent/hooks:/buildkite/hooks:ro"
 
-  chinmina-bridge:
+  chinmina-bridge: # ingress container
+    image: traefik:v3
+    depends_on:
+      - chinmina-bridge-worker
+    command:
+      - "--api.insecure=true"                       # Enable Dashboard
+      - "--providers.docker=true"                   # Enable Docker Auto-discovery
+      - "--providers.docker.exposedbydefault=false" # Don't expose containers unless explicitly told
+      # --- TRACING (OTLP gRPC) ---
+      - "--tracing.otlp=true"
+      - "--tracing.otlp.grpc.endpoint=aspire:18889" # Aspire OTLP
+      - "--tracing.otlp.grpc.insecure=true"
+      # --- METRICS (OTLP gRPC) ---
+      - "--metrics.otlp=true"
+      - "--metrics.otlp.grpc.endpoint=aspire:18889"
+      - "--metrics.otlp.grpc.insecure=true"
+      - "--metrics.otlp.addEntryPointsLabels=true" # Adds port info (port 80 vs 443)
+      - "--metrics.otlp.addServicesLabels=true"    # Adds service info (whoami, etc.)
+    ports:
+      - "18889:8080"  # dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # allows traefik to see other containers
+
+  chinmina-bridge-worker:
+    scale: 1
     image: alpine
     depends_on:
       - aspire
@@ -52,6 +83,10 @@ services:
       - AWS_DEFAULT_REGION
     volumes:
       - "..:/src"
+    labels: # labelling allows scaled replicas to be routed via traefik
+      - "traefik.enable=true"
+      - "traefik.http.routers.chinmina.rule=PathPrefix(`/`)"
+      - "traefik.http.services.chinmina.loadbalancer.server.port=80"
 
   # .NET Aspire dashboard all in one for local OTEL tracing, using in-memory storage which is
   # not persisted.
