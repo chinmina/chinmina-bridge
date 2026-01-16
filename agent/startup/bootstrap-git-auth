@@ -5,7 +5,7 @@ set -euo pipefail
 echo "installing Github credential plugin"
 
 plugin_repo="https://github.com/chinmina/chinmina-git-credentials-buildkite-plugin.git"
-plugin_version="v1.3.0"
+plugin_version="v1.6.0"
 plugin_dir="/buildkite/plugins/chinmina-git-credentials-buildkite-plugin"
 
 [[ -d "${plugin_dir}" ]] && rm -rf "${plugin_dir}"
