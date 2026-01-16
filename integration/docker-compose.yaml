@@ -34,9 +34,19 @@ services:
     depends_on:
       - chinmina-bridge-worker
     command:
-      - "--api.insecure=true" # Enable Dashboard
-      - "--providers.docker=true" # Enable Docker Auto-discovery
+      - "--api.insecure=true"                       # Enable Dashboard
+      - "--providers.docker=true"                   # Enable Docker Auto-discovery
       - "--providers.docker.exposedbydefault=false" # Don't expose containers unless explicitly told
+      # --- TRACING (OTLP gRPC) ---
+      - "--tracing.otlp=true"
+      - "--tracing.otlp.grpc.endpoint=aspire:18889" # Aspire OTLP
+      - "--tracing.otlp.grpc.insecure=true"
+      # --- METRICS (OTLP gRPC) ---
+      - "--metrics.otlp=true"
+      - "--metrics.otlp.grpc.endpoint=aspire:18889"
+      - "--metrics.otlp.grpc.insecure=true"
+      - "--metrics.otlp.addEntryPointsLabels=true" # Adds port info (port 80 vs 443)
+      - "--metrics.otlp.addServicesLabels=true"    # Adds service info (whoami, etc.)
     ports:
       - "18889:8080"  # dashboard
     volumes:
