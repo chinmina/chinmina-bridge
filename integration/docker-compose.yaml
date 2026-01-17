@@ -57,6 +57,7 @@ services:
     image: alpine
     depends_on:
       - aspire
+      - valkey
     working_dir: "/src"
     command: ["./dist/chinmina-bridge"]
     environment:
@@ -70,6 +71,10 @@ services:
       - GITHUB_APP_ID
       - GITHUB_APP_INSTALLATION_ID
       - GITHUB_ORG_PROFILE
+      - CACHE_TYPE=${CACHE_TYPE:-valkey} # valkey or memory
+      - VALKEY_ADDRESS=valkey:6379
+      - VALKEY_USE_IAM_AUTH=false
+      - VALKEY_TLS=false
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire:18889
       - OBSERVE_ENABLED=true
       - OBSERVE_METRICS_ENABLED=true
@@ -97,3 +102,11 @@ services:
     environment:
       - ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
       - LOG_LEVEL=debug
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
