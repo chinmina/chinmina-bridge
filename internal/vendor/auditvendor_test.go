@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
+	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
@@ -160,8 +161,10 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	}
 	// Testing auditing over the cache layer as there
 	// are resultant changes to audit objects.
-	vendorCache, err := vendor.Cached(45 * time.Minute)
+	tokenCache, err := cache.NewMemory[vendor.ProfileToken](45*time.Minute, 10_000)
 	assert.NoError(t, err)
+	digester := mockDigester{digest: "test-digest"}
+	vendorCache := vendor.Cached(tokenCache, digester)
 
 	auditedVendor := vendor.Auditor(vendorCache(profileVendor))
 

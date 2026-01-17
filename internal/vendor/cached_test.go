@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -15,9 +16,7 @@ import (
 func TestCacheMissOnFirstRequest(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -38,9 +37,7 @@ func TestCacheMissOnFirstRequest(t *testing.T) {
 func TestCacheMissWithNilResponse(t *testing.T) {
 	wrapped := sequenceVendor("first-call", nil)
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -72,9 +69,7 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -106,9 +101,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 func TestCacheHitOnSecondRequest(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -141,9 +134,7 @@ var defaultTTL = 60 * time.Minute
 func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -175,9 +166,7 @@ func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 func TestCacheMissWithRepoChange(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -217,9 +206,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref1 := profile.ProfileRef{
@@ -265,9 +252,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 func TestCacheMissWithExpiredItem(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c, err := vendor.Cached(time.Nanosecond) // near instant expiration
-	require.NoError(t, err)
-
+	c := newTestCached(t, time.Nanosecond, "test-digest") // near instant expiration
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -301,9 +286,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 func TestCacheProfileWithDifferentRepo(t *testing.T) {
 	wrapped := sequenceVendor("first-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -336,9 +319,7 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 func TestReturnsErrorForWrapperError(t *testing.T) {
 	wrapped := sequenceVendor(E{"failed"})
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -355,9 +336,7 @@ func TestReturnsErrorForWrapperError(t *testing.T) {
 func TestCacheMissWithNilVendorResponse(t *testing.T) {
 	wrapped := sequenceVendor(nil, "second-call")
 
-	c, err := vendor.Cached(defaultTTL)
-	require.NoError(t, err)
-
+	c := newTestCached(t, defaultTTL, "test-digest")
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -392,6 +371,203 @@ type E struct {
 
 func (e E) Error() string {
 	return e.M
+}
+
+// Test error handling in cache operations
+func TestCacheGetError(t *testing.T) {
+	wrapped := sequenceVendor("first-call")
+	errorCache := &errorReturningCache{
+		getError: errors.New("cache get failed"),
+	}
+
+	c := vendor.Cached(errorCache, mockDigester{digest: "test-digest"})
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+
+	// Should log warning but proceed to fetch from vendor
+	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "first-call",
+		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
+		Repositories:        []string{"any-repo"},
+		Profile:             "repo:default",
+	})
+}
+
+func TestCacheSetError(t *testing.T) {
+	wrapped := sequenceVendor("first-call")
+	errorCache := &errorReturningCache{
+		setError: errors.New("cache set failed"),
+	}
+
+	c := vendor.Cached(errorCache, mockDigester{digest: "test-digest"})
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+
+	// Should log warning but return successful result
+	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "first-call",
+		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
+		Repositories:        []string{"any-repo"},
+		Profile:             "repo:default",
+	})
+}
+
+func TestCacheInvalidateError(t *testing.T) {
+	wrapped := sequenceVendor("first-call", "second-call")
+	errorCache := &errorReturningCache{
+		invalidateError: errors.New("cache invalidate failed"),
+		storedToken: &vendor.ProfileToken{
+			Token:               "cached-token",
+			VendedRepositoryURL: "https://github.com/test-org/old-repo.git",
+			Repositories:        []string{"old-repo"},
+			Profile:             "repo:default",
+		},
+	}
+
+	c := vendor.Cached(errorCache, mockDigester{digest: "test-digest"})
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+
+	// First call hits cache but repo mismatches, tries to invalidate (fails), then fetches
+	result := v(context.Background(), ref, "https://github.com/test-org/different-repo.git")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "first-call",
+		VendedRepositoryURL: "https://github.com/test-org/different-repo.git",
+		Repositories:        []string{"different-repo"},
+		Profile:             "repo:default",
+	})
+}
+
+func TestCacheInvalidRepositoryURL(t *testing.T) {
+	wrapped := sequenceVendor("first-call", "second-call")
+
+	c := newTestCached(t, defaultTTL, "test-digest")
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+
+	// First call with valid repo
+	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "first-call",
+		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
+		Repositories:        []string{"any-repo"},
+		Profile:             "repo:default",
+	})
+
+	// Second call with invalid repo URL (should trigger repo mismatch and fetch)
+	result = v(context.Background(), ref, "not-a-valid-url")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "second-call",
+		VendedRepositoryURL: "not-a-valid-url",
+		Repositories:        []string{"not-a-valid-url"},
+		Profile:             "repo:default",
+	})
+}
+
+func TestCacheDigestChange(t *testing.T) {
+	wrapped := sequenceVendor("first-call", "second-call")
+
+	digester := &mutableDigester{digest: "digest-v1"}
+	tokenCache, err := cache.NewMemory[vendor.ProfileToken](defaultTTL, 10_000)
+	require.NoError(t, err)
+
+	c := vendor.Cached(tokenCache, digester)
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+
+	// First call misses cache
+	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "first-call",
+		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
+		Repositories:        []string{"any-repo"},
+		Profile:             "repo:default",
+	})
+
+	// Change digest (simulates config change)
+	digester.digest = "digest-v2"
+
+	// Second call misses cache due to different digest in key
+	result = v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "second-call",
+		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
+		Repositories:        []string{"any-repo"},
+		Profile:             "repo:default",
+	})
+}
+
+// errorReturningCache is a mock cache that can return errors for testing
+type errorReturningCache struct {
+	getError        error
+	setError        error
+	invalidateError error
+	storedToken     *vendor.ProfileToken
+}
+
+func (e *errorReturningCache) Get(ctx context.Context, key string) (vendor.ProfileToken, bool, error) {
+	if e.getError != nil {
+		return vendor.ProfileToken{}, false, e.getError
+	}
+	if e.storedToken != nil {
+		return *e.storedToken, true, nil
+	}
+	return vendor.ProfileToken{}, false, nil
+}
+
+func (e *errorReturningCache) Set(ctx context.Context, key string, token vendor.ProfileToken) error {
+	if e.setError != nil {
+		return e.setError
+	}
+	return nil
+}
+
+func (e *errorReturningCache) Invalidate(ctx context.Context, key string) error {
+	if e.invalidateError != nil {
+		return e.invalidateError
+	}
+	return nil
+}
+
+// mutableDigester allows digest to be changed during tests
+type mutableDigester struct {
+	digest string
+}
+
+func (m *mutableDigester) Digest() string {
+	return m.digest
 }
 
 // sequenceVendor returns each of the calls in sequence, either a token or an error
