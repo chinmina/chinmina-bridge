@@ -57,7 +57,8 @@ func NewFromConfig[T any](
 			return nil, fmt.Errorf("failed to create distributed cache: %w", err)
 		}
 
-		return distributed, nil
+		instrumented := NewInstrumented(distributed, "distributed")
+		return instrumented, nil
 
 	case "memory":
 		log.Info().
@@ -69,7 +70,8 @@ func NewFromConfig[T any](
 			return nil, fmt.Errorf("failed to create memory cache: %w", err)
 		}
 
-		return memory, nil
+		instrumented := NewInstrumented(memory, "memory")
+		return instrumented, nil
 
 	default:
 		return nil, fmt.Errorf("invalid cache type %q: must be either \"memory\" or \"valkey\"", cacheConfig.Type)
