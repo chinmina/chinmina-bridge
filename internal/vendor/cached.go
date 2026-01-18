@@ -4,12 +4,46 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
+
+var (
+	outcomeMetricsOnce sync.Once
+	tokenCacheOutcome  metric.Int64Counter
+)
+
+func initOutcomeMetrics() {
+	outcomeMetricsOnce.Do(func() {
+		meter := otel.Meter("github.com/chinmina/chinmina-bridge/internal/vendor")
+
+		var err error
+		tokenCacheOutcome, err = meter.Int64Counter(
+			"token.cache.outcome",
+			metric.WithDescription("Token cache lookup outcomes"),
+		)
+		if err != nil {
+			otel.Handle(err)
+		}
+	})
+}
+
+func recordOutcome(ctx context.Context, result string) {
+	initOutcomeMetrics()
+	if tokenCacheOutcome == nil {
+		return
+	}
+	tokenCacheOutcome.Add(ctx, 1,
+		metric.WithAttributes(attribute.String("token.cache.result", result)),
+	)
+}
 
 // Cached supplies a vendor that caches the results of the wrapped vendor. The
 // cache is non-locking, and so concurrent requests for the same pipeline could
@@ -31,6 +65,7 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 					Msg("hit: existing token found for pipeline")
 
 				if token, ok := checkTokenRepository(cachedToken, requestedRepository); ok {
+					recordOutcome(ctx, "hit")
 					return NewVendorSuccess(token)
 				}
 
@@ -40,6 +75,8 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 					Str("requestedRepository", requestedRepository).
 					Msg("dropping cached token due to repository mismatch: will request new token")
 
+				recordOutcome(ctx, "mismatch")
+
 				// the delete is required as "set" is not guaranteed to write to the cache
 				if err := tokenCache.Invalidate(ctx, key); err != nil {
 					log.Warn().Err(err).Str("key", key).Msg("cache invalidate failed")
@@ -47,6 +84,7 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 			}
 
 			// cache miss: request and cache
+			recordOutcome(ctx, "miss")
 			result := v(ctx, ref, requestedRepository)
 
 			// Only cache successful results
