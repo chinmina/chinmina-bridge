@@ -37,7 +37,7 @@ func CreateTestProfileStore(t *testing.T, yamlContent string) *profile.ProfileSt
 	require.NoError(t, err, "failed to compile test profiles")
 
 	store := profile.NewProfileStore()
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	return store
 }

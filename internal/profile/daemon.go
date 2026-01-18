@@ -46,6 +46,6 @@ func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, o
 		return
 	}
 
-	profileStore.Update(profiles)
+	profileStore.Update(ctx, profiles)
 	span.SetStatus(codes.Ok, "profile refreshed")
 }

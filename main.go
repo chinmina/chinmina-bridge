@@ -108,10 +108,10 @@ func main() {
 }
 
 func launchServer() error {
+	ctx := context.Background()
 	shutdownHooks := server.ShutdownHooks{}
 	orgProfile := profile.NewProfileStore()
-	orgProfile.Update(profile.NewDefaultProfiles())
-	ctx := context.Background()
+	orgProfile.Update(ctx, profile.NewDefaultProfiles())
 
 	cfg, err := config.Load(context.Background())
 	if err != nil {

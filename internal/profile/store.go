@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type ProfileStore struct {
@@ -72,12 +74,19 @@ func (p *ProfileStore) Digest() string {
 
 // Update the currently stored profiles. Logs at info level if the
 // profile content changed (based on digest), or at debug level if unchanged.
-func (p *ProfileStore) Update(profiles Profiles) {
+func (p *ProfileStore) Update(ctx context.Context, profiles Profiles) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	oldDigest := p.profiles.Digest()
 	newDigest := profiles.Digest()
+
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("profile.digest_current", oldDigest),
+		attribute.String("profile.digest_updated", newDigest),
+		attribute.Bool("profile.digest_changed", oldDigest != newDigest),
+	)
 
 	// by default, only log when the source has actually changed content
 	if oldDigest != newDigest {
