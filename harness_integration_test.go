@@ -19,11 +19,11 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
+	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,6 +58,11 @@ func WithValkeyCache() APITestHarnessOption {
 func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHarness {
 	t.Helper()
 	testhelpers.SetupLogger(t)
+	hooks := server.ShutdownHooks{}
+
+	t.Cleanup(func() {
+		hooks.Execute(t.Context())
+	})
 
 	harness := &APITestHarness{
 		DefaultAudience:     "test-audience",
@@ -74,6 +79,10 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 	harness.JWKSServer = testhelpers.SetupJWKSServer(t, harness.jwk)
 	harness.GitHubMock = testhelpers.SetupMockGitHubServer(t)
 	harness.BuildkiteMock = testhelpers.SetupMockBuildkiteServer(t)
+
+	hooks.AddClose("jwks", harness.JWKSServer)
+	hooks.AddClose("github", harness.GitHubMock)
+	hooks.AddClose("buildkite", harness.BuildkiteMock)
 
 	// Initialize with default profiles
 	harness.ProfileStore.Update(profile.NewDefaultProfiles())
@@ -117,21 +126,11 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 		cfg.Valkey.TLS = false
 	}
 
-	handler, cleanup, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore)
+	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore, &hooks)
 	require.NoError(t, err)
 
 	harness.Server = httptest.NewServer(handler)
-
-	// Register cleanup handlers
-	t.Cleanup(func() {
-		if cleanup != nil {
-			assert.NoError(t, cleanup())
-		}
-		harness.Server.Close()
-		harness.JWKSServer.Close()
-		harness.GitHubMock.Close()
-		harness.BuildkiteMock.Close()
-	})
+	hooks.AddClose("api-server", harness.Server)
 
 	return harness
 }
