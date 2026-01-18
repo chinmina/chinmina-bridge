@@ -19,7 +19,7 @@ func TestNewFromConfig_Memory(t *testing.T) {
 	cacheConfig := config.CacheConfig{Type: "memory"}
 	valkeyConfig := config.ValkeyConfig{}
 
-	cache, cleanup, err := NewFromConfig[testToken](
+	cache, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
 		valkeyConfig,
@@ -29,10 +29,9 @@ func TestNewFromConfig_Memory(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotNil(t, cache)
-	assert.NotNil(t, cleanup)
 
 	// Verify cleanup is a no-op
-	err = cleanup()
+	err = cache.Close()
 	assert.NoError(t, err)
 }
 
@@ -41,7 +40,7 @@ func TestNewFromConfig_InvalidType(t *testing.T) {
 	cacheConfig := config.CacheConfig{Type: "redis"}
 	valkeyConfig := config.ValkeyConfig{}
 
-	cache, cleanup, err := NewFromConfig[testToken](
+	cache, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
 		valkeyConfig,
@@ -53,7 +52,6 @@ func TestNewFromConfig_InvalidType(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid cache type")
 	assert.Contains(t, err.Error(), "redis")
 	assert.Nil(t, cache)
-	assert.Nil(t, cleanup)
 }
 
 func TestNewFromConfig_ValkeyRequiresAddress(t *testing.T) {
@@ -64,7 +62,7 @@ func TestNewFromConfig_ValkeyRequiresAddress(t *testing.T) {
 		TLS:     true,
 	}
 
-	cache, cleanup, err := NewFromConfig[testToken](
+	cache, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
 		valkeyConfig,
@@ -75,5 +73,4 @@ func TestNewFromConfig_ValkeyRequiresAddress(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "valkey address is required")
 	assert.Nil(t, cache)
-	assert.Nil(t, cleanup)
 }

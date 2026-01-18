@@ -25,7 +25,7 @@ func TestIntegrationNewFromConfig_Valkey(t *testing.T) {
 		TLS:     false,
 	}
 
-	cache, cleanup, err := NewFromConfig[testToken](
+	cache, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
 		valkeyConfig,
@@ -35,7 +35,6 @@ func TestIntegrationNewFromConfig_Valkey(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, cache)
-	require.NotNil(t, cleanup)
 
 	// Verify cache works
 	key := "test-key"
@@ -50,7 +49,7 @@ func TestIntegrationNewFromConfig_Valkey(t *testing.T) {
 	assert.Equal(t, value, retrieved)
 
 	// Cleanup
-	err = cleanup()
+	err = cache.Close()
 	assert.NoError(t, err)
 }
 
@@ -66,7 +65,7 @@ func TestIntegrationNewFromConfig_ValkeyWithTLS(t *testing.T) {
 		TLS:     true, // Enable TLS config (though container doesn't use it)
 	}
 
-	_, _, err := NewFromConfig[testToken](
+	_, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
 		valkeyConfig,

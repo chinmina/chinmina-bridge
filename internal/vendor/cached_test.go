@@ -561,6 +561,10 @@ func (e *errorReturningCache) Invalidate(ctx context.Context, key string) error 
 	return nil
 }
 
+func (e *errorReturningCache) Close() error {
+	return nil
+}
+
 // mutableDigester allows digest to be changed during tests
 type mutableDigester struct {
 	digest string

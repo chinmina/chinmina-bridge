@@ -90,7 +90,7 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	// healthchecks are not included in telemetry or authorization
 	muxWithoutTelemetry.Handle("GET /healthcheck", standardRouteMiddleware.Then(handleHealthCheck()))
 
-	return mux, cacheCleanup, nil
+	return mux, tokenCache.Close, nil
 }
 
 func main() {

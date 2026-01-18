@@ -12,7 +12,7 @@ import (
 )
 
 // NewFromConfig creates a cache implementation based on the provided configuration.
-// It returns the cache, a cleanup function, and any error encountered.
+// It returns the cache and any error encountered.
 //
 // The cache type must be either "memory" or "valkey". Any other value returns an error.
 // For "valkey", the valkeyConfig.Address must be provided.
@@ -22,7 +22,7 @@ func NewFromConfig[T any](
 	valkeyConfig config.ValkeyConfig,
 	ttl time.Duration,
 	maxMemorySize int,
-) (TokenCache[T], func() error, error) {
+) (TokenCache[T], error) {
 	switch cacheConfig.Type {
 	case "valkey":
 		log.Info().
@@ -32,7 +32,7 @@ func NewFromConfig[T any](
 			Msg("initializing distributed cache")
 
 		if valkeyConfig.Address == "" {
-			return nil, nil, fmt.Errorf("valkey address is required when cache type is valkey")
+			return nil, fmt.Errorf("valkey address is required when cache type is valkey")
 		}
 
 		valkeyOpts := valkey.ClientOption{
@@ -48,16 +48,16 @@ func NewFromConfig[T any](
 
 		valkeyClient, err := valkey.NewClient(valkeyOpts)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create valkey client: %w", err)
+			return nil, fmt.Errorf("failed to create valkey client: %w", err)
 		}
 
 		distributed, err := NewDistributed[T](valkeyClient, ttl)
 		if err != nil {
 			valkeyClient.Close()
-			return nil, nil, fmt.Errorf("failed to create distributed cache: %w", err)
+			return nil, fmt.Errorf("failed to create distributed cache: %w", err)
 		}
 
-		return distributed, distributed.Close, nil
+		return distributed, nil
 
 	case "memory":
 		log.Info().
@@ -66,12 +66,12 @@ func NewFromConfig[T any](
 
 		memory, err := NewMemory[T](ttl, maxMemorySize)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create memory cache: %w", err)
+			return nil, fmt.Errorf("failed to create memory cache: %w", err)
 		}
 
-		return memory, func() error { return nil }, nil
+		return memory, nil
 
 	default:
-		return nil, nil, fmt.Errorf("invalid cache type %q: must be either \"memory\" or \"valkey\"", cacheConfig.Type)
+		return nil, fmt.Errorf("invalid cache type %q: must be either \"memory\" or \"valkey\"", cacheConfig.Type)
 	}
 }

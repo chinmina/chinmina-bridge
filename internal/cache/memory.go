@@ -55,3 +55,9 @@ func (m *Memory[T]) Invalidate(ctx context.Context, key string) error {
 	m.cache.Invalidate(key)
 	return nil
 }
+
+// Close releases any resources held by the cache.
+// For in-memory cache, no resources need to be released.
+func (m *Memory[T]) Close() error {
+	return nil
+}
