@@ -426,3 +426,124 @@ func TestIntegrationRequestSizeLimit_GitCredentials(t *testing.T) {
 	// entity too large is triggered by the request size middleware
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
 }
+
+// TestIntegrationValkey_CacheHit verifies that the Valkey cache correctly serves cached tokens
+func TestIntegrationValkey_CacheHit(t *testing.T) {
+	harness := NewAPITestHarness(t, WithValkeyCache())
+
+	// Setup: Configure mocks
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_firsttoken"
+
+	token := harness.PipelineToken()
+
+	// First request - should miss cache and call GitHub
+	result1, err := harness.Client().Token(token, "")
+	require.NoError(t, err)
+	assert.Equal(t, "ghs_firsttoken", result1.Token)
+	assert.Equal(t, 1, harness.GitHubMock.RequestCount, "expected GitHub to be called once for cache miss")
+
+	// Reset GitHub mock to return a different token
+	// If cache is working, we should still get the first token
+	harness.GitHubMock.Token = "ghs_differenttoken"
+
+	// Second request - should hit cache and not call GitHub again
+	result2, err := harness.Client().Token(token, "")
+	require.NoError(t, err)
+
+	// Should still be the original token from cache
+	assert.Equal(t, "ghs_firsttoken", result2.Token, "expected cached token, not new token from GitHub")
+	assert.Equal(t, 1, harness.GitHubMock.RequestCount, "expected GitHub to still be called only once (cache hit)")
+}
+
+// TestIntegrationMemory_CacheHitComparison verifies that memory cache works identically to Valkey
+func TestIntegrationMemory_CacheHitComparison(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	t.Logf("Test harness created, JWKS: %s, API: %s", harness.JWKSServer.URL, harness.Server.URL)
+
+	// Setup: Configure mocks
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_firsttoken"
+
+	token := harness.PipelineToken()
+
+	// First request - should miss cache and call GitHub
+	result1, err := harness.Client().Token(token, "")
+	require.NoError(t, err)
+	assert.Equal(t, "ghs_firsttoken", result1.Token)
+
+	// Reset GitHub mock to return a different token
+	// If cache is working, we should still get the first token
+	harness.GitHubMock.Token = "ghs_differenttoken"
+
+	// Second request - should hit cache and not call GitHub again
+	result2, err := harness.Client().Token(token, "")
+	require.NoError(t, err)
+
+	// Should still be the original token from cache
+	assert.Equal(t, "ghs_firsttoken", result2.Token, "expected cached token, not new token from GitHub")
+}
+
+// TestIntegrationValkey_CacheInvalidationOnDigestChange verifies that cache keys change when config digest changes
+func TestIntegrationValkey_CacheInvalidationOnDigestChange(t *testing.T) {
+	harness := NewAPITestHarness(t, WithValkeyCache())
+
+	// Load initial profile configuration from YAML
+	yamlContent, err := os.ReadFile("testdata/pipeline-profiles-basic.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(profiles)
+
+	// Setup
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_token1"
+
+	token := harness.PipelineToken()
+
+	// First request - cache the token
+	_, err = harness.Client().Token(token, "")
+	require.NoError(t, err)
+
+	// Load modified profile configuration - this changes the digest
+	yamlContent, err = os.ReadFile("testdata/pipeline-profiles-extended.yaml")
+	require.NoError(t, err)
+
+	profiles, err = profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(profiles)
+
+	// Change GitHub mock response
+	harness.GitHubMock.Token = "ghs_token2"
+
+	// Second request - should miss cache due to digest change
+	result2, err := harness.Client().Token(token, "")
+	require.NoError(t, err)
+
+	// Should get the new token because digest changed
+	assert.Equal(t, "ghs_token2", result2.Token, "expected new token after digest change")
+}
+
+// TestIntegrationValkey_SharedCacheAcrossRequests verifies that the same cache key yields the same cached token
+func TestIntegrationValkey_SharedCacheAcrossRequests(t *testing.T) {
+	harness := NewAPITestHarness(t, WithValkeyCache())
+
+	// Setup
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_sharedtoken"
+
+	token := harness.PipelineToken()
+
+	// First request
+	result1, err := harness.Client().Token(token, "")
+	require.NoError(t, err)
+
+	// Second request (simulating different instance/request)
+	result2, err := harness.Client().Token(token, "")
+	require.NoError(t, err)
+
+	// Both responses should have the same token and expiry
+	assert.Equal(t, result1.Token, result2.Token)
+	assert.Equal(t, result1.Expiry, result2.Expiry)
+}

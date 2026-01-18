@@ -1,0 +1,4 @@
+pipeline:
+  defaults:
+    permissions:
+      - contents:read

@@ -16,6 +16,9 @@ type TokenCache[T any] interface {
 
 	// Invalidate removes a token from the cache.
 	Invalidate(ctx context.Context, key string) error
+
+	// Close releases any resources held by the cache.
+	Close() error
 }
 
 // Digester provides a content digest for cache key namespacing.

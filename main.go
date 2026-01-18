@@ -17,6 +17,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/observe"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
+	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -24,7 +25,7 @@ import (
 	"github.com/justinas/alice"
 )
 
-func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *profile.ProfileStore) (http.Handler, error) {
+func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *profile.ProfileStore, hooks *server.ShutdownHooks) (http.Handler, error) {
 	// wrap a mux such that HTTP telemetry is configured by default
 	muxWithoutTelemetry := http.NewServeMux()
 	mux := observe.NewMux(muxWithoutTelemetry)
@@ -56,10 +57,20 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 		return nil, fmt.Errorf("github configuration failed: %w", err)
 	}
 
-	tokenCache, err := cache.NewMemory[vendor.ProfileToken](45*time.Minute, 10_000)
+	// Configure cache backend based on CACHE_TYPE
+	tokenCache, err := cache.NewFromConfig[vendor.ProfileToken](
+		ctx,
+		cfg.Cache,
+		cfg.Valkey,
+		45*time.Minute,
+		10_000,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("token cache configuration failed: %w", err)
+		return nil, fmt.Errorf("cache configuration failed: %w", err)
 	}
+
+	hooks.Add("cache", tokenCache.Close)
+
 	vendorCache := vendor.Cached(tokenCache, orgProfile)
 
 	// Pipeline routes use repoVendor (defaults to "default" profile)
@@ -97,6 +108,7 @@ func main() {
 }
 
 func launchServer() error {
+	shutdownHooks := server.ShutdownHooks{}
 	orgProfile := profile.NewProfileStore()
 	orgProfile.Update(profile.NewDefaultProfiles())
 	ctx := context.Background()
@@ -111,6 +123,7 @@ func launchServer() error {
 	if err != nil {
 		return fmt.Errorf("telemetry bootstrap failed: %w", err)
 	}
+	shutdownHooks.AddContext("telemetry", shutdownTelemetry)
 
 	http.DefaultTransport = observe.HTTPTransport(
 		configureHTTPTransport(cfg.Server),
@@ -121,7 +134,7 @@ func launchServer() error {
 	}
 
 	// setup routing and dependencies
-	handler, err := configureServerRoutes(ctx, cfg, orgProfile)
+	handler, err := configureServerRoutes(ctx, cfg, orgProfile, &shutdownHooks)
 	if err != nil {
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
@@ -153,12 +166,7 @@ func launchServer() error {
 	}
 
 	server.RegisterOnShutdown(func() {
-		log.Info().Msg("telemetry: shutting down")
-		if err := shutdownTelemetry(ctx); err != nil {
-			log.Warn().Err(err).Msg("telemetry: shutdown failed")
-		} else {
-			log.Info().Msg("telemetry: shutdown complete")
-		}
+		shutdownHooks.Execute(ctx)
 	})
 
 	err = serveHTTP(cfg.Server, server)

@@ -19,6 +19,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
+	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/go-jose/go-jose/v4"
@@ -44,12 +45,24 @@ type APITestHarness struct {
 // APITestHarnessOption configures the API test harness.
 type APITestHarnessOption func(*config.Config)
 
+// WithValkeyCache configures the test harness to use a Valkey cache container.
+func WithValkeyCache() APITestHarnessOption {
+	return func(cfg *config.Config) {
+		cfg.Cache.Type = "valkey"
+	}
+}
+
 // NewAPITestHarness creates a complete test harness with all mock servers and the API server.
 // Use options to customize the configuration (e.g., WithValkeyCache).
 // Cleanup is handled automatically via t.Cleanup().
 func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHarness {
 	t.Helper()
 	testhelpers.SetupLogger(t)
+	hooks := server.ShutdownHooks{}
+
+	t.Cleanup(func() {
+		hooks.Execute(t.Context())
+	})
 
 	harness := &APITestHarness{
 		DefaultAudience:     "test-audience",
@@ -67,6 +80,10 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 	harness.GitHubMock = testhelpers.SetupMockGitHubServer(t)
 	harness.BuildkiteMock = testhelpers.SetupMockBuildkiteServer(t)
 
+	hooks.AddClose("jwks", harness.JWKSServer)
+	hooks.AddClose("github", harness.GitHubMock)
+	hooks.AddClose("buildkite", harness.BuildkiteMock)
+
 	// Initialize with default profiles
 	harness.ProfileStore.Update(profile.NewDefaultProfiles())
 
@@ -80,6 +97,9 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 		Buildkite: config.BuildkiteConfig{
 			APIURL: harness.BuildkiteMock.Server.URL,
 			Token:  "test-buildkite-token",
+		},
+		Cache: config.CacheConfig{
+			Type: "memory", // Default to memory cache for tests
 		},
 		Github: config.GithubConfig{
 			APIURL:         harness.GitHubMock.Server.URL,
@@ -100,18 +120,17 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 		opt(&cfg)
 	}
 
-	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore)
+	if cfg.Cache.Type == "valkey" {
+		address := testhelpers.RunValkeyContainer(t)
+		cfg.Valkey.Address = address
+		cfg.Valkey.TLS = false
+	}
+
+	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore, &hooks)
 	require.NoError(t, err)
 
 	harness.Server = httptest.NewServer(handler)
-
-	// Register cleanup handlers
-	t.Cleanup(func() {
-		harness.Server.Close()
-		harness.JWKSServer.Close()
-		harness.GitHubMock.Close()
-		harness.BuildkiteMock.Close()
-	})
+	hooks.AddClose("api-server", harness.Server)
 
 	return harness
 }
