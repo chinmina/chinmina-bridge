@@ -154,7 +154,7 @@ func launchServer() error {
 			return fmt.Errorf("github configuration failed: %w", err)
 		}
 
-		go refreshOrgProfile(ctx, orgProfile, gh, orgProfileLocation)
+		go profile.PeriodicRefresh(ctx, orgProfile, gh, orgProfileLocation)
 	}
 
 	// start the server
@@ -219,33 +219,4 @@ func configureHTTPTransport(cfg config.ServerConfig) *http.Transport {
 	transport.MaxConnsPerHost = cfg.OutgoingHTTPMaxConnsPerHost
 
 	return transport
-}
-
-func refreshOrgProfile(ctx context.Context, profileStore *profile.ProfileStore, gh github.Client, orgProfileLocation string) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Info().Interface("recover", r).Msg("background profile refresh failed; will attempt to continue.")
-		}
-	}()
-
-	for {
-		profiles, err := profile.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
-		if err != nil {
-			// log the failure to fetch, then continue. This may be transient, so we
-			// need to keep trying.
-			log.Info().Err(err).Msg("organization profile refresh failed, continuing")
-		} else {
-			// only update the profile if retrieval succeeded
-			// invalid profiles are already logged during FetchOrganizationProfile
-			profileStore.Update(profiles)
-		}
-
-		select {
-		case <-time.After(5 * time.Minute):
-			// continue
-		case <-ctx.Done():
-			log.Info().Msg("refresh goroutine shutting down gracefully")
-			return
-		}
-	}
 }
