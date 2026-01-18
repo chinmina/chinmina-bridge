@@ -3,6 +3,7 @@ package profile
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -15,6 +16,7 @@ import (
 // mockGitHubClientForDaemon implements GitHubClient for daemon testing
 type mockGitHubClientForDaemon struct {
 	yaml      string
+	mu        sync.RWMutex
 	err       error
 	callCount atomic.Int32
 	panicOn   int // panic on this call number (0 = never)
@@ -27,11 +29,21 @@ func (m *mockGitHubClientForDaemon) GetFileContent(ctx context.Context, owner, r
 		panic("mock panic for testing")
 	}
 
-	if m.err != nil {
-		return "", m.err
+	m.mu.RLock()
+	err := m.err
+	m.mu.RUnlock()
+
+	if err != nil {
+		return "", err
 	}
 
 	return m.yaml, nil
+}
+
+func (m *mockGitHubClientForDaemon) setErr(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.err = err
 }
 
 func (m *mockGitHubClientForDaemon) calls() int {
@@ -310,7 +322,7 @@ pipeline:
 		assert.Equal(t, 1, gh.calls())
 
 		// Clear the error for next attempt
-		gh.err = nil
+		gh.setErr(nil)
 
 		// Sleep to trigger second refresh (time will advance)
 		time.Sleep(5 * time.Minute)
