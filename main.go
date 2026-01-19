@@ -108,18 +108,19 @@ func main() {
 }
 
 func launchServer() error {
-	ctx := context.Background()
 	shutdownHooks := server.ShutdownHooks{}
-	orgProfile := profile.NewProfileStore()
-	orgProfile.Update(ctx, profile.NewDefaultProfiles())
 
-	cfg, err := config.Load(context.Background())
+	serverContext := context.Background()
+
+	orgProfile := profile.NewProfileStore()
+	orgProfile.Update(serverContext, profile.NewDefaultProfiles())
+	cfg, err := config.Load(serverContext)
 	if err != nil {
 		return fmt.Errorf("configuration load failed: %w", err)
 	}
 
 	// configure telemetry, including wrapping default HTTP client
-	shutdownTelemetry, err := observe.Configure(ctx, cfg.Observe)
+	shutdownTelemetry, err := observe.Configure(serverContext, cfg.Observe)
 	if err != nil {
 		return fmt.Errorf("telemetry bootstrap failed: %w", err)
 	}
@@ -134,12 +135,15 @@ func launchServer() error {
 	}
 
 	// setup routing and dependencies
-	handler, err := configureServerRoutes(ctx, cfg, orgProfile, &shutdownHooks)
+	handler, err := configureServerRoutes(serverContext, cfg, orgProfile, &shutdownHooks)
 	if err != nil {
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
 
 	orgProfileLocation := cfg.Server.OrgProfile
+
+	taskCtx, cancel := context.WithCancel(serverContext)
+	defer cancel()
 
 	// Start Goroutine to refresh the organization profile every 5 minutes
 	if orgProfileLocation != "" {
@@ -149,12 +153,12 @@ func launchServer() error {
 			return fmt.Errorf("invalid organization profile location: %s", orgProfileLocation)
 		}
 
-		gh, err := github.New(ctx, cfg.Github, github.WithTokenTransport)
+		gh, err := github.New(serverContext, cfg.Github, github.WithTokenTransport)
 		if err != nil {
 			return fmt.Errorf("github configuration failed: %w", err)
 		}
 
-		go profile.PeriodicRefresh(ctx, orgProfile, gh, orgProfileLocation)
+		go profile.PeriodicRefresh(taskCtx, orgProfile, gh, orgProfileLocation)
 	}
 
 	// start the server
@@ -165,8 +169,12 @@ func launchServer() error {
 		ReadHeaderTimeout: 20 * time.Second, // Prevent Slowloris attacks
 	}
 
+	// cancelling the task context has to be the last action so it doesn't
+	// interfere with other shutdown tasks. Cancel is done here explicitly to
+	// include it with the rest of the shutdown hooks, even though it is deferred.
+	shutdownHooks.Add("context", func() error { cancel(); return nil })
 	server.RegisterOnShutdown(func() {
-		shutdownHooks.Execute(ctx)
+		shutdownHooks.Execute(serverContext)
 	})
 
 	err = serveHTTP(cfg.Server, server)
