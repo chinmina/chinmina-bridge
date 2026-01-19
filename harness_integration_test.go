@@ -85,7 +85,7 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 	hooks.AddClose("buildkite", harness.BuildkiteMock)
 
 	// Initialize with default profiles
-	harness.ProfileStore.Update(profile.NewDefaultProfiles())
+	harness.ProfileStore.Update(context.Background(), profile.NewDefaultProfiles())
 
 	// Configure and start the API server
 	cfg := config.Config{

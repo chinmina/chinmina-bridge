@@ -69,11 +69,11 @@ agent: build format test lint
 
 .PHONY: docker
 docker: build
-	docker compose -f integration/docker-compose.yaml up --abort-on-container-exit
+	cd integration && docker compose up --abort-on-container-exit
 
 .PHONY: docker-down
 docker-down:
-	docker compose -f integration/docker-compose.yaml down
+	cd integration && docker compose down
 
 # ensures that `go mod tidy` has been run after any dependency changes
 .PHONY: ensure-deps

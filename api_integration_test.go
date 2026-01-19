@@ -212,7 +212,7 @@ func TestIntegrationOrganizationToken_Success(t *testing.T) {
 
 	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
 	require.NoError(t, err)
-	harness.ProfileStore.Update(profiles)
+	harness.ProfileStore.Update(t.Context(), profiles)
 
 	harness.GitHubMock.Token = "ghs_orgtoken123"
 
@@ -257,7 +257,7 @@ func TestIntegrationOrganizationToken_Unauthorized(t *testing.T) {
 
 	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
 	require.NoError(t, err)
-	harness.ProfileStore.Update(profiles)
+	harness.ProfileStore.Update(t.Context(), profiles)
 
 	// Make request with invalid JWT
 	_, err = harness.Client().OrganizationToken("invalid.jwt.token", "test-org-profile")
@@ -330,7 +330,7 @@ func TestIntegrationOrganizationGitCredentials_Success(t *testing.T) {
 
 	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
 	require.NoError(t, err)
-	harness.ProfileStore.Update(profiles)
+	harness.ProfileStore.Update(t.Context(), profiles)
 
 	// Setup: Configure mock to return token
 	harness.GitHubMock.Token = "ghs_orgtoken789"
@@ -494,7 +494,7 @@ func TestIntegrationValkey_CacheInvalidationOnDigestChange(t *testing.T) {
 
 	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
 	require.NoError(t, err)
-	harness.ProfileStore.Update(profiles)
+	harness.ProfileStore.Update(t.Context(), profiles)
 
 	// Setup
 	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
@@ -512,7 +512,7 @@ func TestIntegrationValkey_CacheInvalidationOnDigestChange(t *testing.T) {
 
 	profiles, err = profiletest.CompileFromYAML(string(yamlContent))
 	require.NoError(t, err)
-	harness.ProfileStore.Update(profiles)
+	harness.ProfileStore.Update(t.Context(), profiles)
 
 	// Change GitHub mock response
 	harness.GitHubMock.Token = "ghs_token2"

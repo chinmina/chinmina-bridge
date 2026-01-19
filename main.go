@@ -109,17 +109,18 @@ func main() {
 
 func launchServer() error {
 	shutdownHooks := server.ShutdownHooks{}
-	orgProfile := profile.NewProfileStore()
-	orgProfile.Update(profile.NewDefaultProfiles())
-	ctx := context.Background()
 
-	cfg, err := config.Load(context.Background())
+	serverContext := context.Background()
+
+	orgProfile := profile.NewProfileStore()
+	orgProfile.Update(serverContext, profile.NewDefaultProfiles())
+	cfg, err := config.Load(serverContext)
 	if err != nil {
 		return fmt.Errorf("configuration load failed: %w", err)
 	}
 
 	// configure telemetry, including wrapping default HTTP client
-	shutdownTelemetry, err := observe.Configure(ctx, cfg.Observe)
+	shutdownTelemetry, err := observe.Configure(serverContext, cfg.Observe)
 	if err != nil {
 		return fmt.Errorf("telemetry bootstrap failed: %w", err)
 	}
@@ -134,12 +135,15 @@ func launchServer() error {
 	}
 
 	// setup routing and dependencies
-	handler, err := configureServerRoutes(ctx, cfg, orgProfile, &shutdownHooks)
+	handler, err := configureServerRoutes(serverContext, cfg, orgProfile, &shutdownHooks)
 	if err != nil {
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
 
 	orgProfileLocation := cfg.Server.OrgProfile
+
+	taskCtx, cancel := context.WithCancel(serverContext)
+	defer cancel()
 
 	// Start Goroutine to refresh the organization profile every 5 minutes
 	if orgProfileLocation != "" {
@@ -149,12 +153,12 @@ func launchServer() error {
 			return fmt.Errorf("invalid organization profile location: %s", orgProfileLocation)
 		}
 
-		gh, err := github.New(ctx, cfg.Github, github.WithTokenTransport)
+		gh, err := github.New(serverContext, cfg.Github, github.WithTokenTransport)
 		if err != nil {
 			return fmt.Errorf("github configuration failed: %w", err)
 		}
 
-		go refreshOrgProfile(ctx, orgProfile, gh, orgProfileLocation)
+		go profile.PeriodicRefresh(taskCtx, orgProfile, gh, orgProfileLocation)
 	}
 
 	// start the server
@@ -165,8 +169,12 @@ func launchServer() error {
 		ReadHeaderTimeout: 20 * time.Second, // Prevent Slowloris attacks
 	}
 
+	// cancelling the task context has to be the last action so it doesn't
+	// interfere with other shutdown tasks. Cancel is done here explicitly to
+	// include it with the rest of the shutdown hooks, even though it is deferred.
+	shutdownHooks.Add("context", func() error { cancel(); return nil })
 	server.RegisterOnShutdown(func() {
-		shutdownHooks.Execute(ctx)
+		shutdownHooks.Execute(serverContext)
 	})
 
 	err = serveHTTP(cfg.Server, server)
@@ -219,33 +227,4 @@ func configureHTTPTransport(cfg config.ServerConfig) *http.Transport {
 	transport.MaxConnsPerHost = cfg.OutgoingHTTPMaxConnsPerHost
 
 	return transport
-}
-
-func refreshOrgProfile(ctx context.Context, profileStore *profile.ProfileStore, gh github.Client, orgProfileLocation string) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Info().Interface("recover", r).Msg("background profile refresh failed; will attempt to continue.")
-		}
-	}()
-
-	for {
-		profiles, err := profile.FetchOrganizationProfile(ctx, orgProfileLocation, gh)
-		if err != nil {
-			// log the failure to fetch, then continue. This may be transient, so we
-			// need to keep trying.
-			log.Info().Err(err).Msg("organization profile refresh failed, continuing")
-		} else {
-			// only update the profile if retrieval succeeded
-			// invalid profiles are already logged during FetchOrganizationProfile
-			profileStore.Update(profiles)
-		}
-
-		select {
-		case <-time.After(5 * time.Minute):
-			// continue
-		case <-ctx.Done():
-			log.Info().Msg("refresh goroutine shutting down gracefully")
-			return
-		}
-	}
 }

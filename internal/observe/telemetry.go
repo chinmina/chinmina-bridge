@@ -164,9 +164,15 @@ func newMeterProvider(ctx context.Context, cfg config.ObserveConfig, e exporters
 		return nil, err
 	}
 
+	r, err := resourceWithServiceName(resource.Default(), cfg.ServiceName)
+	if err != nil {
+		return nil, err
+	}
+
 	meterProvider := metric.NewMeterProvider(
 		metric.WithReader(metric.NewPeriodicReader(metricExporter,
 			metric.WithInterval(time.Duration(cfg.MetricReadIntervalSeconds)*time.Second))),
+		metric.WithResource(r),
 	)
 
 	return meterProvider, nil

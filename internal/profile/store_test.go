@@ -137,7 +137,7 @@ func TestProfileStore_GetOrganizationProfile_Success(t *testing.T) {
 
 	// Create store and update with profiles
 	store := NewProfileStore()
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	// Retrieve profile
 	profile, err := store.GetOrganizationProfile("test-profile")
@@ -164,7 +164,7 @@ func TestProfileStore_GetOrganizationProfile_NotFound(t *testing.T) {
 	require.NoError(t, err)
 
 	store := NewProfileStore()
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	_, err = store.GetOrganizationProfile("nonexistent")
 	require.Error(t, err)
@@ -193,7 +193,7 @@ func TestProfileStore_GetOrganizationProfile_Unavailable(t *testing.T) {
 	require.NoError(t, err)
 
 	store := NewProfileStore()
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	_, err = store.GetOrganizationProfile("invalid-profile")
 	require.Error(t, err)
@@ -231,7 +231,7 @@ pipeline:
 
 	// Create store and update with profiles
 	store := NewProfileStore()
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	// Retrieve pipeline profile
 	profile, err := store.GetPipelineProfile("high-access")
@@ -266,7 +266,7 @@ pipeline:
 	require.NoError(t, err)
 
 	store := NewProfileStore()
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	_, err = store.GetPipelineProfile("nonexistent")
 	require.Error(t, err)
@@ -294,7 +294,7 @@ func TestProfileStore_Digest(t *testing.T) {
 	require.NoError(t, err)
 
 	store := NewProfileStore()
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	// Verify store returns the same digest as the underlying profiles
 	assert.Equal(t, profiles.Digest(), store.Digest())
@@ -328,13 +328,13 @@ func TestProfileStore_Digest_ChangesWithUpdate(t *testing.T) {
 	// Load first version
 	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh)
 	require.NoError(t, err)
-	store.Update(profiles1)
+	store.Update(t.Context(), profiles1)
 	digest1 := store.Digest()
 
 	// Update with different content
 	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh)
 	require.NoError(t, err)
-	store.Update(profiles2)
+	store.Update(t.Context(), profiles2)
 	digest2 := store.Digest()
 
 	// Digests should be different
@@ -362,7 +362,7 @@ func TestProfileStore_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	store := NewProfileStore()
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	// Launch multiple goroutines accessing the store concurrently
 	var wg sync.WaitGroup
@@ -420,7 +420,7 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 	// Load first version
 	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh)
 	require.NoError(t, err)
-	store.Update(profiles1)
+	store.Update(t.Context(), profiles1)
 
 	profile1, err := store.GetOrganizationProfile("profile-v1")
 	require.NoError(t, err)
@@ -429,7 +429,7 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 	// Update with second version
 	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh)
 	require.NoError(t, err)
-	store.Update(profiles2)
+	store.Update(t.Context(), profiles2)
 
 	// Old profile should no longer be accessible
 	_, err = store.GetOrganizationProfile("profile-v1")
@@ -461,10 +461,10 @@ func TestProfileStore_Update_NoChange(t *testing.T) {
 	require.NoError(t, err)
 
 	// First update
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	// Second update with same profiles - should log "no changes detected"
-	store.Update(profiles)
+	store.Update(t.Context(), profiles)
 
 	// Verify profile is still accessible
 	profile, err := store.GetOrganizationProfile("profile-v1")
