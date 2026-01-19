@@ -15,7 +15,7 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
-	api "github.com/google/go-github/v80/github"
+	api "github.com/google/go-github/v81/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
