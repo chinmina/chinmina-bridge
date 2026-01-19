@@ -119,6 +119,25 @@ func TestRefresh_InvalidYAML(t *testing.T) {
 	assert.Equal(t, initialDigest, store.Digest())
 }
 
+func TestRefresh_Panic(t *testing.T) {
+	gh := &mockGitHubClientForDaemon{
+		panicOn: 1, // Panic on first call
+	}
+
+	store := NewProfileStore()
+	initialDigest := store.Digest()
+	ctx := context.Background()
+
+	// Should not panic - refresh should recover internally
+	refresh(ctx, store, gh, "acme:silk:profile.yaml")
+
+	// Verify fetch was attempted
+	assert.Equal(t, 1, gh.calls())
+
+	// Verify store was not updated (digest unchanged)
+	assert.Equal(t, initialDigest, store.Digest())
+}
+
 func TestPeriodicRefresh_ImmediateFirstRefresh(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		validYAML := `organization:
@@ -271,25 +290,42 @@ pipeline:
 
 func TestPeriodicRefresh_PanicRecovery(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		validYAML := `organization:
+  profiles:
+    - name: "panic-recovery"
+      repositories: ["silk"]
+      permissions: ["contents:read"]
+
+pipeline:
+  defaults:
+    permissions: ["contents:read"]
+`
 		gh := &mockGitHubClientForDaemon{
-			yaml:    "valid: yaml",
-			panicOn: 1, // Panic on first call
+			yaml:    validYAML,
+			panicOn: 1, // Panic on first call only
 		}
 
 		store := NewProfileStore()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		// Should not crash despite panic
 		go PeriodicRefresh(ctx, store, gh, "acme:silk:profile.yaml")
 
 		// Wait for first attempt (which panics)
 		synctest.Wait()
 		assert.Equal(t, 1, gh.calls())
 
-		// The goroutine should have recovered and be waiting for next cycle
-		// Cancel to clean up
-		cancel()
+		// Advance time to trigger second refresh
+		time.Sleep(5 * time.Minute)
+		synctest.Wait()
+
+		// Second refresh should succeed (panic was on call 1 only)
+		assert.Equal(t, 2, gh.calls(), "loop should continue after panic recovery")
+
+		// Verify profile was loaded on second attempt
+		profile, err := store.GetOrganizationProfile("panic-recovery")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
 	})
 }
 
