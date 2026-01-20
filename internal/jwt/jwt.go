@@ -54,24 +54,15 @@ func Middleware(cfg config.AuthorizationConfig, options ...jwtmiddleware.Option)
 	// the audit log, while the second ensures that the claims are logged when the
 	// token is valid.
 
-	// force the use of the audit error handler
-	options = append(options, jwtmiddleware.WithErrorHandler(auditErrorHandler()))
-
-	// Pass the validator directly - registered claims validation is handled in BuildkiteClaims.Validate()
-	middleware, err := jwtmiddleware.New(
+	// enable the use of the audit error handler and pass the validator
+	options = append(options,
+		jwtmiddleware.WithErrorHandler(auditErrorHandler()),
 		jwtmiddleware.WithValidator(jwtValidator),
 	)
+
+	middleware, err := jwtmiddleware.New(options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create JWT middleware: %w", err)
-	}
-
-	// Apply any additional options by creating a new middleware with all options
-	if len(options) > 0 {
-		allOptions := append([]jwtmiddleware.Option{jwtmiddleware.WithValidator(jwtValidator)}, options...)
-		middleware, err = jwtmiddleware.New(allOptions...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create JWT middleware: %w", err)
-		}
 	}
 
 	validationMiddleware := middleware.CheckJWT

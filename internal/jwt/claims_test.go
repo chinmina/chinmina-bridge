@@ -11,38 +11,32 @@ import (
 
 func TestBuildkiteClaims_Validate_Success(t *testing.T) {
 	cases := []struct {
-		name     string
-		jsonData string
-		orgSlug  string
+		name   string
+		claims *BuildkiteClaims
 	}{
 		{
 			name: "valid",
-			jsonData: `{
-				"sub": "organization:org:pipeline:pipeline:ref:main:commit:abc123",
-				"nbf": 1234567890,
-				"exp": 1234567999,
-				"organization_slug": "org",
-				"pipeline_slug": "pipeline",
-				"pipeline_id": "pipeline_uuid",
-				"build_number": 123,
-				"build_branch": "main",
-				"build_commit": "abc123",
-				"step_key": "step1",
-				"job_id": "job1",
-				"agent_id": "agent1"
-			}`,
-			orgSlug: "org",
+			claims: &BuildkiteClaims{
+				subject:                  "organization:org:pipeline:pipeline:ref:main:commit:abc123",
+				notBefore:                FieldPresent{valued: true},
+				expiry:                   FieldPresent{valued: true},
+				OrganizationSlug:         "org",
+				PipelineSlug:             "pipeline",
+				PipelineID:               "pipeline_uuid",
+				BuildNumber:              123,
+				BuildBranch:              "main",
+				BuildCommit:              "abc123",
+				StepKey:                  "step1",
+				JobID:                    "job1",
+				AgentID:                  "agent1",
+				expectedOrganizationSlug: "org",
+			},
 		},
 	}
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			var claims BuildkiteClaims
-			err := json.Unmarshal([]byte(tt.jsonData), &claims)
-			require.NoError(t, err)
-			claims.expectedOrganizationSlug = tt.orgSlug
-
-			err = claims.Validate(context.Background())
+			err := tt.claims.Validate(context.Background())
 			assert.NoError(t, err)
 		})
 	}
@@ -51,96 +45,93 @@ func TestBuildkiteClaims_Validate_Success(t *testing.T) {
 func TestBuildkiteClaims_Validate_Failure(t *testing.T) {
 	cases := []struct {
 		name              string
-		jsonData          string
-		orgSlug           string
+		claims            *BuildkiteClaims
 		expectedErrorText string
 	}{
 		{
-			name:              "missing claims",
-			jsonData:          `{"sub": "test", "nbf": 123, "exp": 456}`,
-			orgSlug:           "",
+			name: "missing claims",
+			claims: &BuildkiteClaims{
+				subject:   "test",
+				notBefore: FieldPresent{valued: true},
+				expiry:    FieldPresent{valued: true},
+			},
 			expectedErrorText: "missing expected claim(s)",
 		},
 		{
 			name: "wrong org",
-			jsonData: `{
-				"sub": "test",
-				"nbf": 1234567890,
-				"exp": 1234567999,
-				"organization_slug": "wrong",
-				"pipeline_slug": "pipeline",
-				"pipeline_id": "pipeline_uuid",
-				"build_number": 123,
-				"build_branch": "main",
-				"build_commit": "abc123",
-				"step_key": "step1",
-				"job_id": "job1",
-				"agent_id": "agent1"
-			}`,
-			orgSlug:           "right",
+			claims: &BuildkiteClaims{
+				subject:                  "test",
+				notBefore:                FieldPresent{valued: true},
+				expiry:                   FieldPresent{valued: true},
+				OrganizationSlug:         "wrong",
+				PipelineSlug:             "pipeline",
+				PipelineID:               "pipeline_uuid",
+				BuildNumber:              123,
+				BuildBranch:              "main",
+				BuildCommit:              "abc123",
+				StepKey:                  "step1",
+				JobID:                    "job1",
+				AgentID:                  "agent1",
+				expectedOrganizationSlug: "right",
+			},
 			expectedErrorText: "expecting token issued for organization",
 		},
 		{
 			name: "missing subject",
-			jsonData: `{
-				"nbf": 1234567890,
-				"exp": 1234567999,
-				"organization_slug": "org",
-				"pipeline_slug": "pipeline",
-				"pipeline_id": "pipeline_uuid",
-				"build_number": 123,
-				"build_branch": "main",
-				"build_commit": "abc123",
-				"job_id": "job1",
-				"agent_id": "agent1"
-			}`,
-			orgSlug:           "org",
+			claims: &BuildkiteClaims{
+				notBefore:                FieldPresent{valued: true},
+				expiry:                   FieldPresent{valued: true},
+				OrganizationSlug:         "org",
+				PipelineSlug:             "pipeline",
+				PipelineID:               "pipeline_uuid",
+				BuildNumber:              123,
+				BuildBranch:              "main",
+				BuildCommit:              "abc123",
+				JobID:                    "job1",
+				AgentID:                  "agent1",
+				expectedOrganizationSlug: "org",
+			},
 			expectedErrorText: "subject claim not present",
 		},
 		{
 			name: "missing nbf",
-			jsonData: `{
-				"sub": "test",
-				"exp": 1234567999,
-				"organization_slug": "org",
-				"pipeline_slug": "pipeline",
-				"pipeline_id": "pipeline_uuid",
-				"build_number": 123,
-				"build_branch": "main",
-				"build_commit": "abc123",
-				"job_id": "job1",
-				"agent_id": "agent1"
-			}`,
-			orgSlug:           "org",
+			claims: &BuildkiteClaims{
+				subject:                  "test",
+				expiry:                   FieldPresent{valued: true},
+				OrganizationSlug:         "org",
+				PipelineSlug:             "pipeline",
+				PipelineID:               "pipeline_uuid",
+				BuildNumber:              123,
+				BuildBranch:              "main",
+				BuildCommit:              "abc123",
+				JobID:                    "job1",
+				AgentID:                  "agent1",
+				expectedOrganizationSlug: "org",
+			},
 			expectedErrorText: "nbf claim not present",
 		},
 		{
 			name: "missing exp",
-			jsonData: `{
-				"sub": "test",
-				"nbf": 1234567890,
-				"organization_slug": "org",
-				"pipeline_slug": "pipeline",
-				"pipeline_id": "pipeline_uuid",
-				"build_number": 123,
-				"build_branch": "main",
-				"build_commit": "abc123",
-				"job_id": "job1",
-				"agent_id": "agent1"
-			}`,
-			orgSlug:           "org",
+			claims: &BuildkiteClaims{
+				subject:                  "test",
+				notBefore:                FieldPresent{valued: true},
+				OrganizationSlug:         "org",
+				PipelineSlug:             "pipeline",
+				PipelineID:               "pipeline_uuid",
+				BuildNumber:              123,
+				BuildBranch:              "main",
+				BuildCommit:              "abc123",
+				JobID:                    "job1",
+				AgentID:                  "agent1",
+				expectedOrganizationSlug: "org",
+			},
 			expectedErrorText: "exp claim not present",
 		},
 	}
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			var claims BuildkiteClaims
-			err := json.Unmarshal([]byte(tt.jsonData), &claims)
-			require.NoError(t, err)
-			claims.expectedOrganizationSlug = tt.orgSlug
-
-			err = claims.Validate(context.Background())
+			err := tt.claims.Validate(context.Background())
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErrorText)
 		})
