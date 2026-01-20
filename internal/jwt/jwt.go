@@ -36,11 +36,10 @@ func Middleware(cfg config.AuthorizationConfig, options ...jwtmiddleware.Option)
 
 	// the validator is used by the middleware to check the JWT signature and claims
 	jwtValidator, err := validator.New(
-		keyFunc,
-		// Buildkite only uses RSA at present
-		validator.RS256,
-		url.String(),
-		[]string{cfg.Audience},
+		validator.WithKeyFunc(keyFunc),
+		validator.WithAlgorithm(validator.RS256), // Buildkite only uses RSA at present
+		validator.WithIssuer(url.String()),
+		validator.WithAudience(cfg.Audience),
 		validator.WithAllowedClockSkew(5*time.Second), // this could be configurable
 		validator.WithCustomClaims(
 			buildkiteCustomClaims(cfg.BuildkiteOrganizationSlug),
@@ -58,21 +57,36 @@ func Middleware(cfg config.AuthorizationConfig, options ...jwtmiddleware.Option)
 	// force the use of the audit error handler
 	options = append(options, jwtmiddleware.WithErrorHandler(auditErrorHandler()))
 
-	// wrap the standard validator with additional validation that ensures the
-	// core claims (including validity periods) are present
-	tokenValidator := registeredClaimsValidator(jwtValidator.ValidateToken)
+	// Pass the validator directly - registered claims validation is handled in BuildkiteClaims.Validate()
+	middleware, err := jwtmiddleware.New(
+		jwtmiddleware.WithValidator(jwtValidator),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create JWT middleware: %w", err)
+	}
 
-	validationMiddleware := jwtmiddleware.New(tokenValidator, options...).CheckJWT
+	// Apply any additional options by creating a new middleware with all options
+	if len(options) > 0 {
+		allOptions := append([]jwtmiddleware.Option{jwtmiddleware.WithValidator(jwtValidator)}, options...)
+		middleware, err = jwtmiddleware.New(allOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create JWT middleware: %w", err)
+		}
+	}
+
+	validationMiddleware := middleware.CheckJWT
 
 	subChain := alice.New(validationMiddleware, auditClaimsMiddleware()).Then
 
 	return subChain, nil
 }
 
+type claimsContextKey struct{}
+
 // ContextWithClaims returns a new context.Context with the provided validated claims
 // added to it. This is primarily for test usage
 func ContextWithClaims(ctx context.Context, claims *validator.ValidatedClaims) context.Context {
-	return context.WithValue(ctx, jwtmiddleware.ContextKey{}, claims)
+	return context.WithValue(ctx, claimsContextKey{}, claims)
 }
 
 // ContextWithBuildkiteClaims creates a context with BuildkiteClaims for testing.
@@ -89,7 +103,13 @@ func ContextWithBuildkiteClaims(ctx context.Context, claims *BuildkiteClaims) co
 // should be regarded as an error for handlers that expect the claims to be
 // present.
 func ClaimsFromContext(ctx context.Context) *validator.ValidatedClaims {
-	claims, _ := ctx.Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	// Production: v3 middleware stores claims internally
+	claims, err := jwtmiddleware.GetClaims[*validator.ValidatedClaims](ctx)
+	if err == nil {
+		return claims
+	}
+	// Test fallback: local key injection
+	claims, _ = ctx.Value(claimsContextKey{}).(*validator.ValidatedClaims)
 	return claims
 }
 
@@ -157,7 +177,13 @@ func remoteJWKS(cfg config.AuthorizationConfig) (url.URL, KeyFunc, error) {
 		return url.URL{}, nil, fmt.Errorf("failed to parse the issuer URL: %w", err)
 	}
 
-	provider := jwks.NewCachingProvider(issuerURL, 5*time.Minute)
+	provider, err := jwks.NewCachingProvider(
+		jwks.WithIssuerURL(issuerURL),
+		jwks.WithCacheTTL(5*time.Minute),
+	)
+	if err != nil {
+		return url.URL{}, nil, fmt.Errorf("failed to create JWKS provider: %w", err)
+	}
 
 	return *issuerURL, provider.KeyFunc, nil
 }

@@ -156,7 +156,7 @@ func TestIntegrationPipelineToken_AuthErrors(t *testing.T) {
 		{
 			name:           "missing auth header",
 			token:          "",
-			expectedStatus: http.StatusBadRequest,
+			expectedStatus: http.StatusUnauthorized,
 		},
 		{
 			name:           "invalid JWT",
@@ -364,7 +364,7 @@ func TestIntegrationPipelineGitCredentials_MissingAuth(t *testing.T) {
 
 	var apiErr *APIError
 	require.ErrorAs(t, err, &apiErr)
-	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+	assert.Equal(t, http.StatusUnauthorized, apiErr.StatusCode)
 }
 
 func TestIntegrationPipelineGitCredentials_InvalidJWT(t *testing.T) {

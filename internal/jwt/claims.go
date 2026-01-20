@@ -1,15 +1,13 @@
 package jwt
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-
-	jwtmiddleware "github.com/auth0/go-jwt-middleware/v3"
-	"github.com/auth0/go-jwt-middleware/v3/validator"
 )
 
 var (
@@ -17,51 +15,31 @@ var (
 	ErrClaimNotFound = errors.New("claim not found")
 )
 
+// FieldPresent tracks whether a JSON field was present with a non-null value.
+// Used for registered claims that must be present but whose values are
+// validated elsewhere (by the JWT middleware itself).
+type FieldPresent struct {
+	valued bool
+}
+
+func (f FieldPresent) Valued() bool {
+	return f.valued
+}
+
+var jsonNull = []byte("null")
+
+func (f *FieldPresent) UnmarshalJSON(data []byte) error {
+	// Treat literal null as "not valued" - use bytes.Equal to avoid allocation
+	f.valued = !bytes.Equal(data, jsonNull)
+	return nil
+}
+
 // buildkiteCustomClaims sets up OIDC custom claims for a Buildkite-issued JWT.
-func buildkiteCustomClaims(expectedOrganizationSlug string) func() validator.CustomClaims {
-	return func() validator.CustomClaims {
+func buildkiteCustomClaims(expectedOrganizationSlug string) func() *BuildkiteClaims {
+	return func() *BuildkiteClaims {
 		return &BuildkiteClaims{
 			expectedOrganizationSlug: expectedOrganizationSlug,
 		}
-	}
-}
-
-// registeredClaimsValidator ensures that the basic claims that we rely on are
-// part of the supplied claims. It also ensures that the the token has a valid
-// time period. The core validation takes care of enforcing the active and
-// expiry dates: this simply ensures that they're present.
-func registeredClaimsValidator(next jwtmiddleware.ValidateToken) jwtmiddleware.ValidateToken {
-	return func(ctx context.Context, token string) (any, error) {
-
-		claims, err := next(ctx, token)
-		if err != nil {
-			return nil, err
-		}
-
-		validatedClaims, ok := claims.(*validator.ValidatedClaims)
-		if !ok {
-			return nil, fmt.Errorf("could not cast claims to validator.ValidatedClaims")
-		}
-
-		reg := validatedClaims.RegisteredClaims
-
-		if len(reg.Audience) == 0 {
-			return nil, fmt.Errorf("audience claim not present")
-		}
-
-		if reg.Issuer == "" {
-			return nil, fmt.Errorf("issuer claim not present")
-		}
-
-		if reg.Subject == "" {
-			return nil, fmt.Errorf("subject claim not present")
-		}
-
-		if reg.NotBefore == 0 || reg.Expiry == 0 {
-			return nil, fmt.Errorf("token has no validity period")
-		}
-
-		return claims, nil
 	}
 }
 
@@ -70,6 +48,13 @@ func registeredClaimsValidator(next jwtmiddleware.ValidateToken) jwtmiddleware.V
 //
 // See: https://buildkite.com/docs/agent/v3/cli-oidc#claims
 type BuildkiteClaims struct {
+	// Registered claims - validation only, no getters needed
+	// The JWT middleware validates the actual values; we just check presence
+	// These fields are populated via UnmarshalJSON's setClaimField method
+	subject   string
+	notBefore FieldPresent
+	expiry    FieldPresent
+
 	OrganizationSlug string            `json:"organization_slug"`
 	PipelineSlug     string            `json:"pipeline_slug"`
 	PipelineID       string            `json:"pipeline_id"`
@@ -92,6 +77,16 @@ type BuildkiteClaims struct {
 // Validate ensures that the expected claims are present in the token, and that
 // the organization slug matches the configured value.
 func (c *BuildkiteClaims) Validate(ctx context.Context) error {
+	// Validate registered claims are present
+	if c.subject == "" {
+		return errors.New("subject claim not present")
+	}
+	if !c.notBefore.Valued() {
+		return errors.New("nbf claim not present")
+	}
+	if !c.expiry.Valued() {
+		return errors.New("exp claim not present")
+	}
 
 	fields := [][]string{
 		{"organization_slug", c.OrganizationSlug},
@@ -168,6 +163,18 @@ func (c *BuildkiteClaims) UnmarshalJSON(data []byte) error {
 func (c *BuildkiteClaims) setClaimField(key string, value any) error {
 	var err error
 	switch key {
+	case "sub":
+		err = setField(&c.subject, value)
+	case "nbf":
+		// FieldPresent: any non-nil value means the field was valued
+		if value != nil {
+			c.notBefore.valued = true
+		}
+	case "exp":
+		// FieldPresent: any non-nil value means the field was valued
+		if value != nil {
+			c.expiry.valued = true
+		}
 	case "organization_slug":
 		err = setField(&c.OrganizationSlug, value)
 	case "pipeline_slug":
