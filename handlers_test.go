@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/auth0/go-jwt-middleware/v2/validator"
+	"github.com/auth0/go-jwt-middleware/v3/validator"
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"

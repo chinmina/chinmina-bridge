@@ -11,9 +11,9 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/justinas/alice"
 
-	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
-	"github.com/auth0/go-jwt-middleware/v2/jwks"
-	"github.com/auth0/go-jwt-middleware/v2/validator"
+	jwtmiddleware "github.com/auth0/go-jwt-middleware/v3"
+	"github.com/auth0/go-jwt-middleware/v3/jwks"
+	"github.com/auth0/go-jwt-middleware/v3/validator"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/config"

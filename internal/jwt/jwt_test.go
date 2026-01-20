@@ -14,7 +14,7 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/justinas/alice"
 
-	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
+	jwtmiddleware "github.com/auth0/go-jwt-middleware/v3"
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
