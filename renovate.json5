@@ -55,5 +55,9 @@
       groupSlug: "golang",
       matchDepNames: ["go", "golang"],
     },
+    {
+      groupName: "aws-sdk-go-v2",
+      matchDepPatterns: ["^github\\.com/aws/aws-sdk-go-v2"],
+    },
   ],
 }
