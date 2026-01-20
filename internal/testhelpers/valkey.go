@@ -23,7 +23,7 @@ func RunValkeyContainer(t *testing.T) string {
 	valkeyProtocolPort := valkeyPort + "/tcp"
 
 	req := testcontainers.ContainerRequest{
-		Image:        "valkey/valkey:8-alpine",
+		Image:        "valkey/valkey:9-alpine",
 		ExposedPorts: []string{valkeyProtocolPort},
 		WaitingFor: wait.ForAll(
 			wait.ForLog("Ready to accept connections"),
