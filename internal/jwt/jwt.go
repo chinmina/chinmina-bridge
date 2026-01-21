@@ -2,14 +2,13 @@ package jwt
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/justinas/alice"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v3"
 	"github.com/auth0/go-jwt-middleware/v3/jwks"
@@ -185,8 +184,8 @@ func staticJWKS(cfg config.AuthorizationConfig) (url.URL, KeyFunc, error) {
 		return url.URL{}, nil, fmt.Errorf("failed to parse the issuer URL: %w", err)
 	}
 
-	var jwks jose.JSONWebKeySet
-	if err := json.Unmarshal([]byte(cfg.ConfigurationStatic), &jwks); err != nil {
+	jwks, err := jwk.Parse([]byte(cfg.ConfigurationStatic))
+	if err != nil {
 		return url.URL{}, nil, fmt.Errorf("could not decode jwks: %w", err)
 	}
 

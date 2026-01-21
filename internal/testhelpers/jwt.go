@@ -3,62 +3,55 @@ package testhelpers
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
-	josejwt "github.com/go-jose/go-jose/v4/jwt"
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/require"
 )
 
 // GenerateJWK generates an RSA 2048-bit key pair for JWT signing/verification.
-// Returns a JSONWebKey suitable for use with go-jose.
-func GenerateJWK(t *testing.T) *jose.JSONWebKey {
+// Returns a jwk.Key suitable for use with lestrrat-go/jwx.
+func GenerateJWK(t *testing.T) jwk.Key {
 	t.Helper()
 
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal("failed to generate private key")
-	}
+	require.NoError(t, err, "failed to generate private key")
 
-	return &jose.JSONWebKey{
-		Key:       privateKey,
-		KeyID:     "test-kid",
-		Algorithm: string(jose.RS256),
-		Use:       "sig",
-	}
+	key, err := jwk.Import(privateKey)
+	require.NoError(t, err, "failed to import private key as JWK")
+
+	err = key.Set(jwk.KeyIDKey, "test-kid")
+	require.NoError(t, err, "failed to set KeyID")
+
+	err = key.Set(jwk.AlgorithmKey, jwa.RS256())
+	require.NoError(t, err, "failed to set Algorithm")
+
+	err = key.Set(jwk.KeyUsageKey, "sig")
+	require.NoError(t, err, "failed to set KeyUsage")
+
+	return key
 }
 
-// CreateJWT signs a JWT token with the provided key and claims.
-// The claims parameter accepts variadic claim objects that will be included in the token.
-// The issuer is automatically added to the JWT claims.
-func CreateJWT(t *testing.T, jwk *jose.JSONWebKey, issuer string, claims ...any) string {
+// CreateJWT signs a JWT token with the provided key.
+// The token should be configured with all desired claims before calling this function.
+// The issuer will be set on the token.
+func CreateJWT(t *testing.T, key jwk.Key, issuer string, token jwt.Token) string {
 	t.Helper()
 
-	key := jose.SigningKey{
-		Algorithm: jose.SignatureAlgorithm(jwk.Algorithm),
-		Key:       jwk,
-	}
+	// Set issuer
+	err := token.Set(jwt.IssuerKey, issuer)
+	require.NoError(t, err, "failed to set issuer")
 
-	signer, err := jose.NewSigner(key, (&jose.SignerOptions{}).WithType("JWT"))
-	require.NoError(t, err)
+	signed, err := jwt.Sign(token, jwt.WithKey(jwa.RS256(), key))
+	require.NoError(t, err, "failed to sign JWT")
 
-	builder := josejwt.Signed(signer)
-
-	for _, claim := range claims {
-		builder = builder.Claims(claim)
-	}
-
-	builder = builder.Claims(josejwt.Claims{
-		Issuer: issuer,
-	})
-
-	token, err := builder.Serialize()
-	require.NoError(t, err)
-
-	return token
+	return string(signed)
 }
 
 // SetupJWKSServer creates a mock OIDC provider server that serves JWKS.
@@ -67,7 +60,7 @@ func CreateJWT(t *testing.T, jwk *jose.JSONWebKey, issuer string, claims ...any)
 // - /.well-known/jwks.json (public key set)
 //
 // Returns an httptest.Server that should be closed by the caller.
-func SetupJWKSServer(t *testing.T, jwk *jose.JSONWebKey) *httptest.Server {
+func SetupJWKSServer(t *testing.T, key jwk.Key) *httptest.Server {
 	t.Helper()
 
 	var server *httptest.Server
@@ -82,9 +75,18 @@ func SetupJWKSServer(t *testing.T, jwk *jose.JSONWebKey) *httptest.Server {
 			}
 			WriteJSON(w, wk)
 		case "/.well-known/jwks.json":
-			WriteJSON(w, jose.JSONWebKeySet{
-				Keys: []jose.JSONWebKey{jwk.Public()},
-			})
+			publicKey, err := jwk.PublicKeyOf(key)
+			require.NoError(t, err, "failed to get public key")
+
+			set := jwk.NewSet()
+			err = set.AddKey(publicKey)
+			require.NoError(t, err, "failed to add public key to set")
+
+			jsonBytes, err := json.Marshal(set)
+			require.NoError(t, err, "failed to marshal JWKS")
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(jsonBytes)
 		default:
 			http.Error(w, "unexpected JWKS server request: "+r.URL.String(), http.StatusInternalServerError)
 		}
@@ -94,14 +96,15 @@ func SetupJWKSServer(t *testing.T, jwk *jose.JSONWebKey) *httptest.Server {
 	return server
 }
 
-// ValidClaims returns JWT claims with valid timing fields (IssuedAt, NotBefore, Expiry).
-// The claims are valid from 1 minute ago until 1 minute from now.
-func ValidClaims(claims josejwt.Claims) josejwt.Claims {
+// ValidClaims configures a token with valid timing fields (IssuedAt, NotBefore, Expiration).
+// The token is valid from 1 minute ago until 1 minute from now.
+// Returns the same token for chaining.
+func ValidClaims(token jwt.Token) jwt.Token {
 	now := time.Now().UTC()
 
-	claims.IssuedAt = josejwt.NewNumericDate(now)
-	claims.NotBefore = josejwt.NewNumericDate(now.Add(-1 * time.Minute))
-	claims.Expiry = josejwt.NewNumericDate(now.Add(1 * time.Minute))
+	_ = token.Set(jwt.IssuedAtKey, now)
+	_ = token.Set(jwt.NotBeforeKey, now.Add(-1*time.Minute))
+	_ = token.Set(jwt.ExpirationKey, now.Add(1*time.Minute))
 
-	return claims
+	return token
 }

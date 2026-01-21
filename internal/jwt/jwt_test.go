@@ -10,9 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/justinas/alice"
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v3"
 	"github.com/chinmina/chinmina-bridge/internal/audit"
@@ -36,64 +37,64 @@ func TestMiddleware(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		claims         jwt.Claims
-		customClaims   BuildkiteClaims
+		buildToken     func() jwt.Token
+		audienceCheck  string
 		wantStatusCode int
 		wantBodyText   string
 		options        []jwtmiddleware.Option
 	}{
 		{
 			name: "has subject",
-			claims: valid(jwt.Claims{
-				Audience: []string{"audience"},
-				Subject:  "subject",
-				Issuer:   "issuer",
-			}),
-			customClaims:   custom(expectedOrganizationSlug, "test-pipeline"),
+			buildToken: func() jwt.Token {
+				tok := makeToken([]string{"audience"}, "subject", "issuer")
+				tok = addCustomClaims(tok, custom(expectedOrganizationSlug, "test-pipeline"))
+				return valid(tok)
+			},
+			audienceCheck:  "audience",
 			wantStatusCode: http.StatusOK,
 			wantBodyText:   "",
 		},
 		{
 			name: "does not have subject",
-			claims: valid(jwt.Claims{
-				Audience: []string{"audience"},
-				Subject:  "",
-				Issuer:   "issuer",
-			}),
-			customClaims:   custom(expectedOrganizationSlug, "test-pipeline"),
+			buildToken: func() jwt.Token {
+				tok := makeToken([]string{"audience"}, "", "issuer")
+				tok = addCustomClaims(tok, custom(expectedOrganizationSlug, "test-pipeline"))
+				return valid(tok)
+			},
+			audienceCheck:  "audience",
 			wantStatusCode: http.StatusUnauthorized,
 			wantBodyText:   "JWT is invalid",
 		},
 		{
 			name: "does not have an audience",
-			claims: valid(jwt.Claims{
-				Audience: []string{},
-				Subject:  "",
-				Issuer:   "issuer",
-			}),
-			customClaims:   custom(expectedOrganizationSlug, "test-pipeline"),
+			buildToken: func() jwt.Token {
+				tok := makeToken([]string{}, "", "issuer")
+				tok = addCustomClaims(tok, custom(expectedOrganizationSlug, "test-pipeline"))
+				return valid(tok)
+			},
+			audienceCheck:  "an-actor-demands-an",
 			wantStatusCode: http.StatusUnauthorized,
 			wantBodyText:   "JWT is invalid",
 		},
 		{
 			name: "no validity period",
-			claims: jwt.Claims{
-				Audience: []string{"audience"},
-				Subject:  "subject",
-				Issuer:   "issuer",
+			buildToken: func() jwt.Token {
+				tok := makeToken([]string{"audience"}, "subject", "issuer")
+				tok = addCustomClaims(tok, custom(expectedOrganizationSlug, "test-pipeline"))
+				return tok
 			},
-			customClaims:   custom(expectedOrganizationSlug, "test-pipeline"),
+			audienceCheck:  "audience",
 			wantStatusCode: http.StatusUnauthorized,
 			wantBodyText:   "JWT is invalid",
 		},
 		{
 			name: "mismatched organization",
-			claims: valid(jwt.Claims{
-				Audience: []string{"audience"},
-				Subject:  "subject",
-				Issuer:   "issuer",
-			}),
-			customClaims:   custom("that dog ain't gonna hunt", "test-pipeline"),
+			buildToken: func() jwt.Token {
+				tok := makeToken([]string{"audience"}, "subject", "issuer")
+				tok = addCustomClaims(tok, custom("that dog ain't gonna hunt", "test-pipeline"))
+				return valid(tok)
+			},
+			audienceCheck:  "audience",
 			wantStatusCode: http.StatusUnauthorized,
 			wantBodyText:   "JWT is invalid",
 		},
@@ -117,17 +118,13 @@ func TestMiddleware(t *testing.T) {
 			request, err := http.NewRequestWithContext(ctx, http.MethodGet, "", nil)
 			require.NoError(t, err)
 
-			audience := "an-actor-demands-an"
-			if len(test.claims.Audience) > 0 {
-				audience = test.claims.Audience[0]
-			}
 			cfg := config.AuthorizationConfig{
-				Audience:                  audience,
+				Audience:                  test.audienceCheck,
 				IssuerURL:                 testServer.URL,
 				BuildkiteOrganizationSlug: expectedOrganizationSlug,
 			}
 
-			token := createRequestJWT(t, jwk, testServer.URL, test.claims, test.customClaims)
+			token := createRequestJWT(t, jwk, testServer.URL, test.buildToken())
 			request.Header.Set("Authorization", "Bearer "+token)
 
 			responseRecorder := httptest.NewRecorder()
@@ -164,14 +161,14 @@ func TestMiddleware(t *testing.T) {
 	}
 }
 
-func valid(claims jwt.Claims) jwt.Claims {
+func valid(token jwt.Token) jwt.Token {
 	now := time.Now().UTC()
 
-	claims.IssuedAt = jwt.NewNumericDate(now)
-	claims.NotBefore = jwt.NewNumericDate(now.Add(-1 * time.Minute))
-	claims.Expiry = jwt.NewNumericDate(now.Add(1 * time.Minute))
+	_ = token.Set(jwt.IssuedAtKey, now)
+	_ = token.Set(jwt.NotBeforeKey, now.Add(-1*time.Minute))
+	_ = token.Set(jwt.ExpirationKey, now.Add(1*time.Minute))
 
-	return claims
+	return token
 }
 
 func custom(org, pipeline string) BuildkiteClaims {
@@ -191,23 +188,62 @@ func custom(org, pipeline string) BuildkiteClaims {
 	return claims
 }
 
-func generateJWK(t *testing.T) *jose.JSONWebKey {
+// makeToken creates a new JWT token with standard claims
+func makeToken(audience []string, subject, issuer string) jwt.Token {
+	tok := jwt.New()
+	if len(audience) > 0 {
+		_ = tok.Set(jwt.AudienceKey, audience)
+	}
+	if subject != "" {
+		_ = tok.Set(jwt.SubjectKey, subject)
+	}
+	if issuer != "" {
+		_ = tok.Set(jwt.IssuerKey, issuer)
+	}
+	return tok
+}
+
+// addCustomClaims merges BuildkiteClaims into a token
+func addCustomClaims(tok jwt.Token, claims BuildkiteClaims) jwt.Token {
+	_ = tok.Set("organization_slug", claims.OrganizationSlug)
+	_ = tok.Set("pipeline_slug", claims.PipelineSlug)
+	_ = tok.Set("pipeline_id", claims.PipelineID)
+	_ = tok.Set("build_number", claims.BuildNumber)
+	_ = tok.Set("build_branch", claims.BuildBranch)
+	_ = tok.Set("build_commit", claims.BuildCommit)
+	_ = tok.Set("build_tag", claims.BuildTag)
+	_ = tok.Set("step_key", claims.StepKey)
+	_ = tok.Set("job_id", claims.JobID)
+	_ = tok.Set("agent_id", claims.AgentID)
+	_ = tok.Set("cluster_id", claims.ClusterID)
+	_ = tok.Set("cluster_name", claims.ClusterName)
+	_ = tok.Set("queue_id", claims.QueueID)
+	_ = tok.Set("queue_key", claims.QueueKey)
+	if claims.AgentTags != nil {
+		for k, v := range claims.AgentTags {
+			_ = tok.Set("agent_tag:"+k, v)
+		}
+	}
+	return tok
+}
+
+func generateJWK(t *testing.T) jwk.Key {
 	t.Helper()
 
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal("failed to generate private key")
-	}
+	require.NoError(t, err, "failed to generate private key")
 
-	return &jose.JSONWebKey{
-		Key:       privateKey,
-		KeyID:     "kid",
-		Algorithm: string(jose.RS256),
-		Use:       "sig",
-	}
+	key, err := jwk.Import(privateKey)
+	require.NoError(t, err, "failed to import private key as JWK")
+
+	_ = key.Set(jwk.KeyIDKey, "kid")
+	_ = key.Set(jwk.AlgorithmKey, jwa.RS256())
+	_ = key.Set(jwk.KeyUsageKey, "sig")
+
+	return key
 }
 
-func setupTestServer(t *testing.T, jwk *jose.JSONWebKey) (server *httptest.Server) {
+func setupTestServer(t *testing.T, key jwk.Key) (server *httptest.Server) {
 	t.Helper()
 
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -222,9 +258,14 @@ func setupTestServer(t *testing.T, jwk *jose.JSONWebKey) (server *httptest.Serve
 				t.Fatal(err)
 			}
 		case "/.well-known/jwks.json":
-			if err := json.NewEncoder(w).Encode(jose.JSONWebKeySet{
-				Keys: []jose.JSONWebKey{jwk.Public()},
-			}); err != nil {
+			publicKey, err := jwk.PublicKeyOf(key)
+			require.NoError(t, err, "failed to get public key")
+
+			set := jwk.NewSet()
+			err = set.AddKey(publicKey)
+			require.NoError(t, err, "failed to add public key to set")
+
+			if err := json.NewEncoder(w).Encode(set); err != nil {
 				t.Fatal(err)
 			}
 		default:
@@ -235,33 +276,20 @@ func setupTestServer(t *testing.T, jwk *jose.JSONWebKey) (server *httptest.Serve
 	return httptest.NewServer(handler)
 }
 
-func createRequestJWT(t *testing.T, jwk *jose.JSONWebKey, issuer string, claims ...any) string {
+func createRequestJWT(t *testing.T, key jwk.Key, issuer string, token jwt.Token) string {
 	t.Helper()
 
-	key := jose.SigningKey{
-		Algorithm: jose.SignatureAlgorithm(jwk.Algorithm),
-		Key:       jwk,
-	}
+	// Set issuer
+	err := token.Set(jwt.IssuerKey, issuer)
+	require.NoError(t, err, "failed to set issuer")
 
-	signer, err := jose.NewSigner(key, (&jose.SignerOptions{}).WithType("JWT"))
-	require.NoError(t, err)
+	signed, err := jwt.Sign(token, jwt.WithKey(jwa.RS256(), key))
+	require.NoError(t, err, "failed to sign JWT")
 
-	builder := jwt.Signed(signer)
+	tokenStr := string(signed)
+	t.Logf("issued token=%s", tokenStr)
 
-	for _, claim := range claims {
-		builder = builder.Claims(claim)
-	}
-
-	builder = builder.Claims(jwt.Claims{
-		Issuer: issuer,
-	})
-
-	token, err := builder.Serialize()
-	require.NoError(t, err)
-
-	t.Logf("issued token=%s", token)
-
-	return token
+	return tokenStr
 }
 
 /*

@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
@@ -22,8 +23,8 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
-	"github.com/go-jose/go-jose/v4"
-	josejwt "github.com/go-jose/go-jose/v4/jwt"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +39,7 @@ type APITestHarness struct {
 	GitHubMock          *testhelpers.MockGitHubServer
 	BuildkiteMock       *testhelpers.MockBuildkiteServer
 	ProfileStore        *profile.ProfileStore
-	jwk                 *jose.JSONWebKey
+	jwk                 jwk.Key
 	privateKeyPEM       string
 }
 
@@ -72,8 +73,24 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 	}
 
 	// Generate JWK for JWT signing
-	harness.jwk = testhelpers.GenerateJWK(t)
-	harness.privateKeyPEM = rsaPrivateKeyToPEM(t, harness.jwk.Key.(*rsa.PrivateKey))
+	// We need to generate the private key ourselves so we can convert it to PEM
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err, "failed to generate private key")
+
+	// Import into JWK
+	harness.jwk, err = jwk.Import(privateKey)
+	require.NoError(t, err, "failed to import private key as JWK")
+
+	err = harness.jwk.Set(jwk.KeyIDKey, "test-kid")
+	require.NoError(t, err, "failed to set KeyID")
+
+	err = harness.jwk.Set(jwk.AlgorithmKey, "RS256")
+	require.NoError(t, err, "failed to set Algorithm")
+
+	err = harness.jwk.Set(jwk.KeyUsageKey, "sig")
+	require.NoError(t, err, "failed to set KeyUsage")
+
+	harness.privateKeyPEM = rsaPrivateKeyToPEM(t, privateKey)
 
 	// Setup mock servers
 	harness.JWKSServer = testhelpers.SetupJWKSServer(t, harness.jwk)
@@ -136,9 +153,9 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 }
 
 // GenerateToken creates a valid JWT signed with the test JWK.
-// Claims are passed as variadic parameters and will be included in the token.
-func (h *APITestHarness) GenerateToken(claims ...any) string {
-	return testhelpers.CreateJWT(h.t, h.jwk, h.JWKSServer.URL, claims...)
+// The token parameter should be configured with all desired claims.
+func (h *APITestHarness) GenerateToken(token jwxjwt.Token) string {
+	return testhelpers.CreateJWT(h.t, h.jwk, h.JWKSServer.URL, token)
 }
 
 // PipelineToken generates a valid JWT with default Buildkite pipeline claims for testing.
@@ -159,20 +176,25 @@ func (h *APITestHarness) PipelineToken(tokenOptions ...TokenClaimOption) string 
 		opt(&bc)
 	}
 
-	claims := testhelpers.ValidClaims(josejwt.Claims{
-		Audience: []string{h.DefaultAudience},
-		Subject: fmt.Sprintf(
-			"org:%s:pipeline:%s:ref:refs/heads/%s:commit:%s:step:%s",
-			h.DefaultOrganization,
-			bc.PipelineSlug,
-			bc.BuildBranch,
-			bc.BuildCommit,
-			bc.StepKey,
-		),
-	})
-	token := h.GenerateToken(claims, bc)
+	// Create token with standard claims
+	token := jwxjwt.New()
+	_ = token.Set(jwxjwt.AudienceKey, []string{h.DefaultAudience})
+	_ = token.Set(jwxjwt.SubjectKey, fmt.Sprintf(
+		"org:%s:pipeline:%s:ref:refs/heads/%s:commit:%s:step:%s",
+		h.DefaultOrganization,
+		bc.PipelineSlug,
+		bc.BuildBranch,
+		bc.BuildCommit,
+		bc.StepKey,
+	))
 
-	return token
+	// Add Buildkite custom claims
+	token = addBuildkiteClaims(token, bc)
+
+	// Add timing claims
+	token = testhelpers.ValidClaims(token)
+
+	return h.GenerateToken(token)
 }
 
 type TokenClaimOption func(*jwt.BuildkiteClaims)
@@ -197,6 +219,30 @@ func rsaPrivateKeyToPEM(t *testing.T, key *rsa.PrivateKey) string {
 	})
 
 	return string(privPEM)
+}
+
+// addBuildkiteClaims adds Buildkite custom claims to a JWT token.
+func addBuildkiteClaims(token jwxjwt.Token, bc jwt.BuildkiteClaims) jwxjwt.Token {
+	_ = token.Set("organization_slug", bc.OrganizationSlug)
+	_ = token.Set("pipeline_slug", bc.PipelineSlug)
+	_ = token.Set("pipeline_id", bc.PipelineID)
+	_ = token.Set("build_number", bc.BuildNumber)
+	_ = token.Set("build_branch", bc.BuildBranch)
+	_ = token.Set("build_commit", bc.BuildCommit)
+	_ = token.Set("build_tag", bc.BuildTag)
+	_ = token.Set("step_key", bc.StepKey)
+	_ = token.Set("job_id", bc.JobID)
+	_ = token.Set("agent_id", bc.AgentID)
+	_ = token.Set("cluster_id", bc.ClusterID)
+	_ = token.Set("cluster_name", bc.ClusterName)
+	_ = token.Set("queue_id", bc.QueueID)
+	_ = token.Set("queue_key", bc.QueueKey)
+	if bc.AgentTags != nil {
+		for k, v := range bc.AgentTags {
+			_ = token.Set("agent_tag:"+k, v)
+		}
+	}
+	return token
 }
 
 // Client returns a TestClient configured for this harness.
