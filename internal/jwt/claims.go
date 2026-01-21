@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 var (
@@ -114,6 +116,49 @@ func (c *BuildkiteClaims) Validate(ctx context.Context) error {
 
 	if c.expectedOrganizationSlug != "" && c.expectedOrganizationSlug != c.OrganizationSlug {
 		return fmt.Errorf("expecting token issued for organization %s", c.expectedOrganizationSlug)
+	}
+
+	return nil
+}
+
+// SetOnToken sets all non-empty BuildkiteClaims fields on the given JWT token.
+// Empty string fields are skipped to reduce token size.
+// BuildNumber is always set since 0 is a valid value.
+func (c BuildkiteClaims) SetOnToken(token jwt.Token) error {
+	claims := []struct {
+		key   string
+		value any
+		skip  bool
+	}{
+		{"organization_slug", c.OrganizationSlug, c.OrganizationSlug == ""},
+		{"pipeline_slug", c.PipelineSlug, c.PipelineSlug == ""},
+		{"pipeline_id", c.PipelineID, c.PipelineID == ""},
+		{"build_number", c.BuildNumber, false}, // always set (0 is valid)
+		{"build_branch", c.BuildBranch, c.BuildBranch == ""},
+		{"build_commit", c.BuildCommit, c.BuildCommit == ""},
+		{"build_tag", c.BuildTag, c.BuildTag == ""},
+		{"step_key", c.StepKey, c.StepKey == ""},
+		{"job_id", c.JobID, c.JobID == ""},
+		{"agent_id", c.AgentID, c.AgentID == ""},
+		{"cluster_id", c.ClusterID, c.ClusterID == ""},
+		{"cluster_name", c.ClusterName, c.ClusterName == ""},
+		{"queue_id", c.QueueID, c.QueueID == ""},
+		{"queue_key", c.QueueKey, c.QueueKey == ""},
+	}
+
+	for _, claim := range claims {
+		if claim.skip {
+			continue
+		}
+		if err := token.Set(claim.key, claim.value); err != nil {
+			return fmt.Errorf("failed to set %s: %w", claim.key, err)
+		}
+	}
+
+	for k, v := range c.AgentTags {
+		if err := token.Set("agent_tag:"+k, v); err != nil {
+			return fmt.Errorf("failed to set agent_tag:%s: %w", k, err)
+		}
 	}
 
 	return nil

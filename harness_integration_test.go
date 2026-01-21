@@ -5,11 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,11 +15,11 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/jwt/jwxtest"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
-	"github.com/lestrrat-go/jwx/v3/jwk"
 	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/require"
 )
@@ -39,8 +35,7 @@ type APITestHarness struct {
 	GitHubMock          *testhelpers.MockGitHubServer
 	BuildkiteMock       *testhelpers.MockBuildkiteServer
 	ProfileStore        *profile.ProfileStore
-	jwk                 jwk.Key
-	privateKeyPEM       string
+	jwk                 jwxtest.JWK
 }
 
 // APITestHarnessOption configures the API test harness.
@@ -73,27 +68,10 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 	}
 
 	// Generate JWK for JWT signing
-	// We need to generate the private key ourselves so we can convert it to PEM
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err, "failed to generate private key")
-
-	// Import into JWK
-	harness.jwk, err = jwk.Import(privateKey)
-	require.NoError(t, err, "failed to import private key as JWK")
-
-	err = harness.jwk.Set(jwk.KeyIDKey, "test-kid")
-	require.NoError(t, err, "failed to set KeyID")
-
-	err = harness.jwk.Set(jwk.AlgorithmKey, "RS256")
-	require.NoError(t, err, "failed to set Algorithm")
-
-	err = harness.jwk.Set(jwk.KeyUsageKey, "sig")
-	require.NoError(t, err, "failed to set KeyUsage")
-
-	harness.privateKeyPEM = rsaPrivateKeyToPEM(t, privateKey)
+	harness.jwk = jwxtest.NewJWK(t)
 
 	// Setup mock servers
-	harness.JWKSServer = testhelpers.SetupJWKSServer(t, harness.jwk)
+	harness.JWKSServer = jwxtest.SetupJWKSServer(t, harness.jwk)
 	harness.GitHubMock = testhelpers.SetupMockGitHubServer(t)
 	harness.BuildkiteMock = testhelpers.SetupMockBuildkiteServer(t)
 
@@ -120,7 +98,7 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 		},
 		Github: config.GithubConfig{
 			APIURL:         harness.GitHubMock.Server.URL,
-			PrivateKey:     harness.privateKeyPEM,
+			PrivateKey:     harness.jwk.PrivateKeyPEM(),
 			ApplicationID:  12345,
 			InstallationID: 67890,
 		},
@@ -155,7 +133,7 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 // GenerateToken creates a valid JWT signed with the test JWK.
 // The token parameter should be configured with all desired claims.
 func (h *APITestHarness) GenerateToken(token jwxjwt.Token) string {
-	return testhelpers.CreateJWT(h.t, h.jwk, h.JWKSServer.URL, token)
+	return jwxtest.SignToken(h.t, h.jwk, h.JWKSServer.URL, token)
 }
 
 // PipelineToken generates a valid JWT with default Buildkite pipeline claims for testing.
@@ -189,10 +167,12 @@ func (h *APITestHarness) PipelineToken(tokenOptions ...TokenClaimOption) string 
 	))
 
 	// Add Buildkite custom claims
-	token = addBuildkiteClaims(token, bc)
+	if err := bc.SetOnToken(token); err != nil {
+		h.t.Fatalf("failed to set Buildkite claims on token: %v", err)
+	}
 
 	// Add timing claims
-	token = testhelpers.ValidClaims(token)
+	token = jwxtest.AddTimingClaims(token)
 
 	return h.GenerateToken(token)
 }
@@ -206,43 +186,6 @@ func WithPipeline(slug string, id string) TokenClaimOption {
 		bc.PipelineSlug = slug
 		bc.PipelineID = id
 	}
-}
-
-// rsaPrivateKeyToPEM converts an RSA private key to PEM format.
-func rsaPrivateKeyToPEM(t *testing.T, key *rsa.PrivateKey) string {
-	t.Helper()
-
-	privBytes := x509.MarshalPKCS1PrivateKey(key)
-	privPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: privBytes,
-	})
-
-	return string(privPEM)
-}
-
-// addBuildkiteClaims adds Buildkite custom claims to a JWT token.
-func addBuildkiteClaims(token jwxjwt.Token, bc jwt.BuildkiteClaims) jwxjwt.Token {
-	_ = token.Set("organization_slug", bc.OrganizationSlug)
-	_ = token.Set("pipeline_slug", bc.PipelineSlug)
-	_ = token.Set("pipeline_id", bc.PipelineID)
-	_ = token.Set("build_number", bc.BuildNumber)
-	_ = token.Set("build_branch", bc.BuildBranch)
-	_ = token.Set("build_commit", bc.BuildCommit)
-	_ = token.Set("build_tag", bc.BuildTag)
-	_ = token.Set("step_key", bc.StepKey)
-	_ = token.Set("job_id", bc.JobID)
-	_ = token.Set("agent_id", bc.AgentID)
-	_ = token.Set("cluster_id", bc.ClusterID)
-	_ = token.Set("cluster_name", bc.ClusterName)
-	_ = token.Set("queue_id", bc.QueueID)
-	_ = token.Set("queue_key", bc.QueueKey)
-	if bc.AgentTags != nil {
-		for k, v := range bc.AgentTags {
-			_ = token.Set("agent_tag:"+k, v)
-		}
-	}
-	return token
 }
 
 // Client returns a TestClient configured for this harness.

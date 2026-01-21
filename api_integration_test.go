@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chinmina/chinmina-bridge/internal/jwt/jwxtest"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
-	josejwt "github.com/go-jose/go-jose/v4/jwt"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,22 +19,22 @@ import (
 // TestJWTHelpers verifies JWT generation helpers work correctly
 func TestIntegrationJWTHelpers(t *testing.T) {
 	// Generate key pair
-	jwk := testhelpers.GenerateJWK(t)
-	require.NotNil(t, jwk, "expected JWK to be generated")
+	j := jwxtest.NewJWK(t)
+	require.NotNil(t, j.Key(), "expected JWK to be generated")
 
 	// Setup JWKS server
-	jwksServer := testhelpers.SetupJWKSServer(t, jwk)
+	jwksServer := jwxtest.SetupJWKSServer(t, j)
 	defer jwksServer.Close()
 
-	// Create valid claims
-	claims := testhelpers.ValidClaims(josejwt.Claims{
-		Audience: []string{"test-audience"},
-		Subject:  "test-subject",
-	})
+	// Create token with claims
+	token := jwt.New()
+	_ = token.Set(jwt.AudienceKey, []string{"test-audience"})
+	_ = token.Set(jwt.SubjectKey, "test-subject")
+	token = jwxtest.AddTimingClaims(token)
 
 	// Generate JWT
-	token := testhelpers.CreateJWT(t, jwk, jwksServer.URL, claims)
-	require.NotEmpty(t, token, "expected token to be generated")
+	tokenStr := jwxtest.SignToken(t, j, jwksServer.URL, token)
+	require.NotEmpty(t, tokenStr, "expected token to be generated")
 }
 
 // TestMockServers verifies GitHub and Buildkite mock servers work correctly

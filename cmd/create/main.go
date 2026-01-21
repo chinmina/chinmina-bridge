@@ -56,8 +56,8 @@ func main() {
 	// Add timing claims
 	token = validity(token)
 
-	// Add Buildkite claims
-	token = addBuildkiteClaims(token, localjwt.BuildkiteClaims{
+	// Add Buildkite claims using SetOnToken
+	claims := localjwt.BuildkiteClaims{
 		OrganizationSlug: cfg.OrganizationSlug,
 		PipelineSlug:     cfg.PipelineSlug,
 		PipelineID:       cfg.PipelineSlug + "UUID",
@@ -67,7 +67,11 @@ func main() {
 		StepKey:          "step1",
 		JobID:            "job1",
 		AgentID:          "agent1",
-	})
+	}
+	if err := claims.SetOnToken(token); err != nil {
+		fmt.Fprintf(os.Stderr, "error setting Buildkite claims: %v\n", err)
+		os.Exit(1)
+	}
 
 	tokenStr, err := createJWT(jwksKey, token)
 	if err != nil {
@@ -94,28 +98,5 @@ func validity(token jwt.Token) jwt.Token {
 	_ = token.Set(jwt.NotBeforeKey, now.Add(-1*time.Minute))
 	_ = token.Set(jwt.ExpirationKey, now.Add(1*time.Minute))
 
-	return token
-}
-
-func addBuildkiteClaims(token jwt.Token, claims localjwt.BuildkiteClaims) jwt.Token {
-	_ = token.Set("organization_slug", claims.OrganizationSlug)
-	_ = token.Set("pipeline_slug", claims.PipelineSlug)
-	_ = token.Set("pipeline_id", claims.PipelineID)
-	_ = token.Set("build_number", claims.BuildNumber)
-	_ = token.Set("build_branch", claims.BuildBranch)
-	_ = token.Set("build_commit", claims.BuildCommit)
-	_ = token.Set("build_tag", claims.BuildTag)
-	_ = token.Set("step_key", claims.StepKey)
-	_ = token.Set("job_id", claims.JobID)
-	_ = token.Set("agent_id", claims.AgentID)
-	_ = token.Set("cluster_id", claims.ClusterID)
-	_ = token.Set("cluster_name", claims.ClusterName)
-	_ = token.Set("queue_id", claims.QueueID)
-	_ = token.Set("queue_key", claims.QueueKey)
-	if claims.AgentTags != nil {
-		for k, v := range claims.AgentTags {
-			_ = token.Set("agent_tag:"+k, v)
-		}
-	}
 	return token
 }

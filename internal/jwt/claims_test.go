@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -554,4 +555,141 @@ func TestBuildkiteClaims_Lookup(t *testing.T) {
 		assert.Equal(t, "", value)
 		assert.ErrorIs(t, err, ErrClaimNotFound)
 	})
+}
+
+func TestBuildkiteClaims_SetOnToken(t *testing.T) {
+	t.Run("sets all populated fields", func(t *testing.T) {
+		claims := BuildkiteClaims{
+			OrganizationSlug: "acme",
+			PipelineSlug:     "pipeline",
+			PipelineID:       "pipeline-123",
+			BuildNumber:      456,
+			BuildBranch:      "main",
+			BuildCommit:      "abc123",
+			BuildTag:         "v1.0.0",
+			StepKey:          "build",
+			JobID:            "job-789",
+			AgentID:          "agent-xyz",
+			ClusterID:        "cluster-1",
+			ClusterName:      "prod",
+			QueueID:          "queue-1",
+			QueueKey:         "default",
+			AgentTags: map[string]string{
+				"os":   "linux",
+				"arch": "amd64",
+			},
+		}
+
+		token := jwxjwt.New()
+		err := claims.SetOnToken(token)
+		require.NoError(t, err)
+
+		// Verify all fields are set
+		assertClaim(t, token, "organization_slug", "acme")
+		assertClaim(t, token, "pipeline_slug", "pipeline")
+		assertClaim(t, token, "pipeline_id", "pipeline-123")
+		assertClaimInt(t, token, "build_number", 456)
+		assertClaim(t, token, "build_branch", "main")
+		assertClaim(t, token, "build_commit", "abc123")
+		assertClaim(t, token, "build_tag", "v1.0.0")
+		assertClaim(t, token, "step_key", "build")
+		assertClaim(t, token, "job_id", "job-789")
+		assertClaim(t, token, "agent_id", "agent-xyz")
+		assertClaim(t, token, "cluster_id", "cluster-1")
+		assertClaim(t, token, "cluster_name", "prod")
+		assertClaim(t, token, "queue_id", "queue-1")
+		assertClaim(t, token, "queue_key", "default")
+		assertClaim(t, token, "agent_tag:os", "linux")
+		assertClaim(t, token, "agent_tag:arch", "amd64")
+	})
+
+	t.Run("skips empty string fields", func(t *testing.T) {
+		claims := BuildkiteClaims{
+			OrganizationSlug: "acme",
+			PipelineSlug:     "pipeline",
+			PipelineID:       "pipeline-123",
+			BuildNumber:      456,
+			BuildBranch:      "main",
+			BuildCommit:      "abc123",
+			// Leave optional fields empty
+		}
+
+		token := jwxjwt.New()
+		err := claims.SetOnToken(token)
+		require.NoError(t, err)
+
+		// Verify required fields are set
+		assertClaim(t, token, "organization_slug", "acme")
+		assertClaimInt(t, token, "build_number", 456)
+
+		// Verify empty fields are not set
+		assertClaimMissing(t, token, "build_tag")
+		assertClaimMissing(t, token, "step_key")
+		assertClaimMissing(t, token, "cluster_id")
+		assertClaimMissing(t, token, "cluster_name")
+		assertClaimMissing(t, token, "queue_id")
+		assertClaimMissing(t, token, "queue_key")
+	})
+
+	t.Run("build_number zero is valid", func(t *testing.T) {
+		claims := BuildkiteClaims{
+			OrganizationSlug: "acme",
+			PipelineSlug:     "pipeline",
+			PipelineID:       "pipeline-123",
+			BuildNumber:      0, // explicitly zero
+			BuildBranch:      "main",
+			BuildCommit:      "abc123",
+		}
+
+		token := jwxjwt.New()
+		err := claims.SetOnToken(token)
+		require.NoError(t, err)
+
+		assertClaimInt(t, token, "build_number", 0)
+	})
+
+	t.Run("handles nil agent tags map", func(t *testing.T) {
+		claims := BuildkiteClaims{
+			OrganizationSlug: "acme",
+			PipelineSlug:     "pipeline",
+			PipelineID:       "pipeline-123",
+			BuildNumber:      1,
+			BuildBranch:      "main",
+			BuildCommit:      "abc123",
+			AgentTags:        nil,
+		}
+
+		token := jwxjwt.New()
+		err := claims.SetOnToken(token)
+		require.NoError(t, err)
+
+		// Should not error and should not set any agent_tag: fields
+		assertClaimMissing(t, token, "agent_tag:anything")
+	})
+}
+
+// assertClaim verifies a string claim value on the token.
+func assertClaim(t *testing.T, token jwxjwt.Token, key, expected string) {
+	t.Helper()
+	var val string
+	err := token.Get(key, &val)
+	require.NoError(t, err, "expected claim %q to be present", key)
+	assert.Equal(t, expected, val, "claim %q", key)
+}
+
+// assertClaimInt verifies an integer claim value on the token.
+func assertClaimInt(t *testing.T, token jwxjwt.Token, key string, expected int) {
+	t.Helper()
+	var val int
+	err := token.Get(key, &val)
+	require.NoError(t, err, "expected claim %q to be present", key)
+	assert.Equal(t, expected, val, "claim %q", key)
+}
+
+// assertClaimMissing verifies a claim is not present on the token.
+func assertClaimMissing(t *testing.T, token jwxjwt.Token, key string) {
+	t.Helper()
+	var val any
+	err := token.Get(key, &val)
+	assert.Error(t, err, "expected claim %q to be absent", key)
 }
