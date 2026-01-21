@@ -45,7 +45,7 @@ func Middleware(cfg config.AuthorizationConfig, options ...jwtmiddleware.Option)
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set up the validator: %v", err)
+		return nil, fmt.Errorf("failed to set up the validator: %w", err)
 	}
 
 	// Auditing of the validation process uses a combination of the error handler
