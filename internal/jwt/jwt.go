@@ -2,18 +2,17 @@ package jwt
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
 	"github.com/justinas/alice"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 
-	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
-	"github.com/auth0/go-jwt-middleware/v2/jwks"
-	"github.com/auth0/go-jwt-middleware/v2/validator"
+	jwtmiddleware "github.com/auth0/go-jwt-middleware/v3"
+	"github.com/auth0/go-jwt-middleware/v3/jwks"
+	"github.com/auth0/go-jwt-middleware/v3/validator"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/config"
@@ -36,18 +35,17 @@ func Middleware(cfg config.AuthorizationConfig, options ...jwtmiddleware.Option)
 
 	// the validator is used by the middleware to check the JWT signature and claims
 	jwtValidator, err := validator.New(
-		keyFunc,
-		// Buildkite only uses RSA at present
-		validator.RS256,
-		url.String(),
-		[]string{cfg.Audience},
+		validator.WithKeyFunc(keyFunc),
+		validator.WithAlgorithm(validator.RS256), // Buildkite only uses RSA at present
+		validator.WithIssuer(url.String()),
+		validator.WithAudience(cfg.Audience),
 		validator.WithAllowedClockSkew(5*time.Second), // this could be configurable
 		validator.WithCustomClaims(
 			buildkiteCustomClaims(cfg.BuildkiteOrganizationSlug),
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set up the validator: %v", err)
+		return nil, fmt.Errorf("failed to set up the validator: %w", err)
 	}
 
 	// Auditing of the validation process uses a combination of the error handler
@@ -55,24 +53,30 @@ func Middleware(cfg config.AuthorizationConfig, options ...jwtmiddleware.Option)
 	// the audit log, while the second ensures that the claims are logged when the
 	// token is valid.
 
-	// force the use of the audit error handler
-	options = append(options, jwtmiddleware.WithErrorHandler(auditErrorHandler()))
+	// enable the use of the audit error handler and pass the validator
+	options = append(options,
+		jwtmiddleware.WithErrorHandler(auditErrorHandler()),
+		jwtmiddleware.WithValidator(jwtValidator),
+	)
 
-	// wrap the standard validator with additional validation that ensures the
-	// core claims (including validity periods) are present
-	tokenValidator := registeredClaimsValidator(jwtValidator.ValidateToken)
+	middleware, err := jwtmiddleware.New(options...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create JWT middleware: %w", err)
+	}
 
-	validationMiddleware := jwtmiddleware.New(tokenValidator, options...).CheckJWT
+	validationMiddleware := middleware.CheckJWT
 
 	subChain := alice.New(validationMiddleware, auditClaimsMiddleware()).Then
 
 	return subChain, nil
 }
 
+type claimsContextKey struct{}
+
 // ContextWithClaims returns a new context.Context with the provided validated claims
 // added to it. This is primarily for test usage
 func ContextWithClaims(ctx context.Context, claims *validator.ValidatedClaims) context.Context {
-	return context.WithValue(ctx, jwtmiddleware.ContextKey{}, claims)
+	return context.WithValue(ctx, claimsContextKey{}, claims)
 }
 
 // ContextWithBuildkiteClaims creates a context with BuildkiteClaims for testing.
@@ -89,7 +93,13 @@ func ContextWithBuildkiteClaims(ctx context.Context, claims *BuildkiteClaims) co
 // should be regarded as an error for handlers that expect the claims to be
 // present.
 func ClaimsFromContext(ctx context.Context) *validator.ValidatedClaims {
-	claims, _ := ctx.Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	// Production: v3 middleware stores claims internally
+	claims, err := jwtmiddleware.GetClaims[*validator.ValidatedClaims](ctx)
+	if err == nil {
+		return claims
+	}
+	// Test fallback: local key injection
+	claims, _ = ctx.Value(claimsContextKey{}).(*validator.ValidatedClaims)
 	return claims
 }
 
@@ -157,7 +167,13 @@ func remoteJWKS(cfg config.AuthorizationConfig) (url.URL, KeyFunc, error) {
 		return url.URL{}, nil, fmt.Errorf("failed to parse the issuer URL: %w", err)
 	}
 
-	provider := jwks.NewCachingProvider(issuerURL, 5*time.Minute)
+	provider, err := jwks.NewCachingProvider(
+		jwks.WithIssuerURL(issuerURL),
+		jwks.WithCacheTTL(5*time.Minute),
+	)
+	if err != nil {
+		return url.URL{}, nil, fmt.Errorf("failed to create JWKS provider: %w", err)
+	}
 
 	return *issuerURL, provider.KeyFunc, nil
 }
@@ -168,8 +184,8 @@ func staticJWKS(cfg config.AuthorizationConfig) (url.URL, KeyFunc, error) {
 		return url.URL{}, nil, fmt.Errorf("failed to parse the issuer URL: %w", err)
 	}
 
-	var jwks jose.JSONWebKeySet
-	if err := json.Unmarshal([]byte(cfg.ConfigurationStatic), &jwks); err != nil {
+	jwks, err := jwk.Parse([]byte(cfg.ConfigurationStatic))
+	if err != nil {
 		return url.URL{}, nil, fmt.Errorf("could not decode jwks: %w", err)
 	}
 

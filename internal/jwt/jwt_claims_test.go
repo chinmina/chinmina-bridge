@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/auth0/go-jwt-middleware/v2/validator"
+	"github.com/auth0/go-jwt-middleware/v3/validator"
 	"github.com/stretchr/testify/assert"
 )
 

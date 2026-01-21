@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/json"
-	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 
 	localjwt "github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/sethvargo/go-envconfig"
@@ -41,18 +41,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	jwksKey := jose.JSONWebKey{}
-	err = json.Unmarshal(jwksBytes, &jwksKey)
+	jwksKey, err := jwk.ParseKey(jwksBytes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error loading jwks: %v\n", err)
 		os.Exit(1)
 	}
 
-	jwt, err := createJWT(&jwksKey, validity(jwt.Claims{
-		Audience: []string{cfg.Audience},
-		Subject:  cfg.Subject,
-		Issuer:   cfg.Issuer,
-	}), localjwt.BuildkiteClaims{
+	// Create token with standard claims
+	token := jwt.New()
+	_ = token.Set(jwt.AudienceKey, []string{cfg.Audience})
+	_ = token.Set(jwt.SubjectKey, cfg.Subject)
+	_ = token.Set(jwt.IssuerKey, cfg.Issuer)
+
+	// Add timing claims
+	token = validity(token)
+
+	// Add Buildkite claims using SetOnToken
+	claims := localjwt.BuildkiteClaims{
 		OrganizationSlug: cfg.OrganizationSlug,
 		PipelineSlug:     cfg.PipelineSlug,
 		PipelineID:       cfg.PipelineSlug + "UUID",
@@ -62,49 +67,36 @@ func main() {
 		StepKey:          "step1",
 		JobID:            "job1",
 		AgentID:          "agent1",
-	})
+	}
+	if err := claims.SetOnToken(token); err != nil {
+		fmt.Fprintf(os.Stderr, "error setting Buildkite claims: %v\n", err)
+		os.Exit(1)
+	}
+
+	tokenStr, err := createJWT(jwksKey, token)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating JWT: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("%s", jwt)
+	fmt.Printf("%s", tokenStr)
 }
 
-func createJWT(jwk *jose.JSONWebKey, claims ...any) (string, error) {
-	key := jose.SigningKey{
-		Algorithm: jose.SignatureAlgorithm(jwk.Algorithm),
-		Key:       jwk,
-	}
-
-	signer, err := jose.NewSigner(
-		key,
-		(&jose.SignerOptions{}).WithType("JWT"),
-	)
+func createJWT(key jwk.Key, token jwt.Token) (string, error) {
+	signed, err := jwt.Sign(token, jwt.WithKey(jwa.RS256(), key))
 	if err != nil {
 		return "", err
 	}
 
-	builder := jwt.Signed(signer)
-
-	for _, claim := range claims {
-		builder = builder.Claims(claim)
-	}
-
-	token, err := builder.Serialize()
-	if err != nil {
-		return "", err
-	}
-
-	return token, nil
+	return string(signed), nil
 }
 
-func validity(claims jwt.Claims) jwt.Claims {
+func validity(token jwt.Token) jwt.Token {
 	now := time.Now().UTC()
 
-	claims.IssuedAt = jwt.NewNumericDate(now)
-	claims.NotBefore = jwt.NewNumericDate(now.Add(-1 * time.Minute))
-	claims.Expiry = jwt.NewNumericDate(now.Add(1 * time.Minute))
+	_ = token.Set(jwt.IssuedAtKey, now)
+	_ = token.Set(jwt.NotBeforeKey, now.Add(-1*time.Minute))
+	_ = token.Set(jwt.ExpirationKey, now.Add(1*time.Minute))
 
-	return claims
+	return token
 }

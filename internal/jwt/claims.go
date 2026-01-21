@@ -8,8 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
-	"github.com/auth0/go-jwt-middleware/v2/validator"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 var (
@@ -17,51 +16,23 @@ var (
 	ErrClaimNotFound = errors.New("claim not found")
 )
 
+// FieldPresent tracks whether a JSON field was present with a non-null value.
+// Used for registered claims that must be present but whose values are
+// validated elsewhere (by the JWT middleware itself).
+type FieldPresent struct {
+	valued bool
+}
+
+func (f FieldPresent) Valued() bool {
+	return f.valued
+}
+
 // buildkiteCustomClaims sets up OIDC custom claims for a Buildkite-issued JWT.
-func buildkiteCustomClaims(expectedOrganizationSlug string) func() validator.CustomClaims {
-	return func() validator.CustomClaims {
+func buildkiteCustomClaims(expectedOrganizationSlug string) func() *BuildkiteClaims {
+	return func() *BuildkiteClaims {
 		return &BuildkiteClaims{
 			expectedOrganizationSlug: expectedOrganizationSlug,
 		}
-	}
-}
-
-// registeredClaimsValidator ensures that the basic claims that we rely on are
-// part of the supplied claims. It also ensures that the the token has a valid
-// time period. The core validation takes care of enforcing the active and
-// expiry dates: this simply ensures that they're present.
-func registeredClaimsValidator(next jwtmiddleware.ValidateToken) jwtmiddleware.ValidateToken {
-	return func(ctx context.Context, token string) (any, error) {
-
-		claims, err := next(ctx, token)
-		if err != nil {
-			return nil, err
-		}
-
-		validatedClaims, ok := claims.(*validator.ValidatedClaims)
-		if !ok {
-			return nil, fmt.Errorf("could not cast claims to validator.ValidatedClaims")
-		}
-
-		reg := validatedClaims.RegisteredClaims
-
-		if len(reg.Audience) == 0 {
-			return nil, fmt.Errorf("audience claim not present")
-		}
-
-		if reg.Issuer == "" {
-			return nil, fmt.Errorf("issuer claim not present")
-		}
-
-		if reg.Subject == "" {
-			return nil, fmt.Errorf("subject claim not present")
-		}
-
-		if reg.NotBefore == 0 || reg.Expiry == 0 {
-			return nil, fmt.Errorf("token has no validity period")
-		}
-
-		return claims, nil
 	}
 }
 
@@ -70,6 +41,13 @@ func registeredClaimsValidator(next jwtmiddleware.ValidateToken) jwtmiddleware.V
 //
 // See: https://buildkite.com/docs/agent/v3/cli-oidc#claims
 type BuildkiteClaims struct {
+	// Registered claims - validation only, no getters needed
+	// The JWT middleware validates the actual values; we just check presence
+	// These fields are populated via UnmarshalJSON's setClaimField method
+	subject   string
+	notBefore FieldPresent
+	expiry    FieldPresent
+
 	OrganizationSlug string            `json:"organization_slug"`
 	PipelineSlug     string            `json:"pipeline_slug"`
 	PipelineID       string            `json:"pipeline_id"`
@@ -92,6 +70,16 @@ type BuildkiteClaims struct {
 // Validate ensures that the expected claims are present in the token, and that
 // the organization slug matches the configured value.
 func (c *BuildkiteClaims) Validate(ctx context.Context) error {
+	// Validate registered claims are present
+	if c.subject == "" {
+		return errors.New("subject claim not present")
+	}
+	if !c.notBefore.Valued() {
+		return errors.New("nbf claim not present")
+	}
+	if !c.expiry.Valued() {
+		return errors.New("exp claim not present")
+	}
 
 	fields := [][]string{
 		{"organization_slug", c.OrganizationSlug},
@@ -119,6 +107,49 @@ func (c *BuildkiteClaims) Validate(ctx context.Context) error {
 
 	if c.expectedOrganizationSlug != "" && c.expectedOrganizationSlug != c.OrganizationSlug {
 		return fmt.Errorf("expecting token issued for organization %s", c.expectedOrganizationSlug)
+	}
+
+	return nil
+}
+
+// SetOnToken sets all non-empty BuildkiteClaims fields on the given JWT token.
+// Empty string fields are skipped to reduce token size.
+// BuildNumber is always set since 0 is a valid value.
+func (c BuildkiteClaims) SetOnToken(token jwt.Token) error {
+	claims := []struct {
+		key   string
+		value any
+		skip  bool
+	}{
+		{"organization_slug", c.OrganizationSlug, c.OrganizationSlug == ""},
+		{"pipeline_slug", c.PipelineSlug, c.PipelineSlug == ""},
+		{"pipeline_id", c.PipelineID, c.PipelineID == ""},
+		{"build_number", c.BuildNumber, false}, // always set (0 is valid)
+		{"build_branch", c.BuildBranch, c.BuildBranch == ""},
+		{"build_commit", c.BuildCommit, c.BuildCommit == ""},
+		{"build_tag", c.BuildTag, c.BuildTag == ""},
+		{"step_key", c.StepKey, c.StepKey == ""},
+		{"job_id", c.JobID, c.JobID == ""},
+		{"agent_id", c.AgentID, c.AgentID == ""},
+		{"cluster_id", c.ClusterID, c.ClusterID == ""},
+		{"cluster_name", c.ClusterName, c.ClusterName == ""},
+		{"queue_id", c.QueueID, c.QueueID == ""},
+		{"queue_key", c.QueueKey, c.QueueKey == ""},
+	}
+
+	for _, claim := range claims {
+		if claim.skip {
+			continue
+		}
+		if err := token.Set(claim.key, claim.value); err != nil {
+			return fmt.Errorf("failed to set %s: %w", claim.key, err)
+		}
+	}
+
+	for k, v := range c.AgentTags {
+		if err := token.Set("agent_tag:"+k, v); err != nil {
+			return fmt.Errorf("failed to set agent_tag:%s: %w", k, err)
+		}
 	}
 
 	return nil
@@ -168,6 +199,18 @@ func (c *BuildkiteClaims) UnmarshalJSON(data []byte) error {
 func (c *BuildkiteClaims) setClaimField(key string, value any) error {
 	var err error
 	switch key {
+	case "sub":
+		err = setField(&c.subject, value)
+	case "nbf":
+		// FieldPresent: any non-nil value means the field was valued
+		if value != nil {
+			c.notBefore.valued = true
+		}
+	case "exp":
+		// FieldPresent: any non-nil value means the field was valued
+		if value != nil {
+			c.expiry.valued = true
+		}
 	case "organization_slug":
 		err = setField(&c.OrganizationSlug, value)
 	case "pipeline_slug":

@@ -5,10 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,12 +15,12 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/jwt/jwxtest"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
-	"github.com/go-jose/go-jose/v4"
-	josejwt "github.com/go-jose/go-jose/v4/jwt"
+	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,8 +35,7 @@ type APITestHarness struct {
 	GitHubMock          *testhelpers.MockGitHubServer
 	BuildkiteMock       *testhelpers.MockBuildkiteServer
 	ProfileStore        *profile.ProfileStore
-	jwk                 *jose.JSONWebKey
-	privateKeyPEM       string
+	jwk                 jwxtest.JWK
 }
 
 // APITestHarnessOption configures the API test harness.
@@ -72,11 +68,10 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 	}
 
 	// Generate JWK for JWT signing
-	harness.jwk = testhelpers.GenerateJWK(t)
-	harness.privateKeyPEM = rsaPrivateKeyToPEM(t, harness.jwk.Key.(*rsa.PrivateKey))
+	harness.jwk = jwxtest.NewJWK(t)
 
 	// Setup mock servers
-	harness.JWKSServer = testhelpers.SetupJWKSServer(t, harness.jwk)
+	harness.JWKSServer = jwxtest.SetupJWKSServer(t, harness.jwk)
 	harness.GitHubMock = testhelpers.SetupMockGitHubServer(t)
 	harness.BuildkiteMock = testhelpers.SetupMockBuildkiteServer(t)
 
@@ -103,7 +98,7 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 		},
 		Github: config.GithubConfig{
 			APIURL:         harness.GitHubMock.Server.URL,
-			PrivateKey:     harness.privateKeyPEM,
+			PrivateKey:     harness.jwk.PrivateKeyPEM(),
 			ApplicationID:  12345,
 			InstallationID: 67890,
 		},
@@ -136,9 +131,9 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 }
 
 // GenerateToken creates a valid JWT signed with the test JWK.
-// Claims are passed as variadic parameters and will be included in the token.
-func (h *APITestHarness) GenerateToken(claims ...any) string {
-	return testhelpers.CreateJWT(h.t, h.jwk, h.JWKSServer.URL, claims...)
+// The token parameter should be configured with all desired claims.
+func (h *APITestHarness) GenerateToken(token jwxjwt.Token) string {
+	return jwxtest.SignToken(h.t, h.jwk, h.JWKSServer.URL, token)
 }
 
 // PipelineToken generates a valid JWT with default Buildkite pipeline claims for testing.
@@ -159,20 +154,27 @@ func (h *APITestHarness) PipelineToken(tokenOptions ...TokenClaimOption) string 
 		opt(&bc)
 	}
 
-	claims := testhelpers.ValidClaims(josejwt.Claims{
-		Audience: []string{h.DefaultAudience},
-		Subject: fmt.Sprintf(
-			"org:%s:pipeline:%s:ref:refs/heads/%s:commit:%s:step:%s",
-			h.DefaultOrganization,
-			bc.PipelineSlug,
-			bc.BuildBranch,
-			bc.BuildCommit,
-			bc.StepKey,
-		),
-	})
-	token := h.GenerateToken(claims, bc)
+	// Create token with standard claims
+	token := jwxjwt.New()
+	_ = token.Set(jwxjwt.AudienceKey, []string{h.DefaultAudience})
+	_ = token.Set(jwxjwt.SubjectKey, fmt.Sprintf(
+		"org:%s:pipeline:%s:ref:refs/heads/%s:commit:%s:step:%s",
+		h.DefaultOrganization,
+		bc.PipelineSlug,
+		bc.BuildBranch,
+		bc.BuildCommit,
+		bc.StepKey,
+	))
 
-	return token
+	// Add Buildkite custom claims
+	if err := bc.SetOnToken(token); err != nil {
+		h.t.Fatalf("failed to set Buildkite claims on token: %v", err)
+	}
+
+	// Add timing claims
+	token = jwxtest.AddTimingClaims(token)
+
+	return h.GenerateToken(token)
 }
 
 type TokenClaimOption func(*jwt.BuildkiteClaims)
@@ -184,19 +186,6 @@ func WithPipeline(slug string, id string) TokenClaimOption {
 		bc.PipelineSlug = slug
 		bc.PipelineID = id
 	}
-}
-
-// rsaPrivateKeyToPEM converts an RSA private key to PEM format.
-func rsaPrivateKeyToPEM(t *testing.T, key *rsa.PrivateKey) string {
-	t.Helper()
-
-	privBytes := x509.MarshalPKCS1PrivateKey(key)
-	privPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: privBytes,
-	})
-
-	return string(privPEM)
 }
 
 // Client returns a TestClient configured for this harness.
