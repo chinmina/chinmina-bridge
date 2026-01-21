@@ -5,13 +5,12 @@ go 1.25
 require (
 	github.com/auth0/go-jwt-middleware/v3 v3.0.0
 	github.com/aws/aws-sdk-go-v2 v1.41.1
-	github.com/bradleyfalzon/ghinstallation/v2 v2.17.0
 	github.com/buildkite/go-buildkite/v4 v4.11.0
 	github.com/docker/go-connections v0.6.0
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zerologr v1.2.3
-	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v81 v81.0.0
+	github.com/jferrl/go-githubauth/v2 v2.0.0
 	github.com/justinas/alice v1.2.0
 	github.com/lestrrat-go/jwx/v3 v3.0.13
 	github.com/maypok86/otter/v2 v2.3.0
@@ -23,6 +22,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.39.0
 	go.opentelemetry.io/otel/sdk v1.39.0
 	go.opentelemetry.io/otel/sdk/metric v1.39.0
+	golang.org/x/oauth2 v0.32.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -61,7 +61,8 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
-	github.com/google/go-github/v75 v75.0.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
+	github.com/google/go-github/v73 v73.0.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 // indirect

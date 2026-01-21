@@ -7,15 +7,18 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/chinmina/chinmina-bridge/internal/config"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
+	appconfig "github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/google/go-github/v81/github"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/oauth2"
 )
 
 type Client struct {
@@ -23,60 +26,35 @@ type Client struct {
 	installationID int64
 }
 
-type ClientConfig struct {
-	TransportFactory func(context.Context, config.GithubConfig, http.RoundTripper) (http.RoundTripper, error)
-}
-
-type ClientOption func(*ClientConfig)
-
-func WithAppTransport(clientConfig *ClientConfig) {
-	clientConfig.TransportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
-		return createAppTransport(ctx, cfg, wrapped)
-	}
-}
-
-func WithTokenTransport(clientConfig *ClientConfig) {
-	clientConfig.TransportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
-		appTransport, err := createAppTransport(ctx, cfg, wrapped)
-		if err != nil {
-			return nil, err
-		}
-
-		transport := ghinstallation.NewFromAppsTransport(appTransport, cfg.InstallationID)
-		return transport, nil
-	}
-}
-
-func New(ctx context.Context, cfg config.GithubConfig, config ...ClientOption) (Client, error) {
+func New(ctx context.Context, cfg appconfig.GithubConfig, config ...ClientOption) (Client, error) {
 	clientConfig := &ClientConfig{}
+
+	// default to App transport, as the primary use case is minting installation
+	// tokens
 	WithAppTransport(clientConfig)
 
 	for _, c := range config {
 		c(clientConfig)
 	}
 
-	// We're calling "installation_token", which is JWT authenticated, so we use
-	// the AppsTransport.
 	authTransport, err := clientConfig.TransportFactory(ctx, cfg, http.DefaultTransport)
 	if err != nil {
 		return Client{}, fmt.Errorf("could not create GitHub transport: %w", err)
 	}
 
-	// Create a client for use with the application credentials. This client
-	// will be used concurrently.
+	// Create a client with the configured credentials. This client will be used
+	// concurrently.
 	client := github.NewClient(
 		&http.Client{
 			Transport: authTransport,
 		},
 	)
 
-	// for testing use
 	if cfg.APIURL != "" {
-		apiURL := cfg.APIURL
-		if !strings.HasSuffix(apiURL, "/") {
-			apiURL += "/"
+		u, err := url.Parse(normalizeAPIURL(cfg.APIURL))
+		if err != nil {
+			return Client{}, fmt.Errorf("parse GitHub API URL %q: %w", cfg.APIURL, err)
 		}
-		u, _ := url.Parse(apiURL)
 		client.BaseURL = u
 	}
 
@@ -84,25 +62,6 @@ func New(ctx context.Context, cfg config.GithubConfig, config ...ClientOption) (
 		client,
 		cfg.InstallationID,
 	}, nil
-}
-
-func createAppTransport(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (*ghinstallation.AppsTransport, error) {
-	signer, err := createSigner(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("could not create signer for GitHub transport: %w", err)
-	}
-
-	// We're calling "installation_token", which is JWT authenticated, so we use
-	// the AppsTransport.
-	appInstallationTransport, err := ghinstallation.NewAppsTransportWithOptions(
-		wrapped,
-		cfg.ApplicationID,
-		ghinstallation.WithSigner(signer),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("could not create GitHub transport: %w", err)
-	}
-	return appInstallationTransport, nil
 }
 
 func (c Client) GetFileContent(ctx context.Context, owner string, repo string, path string) (string, error) {
@@ -145,21 +104,111 @@ func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scope
 	return tok.GetToken(), tok.GetExpiresAt().Time, nil
 }
 
-func createSigner(ctx context.Context, cfg config.GithubConfig) (ghinstallation.Signer, error) {
+type ClientConfig struct {
+	TransportFactory func(context.Context, appconfig.GithubConfig, http.RoundTripper) (http.RoundTripper, error)
+}
+
+type ClientOption func(*ClientConfig)
+
+func WithAppTransport(clientConfig *ClientConfig) {
+	clientConfig.TransportFactory = createAppTransport
+}
+
+func WithTokenTransport(clientConfig *ClientConfig) {
+	clientConfig.TransportFactory = func(ctx context.Context, cfg appconfig.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
+		signingKey, err := createSigningKey(ctx, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create signing key: %w", err)
+		}
+
+		appTokenSource := NewAppTokenSource(signingKey, strconv.FormatInt(cfg.ApplicationID, 10))
+
+		installOpts := []InstallationTokenSourceOption{
+			WithHTTPClient(&http.Client{Transport: wrapped}),
+		}
+		if cfg.APIURL != "" {
+			installOpts = append(installOpts, WithEnterpriseURL(normalizeAPIURL(cfg.APIURL)))
+		}
+
+		tokenSource := NewInstallationTokenSource(
+			cfg.InstallationID,
+			appTokenSource,
+			installOpts...,
+		)
+
+		transport := &oauth2.Transport{
+			Source: tokenSource,
+			Base:   wrapped,
+		}
+		return transport, nil
+	}
+}
+
+func createAppTransport(ctx context.Context, cfg appconfig.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
+	signingKey, err := createSigningKey(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not create signing key for GitHub transport: %w", err)
+	}
+
+	// Create App JWT token source for authenticating as the GitHub App
+	// NewAppTokenSource wraps in ReuseTokenSource internally
+	appTokenSource := NewAppTokenSource(signingKey, strconv.FormatInt(cfg.ApplicationID, 10))
+
+	transport := &oauth2.Transport{
+		Source: appTokenSource,
+		Base:   wrapped,
+	}
+	return transport, nil
+}
+
+// createSigningKey returns the appropriate signing key based on configuration.
+// Returns either a jwk.Key for PEM-based signing or a kmsSigningKey for AWS
+// KMS-based signing.
+func createSigningKey(ctx context.Context, cfg appconfig.GithubConfig) (any, error) {
 	if cfg.PrivateKeyARN != "" {
-		return NewAWSKMSSigner(ctx, cfg.PrivateKeyARN)
+		return createKMSSigningKey(ctx, cfg.PrivateKeyARN)
 	}
 
 	if cfg.PrivateKey != "" {
-		key, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(cfg.PrivateKey))
-		if err != nil {
-			return nil, fmt.Errorf("could not parse private key: %s", err)
-		}
-
-		return ghinstallation.NewRSASigner(jwt.SigningMethodRS256, key), nil
+		return parsePrivateKeyPEM(cfg.PrivateKey)
 	}
 
-	return nil, errors.New("no private key configuration specified")
+	return nil, fmt.Errorf("no private key configuration specified")
+}
+
+// createKMSSigningKey creates a KMS signing key using the AWS SDK.
+func createKMSSigningKey(ctx context.Context, arn string) (kmsSigningKey, error) {
+	awsCfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return kmsSigningKey{}, fmt.Errorf("load AWS config: %w", err)
+	}
+
+	client := kms.NewFromConfig(awsCfg)
+
+	return kmsSigningKey{
+		ctx:    ctx,
+		client: client,
+		arn:    arn,
+	}, nil
+}
+
+// normalizeAPIURL ensures the API URL has a trailing slash as required by
+// GitHub client libraries.
+func normalizeAPIURL(apiURL string) string {
+	if !strings.HasSuffix(apiURL, "/") {
+		return apiURL + "/"
+	}
+	return apiURL
+}
+
+// parsePrivateKeyPEM parses a PEM-encoded RSA private key using jwx.
+// Handles both PKCS1 and PKCS8 formats automatically.
+func parsePrivateKeyPEM(pemKey string) (jwk.Key, error) {
+	key, err := jwk.ParseKey([]byte(pemKey), jwk.WithPEM(true))
+	if err != nil {
+		return nil, fmt.Errorf("parse PEM key: %w", err)
+	}
+	return key, nil
 }
 
 func RepoForURL(u url.URL) (string, string) {

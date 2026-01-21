@@ -32,6 +32,19 @@ func TestNew_FailsWithInvalidConfig(t *testing.T) {
 	assert.ErrorContains(t, err, "no private key configuration specified")
 }
 
+func TestNew_FailsWithInvalidAPIURL(t *testing.T) {
+	_, err := github.New(
+		context.Background(),
+		config.GithubConfig{
+			// control characters are not valid in URLs
+			APIURL:     string([]byte{0x7f}),
+			PrivateKey: generateKey(t),
+		},
+	)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "parse GitHub API URL")
+}
+
 func TestNew_SucceedsWithKMSConfig(t *testing.T) {
 	// set a purposefully invalid endpoint to prevent any errant remote calls
 	t.Setenv("AWS_ENDPOINT_URL", "http://localhost:20987/not-bound")
