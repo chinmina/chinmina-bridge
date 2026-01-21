@@ -1,7 +1,6 @@
 package jwt
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,14 +25,6 @@ type FieldPresent struct {
 
 func (f FieldPresent) Valued() bool {
 	return f.valued
-}
-
-var jsonNull = []byte("null")
-
-func (f *FieldPresent) UnmarshalJSON(data []byte) error {
-	// Treat literal null as "not valued" - use bytes.Equal to avoid allocation
-	f.valued = !bytes.Equal(data, jsonNull)
-	return nil
 }
 
 // buildkiteCustomClaims sets up OIDC custom claims for a Buildkite-issued JWT.
