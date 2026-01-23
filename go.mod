@@ -5,7 +5,7 @@ go 1.25
 require (
 	github.com/auth0/go-jwt-middleware/v3 v3.0.0
 	github.com/aws/aws-sdk-go-v2 v1.41.1
-	github.com/buildkite/go-buildkite/v4 v4.11.0
+	github.com/buildkite/go-buildkite/v4 v4.13.1
 	github.com/docker/go-connections v0.6.0
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zerologr v1.2.3
