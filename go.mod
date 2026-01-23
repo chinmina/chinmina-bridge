@@ -10,7 +10,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zerologr v1.2.3
 	github.com/google/go-github/v81 v81.0.0
-	github.com/jferrl/go-githubauth/v2 v2.0.0
+	github.com/jferrl/go-githubauth v1.5.0
 	github.com/justinas/alice v1.2.0
 	github.com/lestrrat-go/jwx/v3 v3.0.13
 	github.com/maypok86/otter/v2 v2.3.0
@@ -62,7 +62,6 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
-	github.com/google/go-github/v73 v73.0.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3 // indirect
