@@ -3,7 +3,7 @@ package github
 import (
 	"net/http"
 
-	"github.com/jferrl/go-githubauth/v2"
+	"github.com/jferrl/go-githubauth"
 	"golang.org/x/oauth2"
 )
 
@@ -49,11 +49,7 @@ func NewInstallationTokenSource(installationID int64, appTokenSource oauth2.Toke
 	}
 
 	if options.enterpriseURL != "" {
-		// WithEnterpriseURLs expects separate base and upload URLs. The upload URL
-		// is only used for release asset uploads, which this token source never
-		// performs - it only calls Apps.CreateInstallationToken using the base URL.
-		// Passing the same URL for both is safe and has no functional impact.
-		installOpts = append(installOpts, githubauth.WithEnterpriseURLs(options.enterpriseURL, options.enterpriseURL))
+		installOpts = append(installOpts, githubauth.WithEnterpriseURL(options.enterpriseURL))
 	}
 
 	// Create the installation token source using go-githubauth
