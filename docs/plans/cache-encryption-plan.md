@@ -195,11 +195,20 @@ func readKeysetFromSecretsManager(ctx context.Context, uri string) (keyset.Reade
 
 **File: `internal/config/config.go`**
 
-Add encryption configuration to the existing config structure:
+Nest encryption configuration inside `CacheConfig` since encryption is cache-specific:
 
 ```go
-// EncryptionConfig holds settings for cache encryption.
-type EncryptionConfig struct {
+// CacheConfig specifies which cache backend to use.
+type CacheConfig struct {
+    // Type selects the cache implementation: "memory" (default) or "valkey"
+    Type string `env:"CACHE_TYPE, default=memory"`
+
+    // Encryption holds settings for cache encryption (valkey only).
+    Encryption CacheEncryptionConfig
+}
+
+// CacheEncryptionConfig holds settings for cache encryption.
+type CacheEncryptionConfig struct {
     // Enabled turns on encryption for distributed cache.
     // When false, tokens are stored in plaintext (development only).
     Enabled bool `env:"CACHE_ENCRYPTION_ENABLED, default=false"`
@@ -214,21 +223,12 @@ type EncryptionConfig struct {
 }
 ```
 
-Add to main `Config` struct:
+Add validation method to `CacheConfig`:
 
 ```go
-type Config struct {
-    // ... existing fields ...
-    Encryption EncryptionConfig
-}
-```
-
-Add validation in config loading:
-
-```go
-func (c *Config) Validate() error {
+func (c *CacheConfig) Validate() error {
     // Encryption requires distributed cache
-    if c.Encryption.Enabled && c.Cache.Type != "valkey" {
+    if c.Encryption.Enabled && c.Type != "valkey" {
         return fmt.Errorf("encryption requires distributed cache (CACHE_TYPE=valkey)")
     }
 
@@ -243,6 +243,14 @@ func (c *Config) Validate() error {
     }
 
     return nil
+}
+```
+
+Call validation in `main.go` after loading config:
+
+```go
+if err := cfg.Cache.Validate(); err != nil {
+    log.Fatal().Err(err).Msg("invalid cache configuration")
 }
 ```
 
@@ -442,6 +450,8 @@ func (d *Distributed[T]) Invalidate(ctx context.Context, key string) error {
 
 **File: `internal/cache/factory.go`**
 
+The factory signature remains unchanged - encryption config is accessed via `cacheConfig.Encryption`:
+
 ```go
 package cache
 
@@ -455,11 +465,11 @@ import (
 )
 
 // NewFromConfig creates a TokenCache based on configuration.
+// Signature unchanged - encryption config nested in cacheConfig.
 func NewFromConfig[T any](
     ctx context.Context,
     cacheConfig config.CacheConfig,
     valkeyConfig config.ValkeyConfig,
-    encryptionConfig config.EncryptionConfig,
     ttl time.Duration,
     maxMemorySize int,
 ) (TokenCache[T], error) {
@@ -474,11 +484,11 @@ func NewFromConfig[T any](
 
         // Initialize encryption if enabled
         var aead encryption.AEAD
-        if encryptionConfig.Enabled {
+        if cacheConfig.Encryption.Enabled {
             aead, err = encryption.NewAEADFromKMS(
                 ctx,
-                encryptionConfig.KeysetURI,
-                encryptionConfig.KMSKeyURI,
+                cacheConfig.Encryption.KeysetURI,
+                cacheConfig.Encryption.KMSKeyURI,
             )
             if err != nil {
                 return nil, fmt.Errorf("initializing encryption: %w", err)
@@ -494,7 +504,7 @@ func NewFromConfig[T any](
         }
 
         // Warn if encryption requested but using memory cache
-        if encryptionConfig.Enabled {
+        if cacheConfig.Encryption.Enabled {
             // This should be caught by config validation, but log anyway
             log.Warn().Msg("encryption configured but using memory cache - encryption not applied")
         }
@@ -512,15 +522,19 @@ func NewFromConfig[T any](
 
 **File: `main.go`**
 
-Update cache initialization call:
+The cache initialization call is unchanged since encryption config is nested in `cfg.Cache`:
 
 ```go
-// Create token cache with encryption support
+// Validate cache configuration (includes encryption validation)
+if err := cfg.Cache.Validate(); err != nil {
+    log.Fatal().Err(err).Msg("invalid cache configuration")
+}
+
+// Create token cache - encryption handled internally based on cfg.Cache.Encryption
 tokenCache, err := cache.NewFromConfig[vendor.ProfileToken](
     ctx,
     cfg.Cache,
     cfg.Valkey,
-    cfg.Encryption,  // Add encryption config
     45*time.Minute,
     10_000,
 )
@@ -530,7 +544,7 @@ if err != nil {
 defer tokenCache.Close()
 
 // Log encryption status
-if cfg.Encryption.Enabled {
+if cfg.Cache.Encryption.Enabled {
     log.Info().Msg("cache encryption enabled")
 } else if cfg.Cache.Type == "valkey" {
     log.Warn().Msg("distributed cache without encryption - not recommended for production")
@@ -710,29 +724,27 @@ Encrypted entries use `enc:` prefix, plaintext use no prefix. This allows:
 
 | File | Purpose |
 |------|---------|
-| `internal/encryption/aead.go` | Tink AEAD wrapper and KMS integration |
-| `internal/encryption/keyset.go` | AWS Secrets Manager keyset loading |
+| `internal/encryption/aead.go` | Tink AEAD wrapper, KMS integration, and Secrets Manager keyset loading |
 | `internal/encryption/aead_test.go` | Unit tests for encryption |
 
 ### Modified Files
 
 | File | Changes |
 |------|---------|
-| `internal/config/config.go` | Add `EncryptionConfig` struct |
-| `internal/cache/distributed.go` | Add encryption/decryption in Get/Set |
-| `internal/cache/factory.go` | Add encryption config parameter, initialize AEAD |
-| `internal/cache/instrumented.go` | Add encryption metrics |
-| `main.go` | Pass encryption config, add startup logging |
-| `go.mod` | Add Tink and AWS SDK dependencies |
+| `internal/config/config.go` | Add `CacheEncryptionConfig` struct nested in `CacheConfig`, add `Validate()` method |
+| `internal/cache/distributed.go` | Add optional AEAD parameter, encryption/decryption in Get/Set, `enc:` key prefix |
+| `internal/cache/factory.go` | Initialize AEAD from `cacheConfig.Encryption` when enabled |
+| `internal/cache/instrumented.go` | Add encryption metrics (optional) |
+| `main.go` | Add config validation call, add startup logging for encryption status |
+| `go.mod` | Add Tink and AWS Secrets Manager dependencies |
 
 ## Dependencies
 
-Add to `go.mod`:
+Add to `go.mod` (aws-sdk-go-v2/config already present):
 
 ```
 github.com/tink-crypto/tink-go/v2 v2.x.x
 github.com/tink-crypto/tink-go-awskms/v2 v2.x.x
-github.com/aws/aws-sdk-go-v2/config v1.x.x
 github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.x.x
 ```
 
