@@ -906,13 +906,90 @@ github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.x.x
 | `CACHE_ENCRYPTION_KEYSET_URI` | If enabled | - | URI to encrypted Tink keyset (e.g., `aws-secretsmanager://chinmina/keyset`) |
 | `CACHE_ENCRYPTION_KMS_KEY_URI` | If enabled | - | AWS KMS key URI (e.g., `aws-kms://arn:aws:kms:us-east-1:123456789:key/abc-123`) |
 
+## Keyset Rotation
+
+### Rotation Procedure
+
+Tink keysets support seamless rotation by maintaining multiple keys:
+
+1. **Add new key to keyset** (external to this application):
+   ```bash
+   # Generate new keyset with rotated key using tinkey CLI
+   tinkey rotate-keyset --in encrypted-keyset.json --out rotated-keyset.json \
+     --master-key-uri aws-kms://arn:aws:kms:... --key-template AES256_GCM
+   ```
+
+2. **Update keyset in Secrets Manager**:
+   ```bash
+   aws secretsmanager update-secret --secret-id chinmina/keyset \
+     --secret-string file://rotated-keyset.json
+   ```
+
+3. **Rolling restart of bridge instances**:
+   - New instances load updated keyset from Secrets Manager
+   - New keyset's primary key used for new encryptions
+   - Old keys in keyset still decrypt existing cache entries
+
+4. **Wait for cache TTL** (45 minutes):
+   - All cache entries refresh with new key
+   - Old key no longer needed for decryption
+
+5. **Remove old key** (optional, external):
+   - After TTL, old key can be disabled in keyset
+   - Provides forward secrecy
+
+### Keyset Refresh Without Restart
+
+For zero-downtime rotation, the application could periodically refresh the keyset:
+
+**Option A: Periodic refresh** (recommended for future enhancement):
+```go
+// In internal/encryption/aead.go
+
+type RefreshableAEAD struct {
+    mu        sync.RWMutex
+    aead      tink.AEAD
+    keysetURI string
+    kmsKeyURI string
+}
+
+func (r *RefreshableAEAD) Refresh(ctx context.Context) error {
+    newAEAD, err := loadAEAD(ctx, r.keysetURI, r.kmsKeyURI)
+    if err != nil {
+        return err
+    }
+    r.mu.Lock()
+    r.aead = newAEAD
+    r.mu.Unlock()
+    return nil
+}
+```
+
+**Option B: Rolling restart** (current implementation):
+- Simplest approach, acceptable given 45-minute cache TTL
+- Use orchestrator (Kubernetes, ECS) for rolling deployments
+- No code changes required beyond initial implementation
+
+### KMS Failure Recovery
+
+If KMS is unavailable at startup:
+- Application fails to start (fail-fast)
+- Alerts trigger on startup failures
+- Cache falls back to generating new tokens (no cached data)
+
+If KMS becomes unavailable after startup:
+- Existing AEAD continues to work (keyset already decrypted in memory)
+- No impact until next restart
+- Monitor KMS availability separately
+
 ## Security Considerations
 
 1. **AAD Binding**: Cache key is used as AAD, preventing ciphertext from being moved between keys
-2. **Key Rotation**: Tink supports keyset rotation - old keys remain for decryption while new key used for encryption
+2. **Key Rotation**: Tink keysets support multiple keys - new primary for encryption, old keys for decryption
 3. **KMS Access**: Only bridge service should have `kms:Decrypt` permission for the KEK
 4. **Keyset Protection**: Keyset in Secrets Manager is encrypted by KMS - double protection
 5. **Memory Safety**: Plaintext tokens exist only briefly in memory during en/decryption
+6. **Forward Secrecy**: After rotation and TTL expiry, old key can be removed
 
 ## Performance Impact
 
