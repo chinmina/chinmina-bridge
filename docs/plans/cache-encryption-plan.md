@@ -291,8 +291,9 @@ func NewDistributed[T any](client valkey.Client, ttl time.Duration, aead encrypt
 func (d *Distributed[T]) Get(ctx context.Context, key string) (T, bool, error) {
     var result T
 
+    storageKey := d.storageKey(key)
     cmd := d.client.DoCache(ctx,
-        d.client.B().Get().Key(key).Cache(),
+        d.client.B().Get().Key(storageKey).Cache(),
         d.ttl,
     )
 
@@ -341,14 +342,29 @@ func (d *Distributed[T]) Set(ctx context.Context, key string, token T) error {
         data = []byte(base64.StdEncoding.EncodeToString(ciphertext))
     }
 
+    storageKey := d.storageKey(key)
     cmd := d.client.Do(ctx,
-        d.client.B().Set().Key(key).Value(string(data)).Ex(d.ttl).Build(),
+        d.client.B().Set().Key(storageKey).Value(string(data)).Ex(d.ttl).Build(),
     )
 
     return cmd.Error()
 }
 
-// Invalidate and Close methods unchanged
+func (d *Distributed[T]) Invalidate(ctx context.Context, key string) error {
+    storageKey := d.storageKey(key)
+    return d.client.Do(ctx, d.client.B().Del().Key(storageKey).Build()).Error()
+}
+
+// storageKey returns the key with appropriate prefix.
+// Encrypted entries use "enc:" prefix for namespace separation.
+func (d *Distributed[T]) storageKey(key string) string {
+    if d.aead != nil {
+        return "enc:" + key
+    }
+    return key
+}
+
+// Close method unchanged
 ```
 
 #### 2.2 Modify `internal/cache/memory.go`
@@ -401,7 +417,8 @@ func NewMemory[T any](ttl time.Duration, maxSize int, aead encryption.AEAD) (*Me
 func (m *Memory[T]) Get(ctx context.Context, key string) (T, bool, error) {
     var zero T
 
-    value, found := m.cache.Get(key)
+    storageKey := m.storageKey(key)
+    value, found := m.cache.Get(storageKey)
     if !found {
         return zero, false, nil
     }
@@ -435,9 +452,11 @@ func (m *Memory[T]) Get(ctx context.Context, key string) (T, bool, error) {
 }
 
 func (m *Memory[T]) Set(ctx context.Context, key string, token T) error {
+    storageKey := m.storageKey(key)
+
     // If encryption disabled, store T directly
     if m.aead == nil {
-        m.cache.Set(key, token)
+        m.cache.Set(storageKey, token)
         return nil
     }
 
@@ -452,11 +471,26 @@ func (m *Memory[T]) Set(ctx context.Context, key string, token T) error {
         return fmt.Errorf("encrypting token: %w", err)
     }
 
-    m.cache.Set(key, encryptedEntry{ciphertext: ciphertext})
+    m.cache.Set(storageKey, encryptedEntry{ciphertext: ciphertext})
     return nil
 }
 
-// Invalidate and Close methods unchanged
+func (m *Memory[T]) Invalidate(ctx context.Context, key string) error {
+    storageKey := m.storageKey(key)
+    m.cache.Delete(storageKey)
+    return nil
+}
+
+// storageKey returns the key with appropriate prefix.
+// Encrypted entries use "enc:" prefix for namespace separation.
+func (m *Memory[T]) storageKey(key string) string {
+    if m.aead != nil {
+        return "enc:" + key
+    }
+    return key
+}
+
+// Close method unchanged
 ```
 
 **Component model benefits:**
@@ -801,23 +835,35 @@ Add integration tests in `api_integration_test.go` that verify:
 
 ### Phase 6: Migration Considerations
 
-#### 6.1 Cache Value Format
+#### 6.1 Namespace Separation
 
-When encryption is enabled, the stored value format changes:
+Encrypted entries use `enc:` key prefix for clear namespace separation:
+- **Plaintext key**: `digest:profile://org/pipeline/uuid/slug/profile/default`
+- **Encrypted key**: `enc:digest:profile://org/pipeline/uuid/slug/profile/default`
+
+This provides:
+- Clear identification of encrypted vs plaintext entries
+- Safe rollout alongside existing plaintext cache
+- No collision between old plaintext and new encrypted entries
+
+#### 6.2 Cache Value Format
+
+When encryption is enabled, the stored value format also changes:
 - **Valkey**: Plaintext JSON → Base64-encoded ciphertext string
 - **Memory**: Direct `T` storage → `encryptedEntry{ciphertext []byte}`
 
-Cache keys remain the same. This means:
-- Existing plaintext entries will fail to deserialize if encryption is enabled mid-flight
-- Short TTL (45 min) means all entries refresh quickly after config change
+Combined with the key prefix, this means:
+- Existing plaintext entries are untouched (different keys)
+- New encrypted entries use `enc:` prefixed keys
+- Short TTL (45 min) means plaintext entries expire naturally
 - No explicit migration required
 
-#### 6.2 Rollout Strategy
+#### 6.3 Rollout Strategy
 
 1. **Deploy with encryption disabled** - verify no regressions
 2. **Enable encryption in staging** - monitor metrics and logs
-3. **Enable encryption in production** - existing plaintext entries expire naturally (45 min TTL)
-4. **No migration needed** - short TTL means all entries refresh within 45 minutes
+3. **Enable encryption in production** - new entries use `enc:` prefix, old plaintext entries expire naturally (45 min TTL)
+4. **No migration needed** - namespace separation means no conflicts
 
 ## File Summary
 
@@ -833,9 +879,9 @@ Cache keys remain the same. This means:
 | File | Changes |
 |------|---------|
 | `internal/config/config.go` | Add `CacheEncryptionConfig` struct nested in `CacheConfig`, add `Validate()` method |
-| `internal/cache/distributed.go` | Add optional `aead` field, encrypt on Set, decrypt on Get, update constructor signature |
+| `internal/cache/distributed.go` | Add `aead` field, `storageKey()` method with `enc:` prefix, encrypt on Set, decrypt on Get |
 | `internal/cache/distributed_test.go` | Add tests for encryption and AAD binding |
-| `internal/cache/memory.go` | Add optional `aead` field, `encryptedEntry` type, encrypt on Set, decrypt on Get, update constructor signature |
+| `internal/cache/memory.go` | Add `aead` field, `encryptedEntry` type, `storageKey()` method with `enc:` prefix, encrypt on Set, decrypt on Get |
 | `internal/cache/memory_test.go` | Add tests for encryption with and without AEAD |
 | `internal/cache/factory.go` | Initialize AEAD, pass to cache constructors, log encryption status |
 | `internal/cache/instrumented.go` | Add encryption metrics (optional) |
