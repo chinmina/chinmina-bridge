@@ -360,7 +360,6 @@ package cache
 
 import (
     "context"
-    "encoding/base64"
     "encoding/json"
     "fmt"
     "time"
@@ -378,10 +377,9 @@ type encryptedEntry struct {
 type Memory[T any] struct {
     // When aead is nil, cache stores T directly
     // When aead is set, cache stores encryptedEntry
-    cache   *otter.Cache[string, any]
-    ttl     time.Duration
-    aead    encryption.AEAD
-    counter *stats.Counter
+    cache *otter.Cache[string, any]
+    ttl   time.Duration
+    aead  encryption.AEAD
 }
 
 // NewMemory creates a memory cache with optional encryption.
@@ -613,37 +611,30 @@ var (
 
 #### 4.2 Startup Validation
 
-Add encryption health check at startup:
-
-```go
-// internal/encryption/aead.go
-
-// Validate performs a test encryption/decryption cycle to verify the AEAD is working.
-func (t *tinkAEAD) Validate() error {
-    testPlaintext := []byte("chinmina-bridge-encryption-test")
-    testAAD := []byte("validation")
-
-    ciphertext, err := t.Encrypt(testPlaintext, testAAD)
-    if err != nil {
-        return fmt.Errorf("validation encrypt failed: %w", err)
-    }
-
-    decrypted, err := t.Decrypt(ciphertext, testAAD)
-    if err != nil {
-        return fmt.Errorf("validation decrypt failed: %w", err)
-    }
-
-    if !bytes.Equal(testPlaintext, decrypted) {
-        return fmt.Errorf("validation round-trip failed: plaintext mismatch")
-    }
-
-    return nil
-}
-```
+Startup validation is handled by `tinkAEAD.Validate()` (shown in Phase 1), which is called
+automatically by `NewAEADFromKMS()`. This ensures fail-fast behavior if encryption is misconfigured.
 
 ### Phase 5: Testing Strategy
 
 #### 5.1 Unit Tests
+
+**File: `internal/encryption/aead.go`** - Add test helper function:
+
+```go
+// NewTestAEAD creates an AEAD for testing without KMS.
+// Only use in tests - keys are not persisted or protected.
+func NewTestAEAD() (AEAD, error) {
+    handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
+    if err != nil {
+        return nil, err
+    }
+    primitive, err := aead.New(handle)
+    if err != nil {
+        return nil, err
+    }
+    return &tinkAEAD{primitive: primitive}, nil
+}
+```
 
 **File: `internal/encryption/aead_test.go`**
 
@@ -653,27 +644,19 @@ package encryption_test
 import (
     "testing"
 
+    "github.com/chinmina/chinmina-bridge/internal/encryption"
     "github.com/stretchr/testify/assert"
     "github.com/stretchr/testify/require"
-    "github.com/tink-crypto/tink-go/v2/aead"
-    "github.com/tink-crypto/tink-go/v2/insecurecleartextkeyset"
-    "github.com/tink-crypto/tink-go/v2/keyset"
 )
 
 func TestAEADEncryptDecrypt(t *testing.T) {
-    // Create a test keyset (not KMS-encrypted, for testing only)
-    handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
+    testAEAD, err := encryption.NewTestAEAD()
     require.NoError(t, err)
-
-    primitive, err := aead.New(handle)
-    require.NoError(t, err)
-
-    testAEAD := &tinkAEAD{primitive: primitive}
 
     tests := []struct {
-        name       string
-        plaintext  []byte
-        aad        []byte
+        name      string
+        plaintext []byte
+        aad       []byte
     }{
         {
             name:      "simple token",
@@ -701,13 +684,8 @@ func TestAEADEncryptDecrypt(t *testing.T) {
 }
 
 func TestAEADDecryptWrongAAD(t *testing.T) {
-    handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
+    testAEAD, err := encryption.NewTestAEAD()
     require.NoError(t, err)
-
-    primitive, err := aead.New(handle)
-    require.NoError(t, err)
-
-    testAEAD := &tinkAEAD{primitive: primitive}
 
     plaintext := []byte(`{"token":"ghp_xxx"}`)
     correctAAD := []byte("correct-key")
@@ -722,29 +700,117 @@ func TestAEADDecryptWrongAAD(t *testing.T) {
 }
 ```
 
-**File: `internal/cache/distributed_test.go`**
+**File: `internal/cache/distributed_test.go`** - Add encryption tests:
 
-Add tests for encrypted distributed cache operations.
+```go
+func TestDistributedEncryption(t *testing.T) {
+    // Setup test AEAD
+    testAEAD, err := encryption.NewTestAEAD()
+    require.NoError(t, err)
+
+    // Create cache with encryption
+    cache := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD)
+
+    token := vendor.ProfileToken{
+        Token:  "ghp_test123",
+        Expiry: time.Now().Add(time.Hour),
+    }
+    key := "digest:profile://org/test/profile/default"
+
+    // Set should encrypt
+    err = cache.Set(ctx, key, token)
+    require.NoError(t, err)
+
+    // Get should decrypt
+    result, found, err := cache.Get(ctx, key)
+    require.NoError(t, err)
+    assert.True(t, found)
+    assert.Equal(t, token.Token, result.Token)
+}
+
+func TestDistributedEncryptionAADBinding(t *testing.T) {
+    testAEAD, err := encryption.NewTestAEAD()
+    require.NoError(t, err)
+
+    cache := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD)
+
+    token := vendor.ProfileToken{Token: "ghp_test"}
+    key1 := "digest:profile://org/test/profile/one"
+    key2 := "digest:profile://org/test/profile/two"
+
+    // Store token under key1
+    err = cache.Set(ctx, key1, token)
+    require.NoError(t, err)
+
+    // Manually copy raw ciphertext from key1 to key2 in mock
+    // Then attempt to get from key2 - should fail due to AAD mismatch
+    _, _, err = cache.Get(ctx, key2)
+    assert.Error(t, err) // AAD binding prevents cross-key access
+}
+```
+
+**File: `internal/cache/memory_test.go`** - Add encryption tests:
+
+```go
+func TestMemoryEncryption(t *testing.T) {
+    testAEAD, err := encryption.NewTestAEAD()
+    require.NoError(t, err)
+
+    cache, err := NewMemory[vendor.ProfileToken](45*time.Minute, 100, testAEAD)
+    require.NoError(t, err)
+
+    token := vendor.ProfileToken{
+        Token:  "ghp_test123",
+        Expiry: time.Now().Add(time.Hour),
+    }
+    key := "digest:profile://org/test/profile/default"
+
+    err = cache.Set(ctx, key, token)
+    require.NoError(t, err)
+
+    result, found, err := cache.Get(ctx, key)
+    require.NoError(t, err)
+    assert.True(t, found)
+    assert.Equal(t, token.Token, result.Token)
+}
+
+func TestMemoryNoEncryption(t *testing.T) {
+    // nil AEAD means no encryption
+    cache, err := NewMemory[vendor.ProfileToken](45*time.Minute, 100, nil)
+    require.NoError(t, err)
+
+    token := vendor.ProfileToken{Token: "ghp_test"}
+    key := "test-key"
+
+    err = cache.Set(ctx, key, token)
+    require.NoError(t, err)
+
+    result, found, err := cache.Get(ctx, key)
+    require.NoError(t, err)
+    assert.True(t, found)
+    assert.Equal(t, token.Token, result.Token)
+}
+```
 
 #### 5.2 Integration Tests
 
-Add integration tests that verify:
-1. Encrypted tokens can be stored and retrieved
-2. Cache entries with different keys cannot be swapped
-3. Encryption metrics are recorded
-4. Graceful handling of decryption failures
+Add integration tests in `api_integration_test.go` that verify:
+1. Encrypted tokens can be stored and retrieved through the full API flow
+2. Cache entries with different keys cannot be swapped (AAD binding)
+3. Graceful handling of decryption failures (corrupted cache entries)
 
 ### Phase 6: Migration Considerations
 
-#### 6.1 Cache Key Handling
+#### 6.1 Cache Value Format
 
-When encryption is enabled, the underlying cache stores `EncryptedValue` structs instead of
-`ProfileToken` directly. The cache keys remain the same, but the stored value format changes.
+When encryption is enabled, the stored value format changes:
+- **Valkey**: Plaintext JSON → Base64-encoded ciphertext string
+- **Memory**: Direct `T` storage → `encryptedEntry{ciphertext []byte}`
 
-This means:
-- Encrypted and plaintext caches use different value schemas
+Cache keys remain the same. This means:
 - Existing plaintext entries will fail to deserialize if encryption is enabled mid-flight
 - Short TTL (45 min) means all entries refresh quickly after config change
+- No explicit migration required
 
 #### 6.2 Rollout Strategy
 
@@ -759,19 +825,21 @@ This means:
 
 | File | Purpose |
 |------|---------|
-| `internal/encryption/aead.go` | Tink AEAD wrapper, KMS integration, and Secrets Manager keyset loading |
-| `internal/encryption/aead_test.go` | Unit tests for encryption |
+| `internal/encryption/aead.go` | Tink AEAD wrapper, KMS integration, Secrets Manager keyset loading, `NewTestAEAD()` helper |
+| `internal/encryption/aead_test.go` | Unit tests for AEAD encrypt/decrypt and AAD binding |
 
 ### Modified Files
 
 | File | Changes |
 |------|---------|
 | `internal/config/config.go` | Add `CacheEncryptionConfig` struct nested in `CacheConfig`, add `Validate()` method |
-| `internal/cache/distributed.go` | Add optional `aead` field, encrypt on Set, decrypt on Get |
-| `internal/cache/memory.go` | Add optional `aead` field, encrypt on Set, decrypt on Get |
-| `internal/cache/factory.go` | Initialize AEAD, pass to cache constructors |
+| `internal/cache/distributed.go` | Add optional `aead` field, encrypt on Set, decrypt on Get, update constructor signature |
+| `internal/cache/distributed_test.go` | Add tests for encryption and AAD binding |
+| `internal/cache/memory.go` | Add optional `aead` field, `encryptedEntry` type, encrypt on Set, decrypt on Get, update constructor signature |
+| `internal/cache/memory_test.go` | Add tests for encryption with and without AEAD |
+| `internal/cache/factory.go` | Initialize AEAD, pass to cache constructors, log encryption status |
 | `internal/cache/instrumented.go` | Add encryption metrics (optional) |
-| `main.go` | Add config validation call |
+| `main.go` | Add `cfg.Cache.Validate()` call before cache creation |
 | `go.mod` | Add Tink and AWS Secrets Manager dependencies |
 
 ## Dependencies
