@@ -203,14 +203,15 @@ type CacheConfig struct {
     // Type selects the cache implementation: "memory" (default) or "valkey"
     Type string `env:"CACHE_TYPE, default=memory"`
 
-    // Encryption holds settings for cache encryption (valkey only).
+    // Encryption holds settings for cache encryption.
+    // Applies to both memory and valkey cache types.
     Encryption CacheEncryptionConfig
 }
 
 // CacheEncryptionConfig holds settings for cache encryption.
 type CacheEncryptionConfig struct {
-    // Enabled turns on encryption for distributed cache.
-    // When false, tokens are stored in plaintext (development only).
+    // Enabled turns on encryption for cached tokens.
+    // When false, tokens are stored in plaintext.
     Enabled bool `env:"CACHE_ENCRYPTION_ENABLED, default=false"`
 
     // KeysetURI is the URI to the encrypted Tink keyset.
@@ -227,11 +228,6 @@ Add validation method to `CacheConfig`:
 
 ```go
 func (c *CacheConfig) Validate() error {
-    // Encryption requires distributed cache
-    if c.Encryption.Enabled && c.Type != "valkey" {
-        return fmt.Errorf("encryption requires distributed cache (CACHE_TYPE=valkey)")
-    }
-
     // Encryption requires keyset and KMS URIs
     if c.Encryption.Enabled {
         if c.Encryption.KeysetURI == "" {
@@ -258,28 +254,39 @@ if err := cfg.Cache.Validate(); err != nil {
 
 #### 2.1 New File: `internal/cache/encrypted.go`
 
-Create an encryption wrapper that implements `TokenCache[T]`:
+Create an encryption wrapper that works with any cache implementation (memory or valkey).
+The wrapper stores an `EncryptedValue` struct containing the ciphertext, which the underlying
+cache serializes normally.
 
 ```go
 package cache
 
 import (
     "context"
+    "encoding/base64"
     "encoding/json"
     "fmt"
 
     "github.com/chinmina/chinmina-bridge/internal/encryption"
 )
 
+// EncryptedValue holds encrypted token data for cache storage.
+// The underlying cache stores this struct, which gets JSON-serialized.
+type EncryptedValue struct {
+    // Ciphertext is the base64-encoded encrypted token JSON.
+    Ciphertext string `json:"ciphertext"`
+}
+
 // Encrypted wraps a TokenCache with encryption/decryption.
 // It encrypts tokens before storage and decrypts on retrieval.
+// Works with any cache implementation (memory or valkey).
 type Encrypted[T any] struct {
-    wrapped TokenCache[T]
+    wrapped TokenCache[EncryptedValue]
     aead    encryption.AEAD
 }
 
 // NewEncrypted creates an encrypting cache wrapper.
-func NewEncrypted[T any](wrapped TokenCache[T], aead encryption.AEAD) *Encrypted[T] {
+func NewEncrypted[T any](wrapped TokenCache[EncryptedValue], aead encryption.AEAD) *Encrypted[T] {
     return &Encrypted[T]{
         wrapped: wrapped,
         aead:    aead,
@@ -289,15 +296,31 @@ func NewEncrypted[T any](wrapped TokenCache[T], aead encryption.AEAD) *Encrypted
 func (e *Encrypted[T]) Get(ctx context.Context, key string) (T, bool, error) {
     var zero T
 
-    // Get encrypted data from underlying cache
-    encryptedToken, found, err := e.wrapped.Get(ctx, key)
+    // Get encrypted value from underlying cache
+    encValue, found, err := e.wrapped.Get(ctx, key)
     if err != nil || !found {
         return zero, found, err
     }
 
-    // The wrapped cache stores EncryptedBlob, not T directly
-    // We need a different approach - see Alternative Design below
-    return zero, false, fmt.Errorf("direct Get not supported on encrypted cache")
+    // Decode base64 ciphertext
+    ciphertext, err := base64.StdEncoding.DecodeString(encValue.Ciphertext)
+    if err != nil {
+        return zero, false, fmt.Errorf("decoding ciphertext: %w", err)
+    }
+
+    // Decrypt with cache key as AAD
+    plaintext, err := e.aead.Decrypt(ciphertext, []byte(key))
+    if err != nil {
+        return zero, false, fmt.Errorf("decrypting token: %w", err)
+    }
+
+    // Unmarshal decrypted JSON to result type
+    var result T
+    if err := json.Unmarshal(plaintext, &result); err != nil {
+        return zero, false, fmt.Errorf("unmarshaling token: %w", err)
+    }
+
+    return result, true, nil
 }
 
 func (e *Encrypted[T]) Set(ctx context.Context, key string, token T) error {
@@ -313,9 +336,12 @@ func (e *Encrypted[T]) Set(ctx context.Context, key string, token T) error {
         return fmt.Errorf("encrypting token: %w", err)
     }
 
-    // Store encrypted blob
-    // Note: This requires changing the underlying cache to store []byte
-    return e.wrapped.Set(ctx, key, /* encrypted blob */)
+    // Store base64-encoded ciphertext in wrapper struct
+    encValue := EncryptedValue{
+        Ciphertext: base64.StdEncoding.EncodeToString(ciphertext),
+    }
+
+    return e.wrapped.Set(ctx, key, encValue)
 }
 
 func (e *Encrypted[T]) Invalidate(ctx context.Context, key string) error {
@@ -327,122 +353,11 @@ func (e *Encrypted[T]) Close() error {
 }
 ```
 
-#### 2.2 Alternative Design: Encryption at Valkey Layer
-
-A cleaner approach is to add encryption directly to the distributed cache implementation, since:
-1. In-memory cache doesn't need encryption (same process boundary)
-2. Avoids type gymnastics with generics
-3. Keeps the `TokenCache[T]` interface unchanged
-
-**Modified `internal/cache/distributed.go`:**
-
-```go
-package cache
-
-import (
-    "context"
-    "encoding/base64"
-    "encoding/json"
-    "fmt"
-
-    "github.com/chinmina/chinmina-bridge/internal/encryption"
-    "github.com/valkey-io/valkey-go"
-)
-
-type Distributed[T any] struct {
-    client valkey.Client
-    ttl    time.Duration
-    aead   encryption.AEAD // nil means no encryption
-}
-
-// NewDistributed creates a distributed cache with optional encryption.
-func NewDistributed[T any](client valkey.Client, ttl time.Duration, aead encryption.AEAD) *Distributed[T] {
-    return &Distributed[T]{
-        client: client,
-        ttl:    ttl,
-        aead:   aead,
-    }
-}
-
-func (d *Distributed[T]) Get(ctx context.Context, key string) (T, bool, error) {
-    var result T
-
-    // Determine storage key (with prefix for encrypted values)
-    storageKey := d.storageKey(key)
-
-    cmd := d.client.DoCache(ctx,
-        d.client.B().Get().Key(storageKey).Cache(),
-        d.ttl,
-    )
-
-    data, err := cmd.AsBytes()
-    if err != nil {
-        if valkey.IsValkeyNil(err) {
-            return result, false, nil
-        }
-        return result, false, fmt.Errorf("cache get: %w", err)
-    }
-
-    // Decrypt if encryption is enabled
-    plaintext := data
-    if d.aead != nil {
-        decoded, err := base64.StdEncoding.DecodeString(string(data))
-        if err != nil {
-            return result, false, fmt.Errorf("decoding ciphertext: %w", err)
-        }
-        plaintext, err = d.aead.Decrypt(decoded, []byte(key))
-        if err != nil {
-            return result, false, fmt.Errorf("decrypting token: %w", err)
-        }
-    }
-
-    if err := json.Unmarshal(plaintext, &result); err != nil {
-        return result, false, fmt.Errorf("unmarshaling token: %w", err)
-    }
-
-    return result, true, nil
-}
-
-func (d *Distributed[T]) Set(ctx context.Context, key string, token T) error {
-    plaintext, err := json.Marshal(token)
-    if err != nil {
-        return fmt.Errorf("marshaling token: %w", err)
-    }
-
-    // Encrypt if encryption is enabled
-    data := plaintext
-    if d.aead != nil {
-        ciphertext, err := d.aead.Encrypt(plaintext, []byte(key))
-        if err != nil {
-            return fmt.Errorf("encrypting token: %w", err)
-        }
-        // Base64 encode for safe storage
-        data = []byte(base64.StdEncoding.EncodeToString(ciphertext))
-    }
-
-    storageKey := d.storageKey(key)
-
-    cmd := d.client.Do(ctx,
-        d.client.B().Set().Key(storageKey).Value(string(data)).Ex(d.ttl).Build(),
-    )
-
-    return cmd.Error()
-}
-
-// storageKey returns the key with appropriate prefix.
-// Encrypted values use "enc:" prefix for clear separation.
-func (d *Distributed[T]) storageKey(key string) string {
-    if d.aead != nil {
-        return "enc:" + key
-    }
-    return key
-}
-
-func (d *Distributed[T]) Invalidate(ctx context.Context, key string) error {
-    storageKey := d.storageKey(key)
-    return d.client.Do(ctx, d.client.B().Del().Key(storageKey).Build()).Error()
-}
-```
+This design:
+1. Works with both memory and valkey caches
+2. Keeps the `TokenCache[T]` interface unchanged for callers
+3. Uses `EncryptedValue` as an intermediate type that the underlying cache stores
+4. Base64-encodes ciphertext for safe JSON serialization
 
 ### Phase 3: Factory and Initialization Updates
 
@@ -450,7 +365,8 @@ func (d *Distributed[T]) Invalidate(ctx context.Context, key string) error {
 
 **File: `internal/cache/factory.go`**
 
-The factory signature remains unchanged - encryption config is accessed via `cacheConfig.Encryption`:
+The factory creates the base cache (memory or valkey), then wraps it with encryption if enabled.
+When encryption is enabled, the base cache stores `EncryptedValue` instead of `T` directly.
 
 ```go
 package cache
@@ -462,10 +378,11 @@ import (
 
     "github.com/chinmina/chinmina-bridge/internal/config"
     "github.com/chinmina/chinmina-bridge/internal/encryption"
+    "github.com/rs/zerolog/log"
 )
 
 // NewFromConfig creates a TokenCache based on configuration.
-// Signature unchanged - encryption config nested in cacheConfig.
+// When encryption is enabled, wraps the base cache with the Encrypted wrapper.
 func NewFromConfig[T any](
     ctx context.Context,
     cacheConfig config.CacheConfig,
@@ -473,48 +390,77 @@ func NewFromConfig[T any](
     ttl time.Duration,
     maxMemorySize int,
 ) (TokenCache[T], error) {
-    var cache TokenCache[T]
+    // If encryption enabled, we need to initialize AEAD first
+    var aead encryption.AEAD
+    if cacheConfig.Encryption.Enabled {
+        var err error
+        aead, err = encryption.NewAEADFromKMS(
+            ctx,
+            cacheConfig.Encryption.KeysetURI,
+            cacheConfig.Encryption.KMSKeyURI,
+        )
+        if err != nil {
+            return nil, fmt.Errorf("initializing encryption: %w", err)
+        }
+        log.Info().Msg("cache encryption enabled")
+    }
 
+    // Create base cache - type depends on whether encryption is enabled
+    if aead != nil {
+        // With encryption: base cache stores EncryptedValue
+        baseCache, err := newBaseCache[EncryptedValue](ctx, cacheConfig, valkeyConfig, ttl, maxMemorySize)
+        if err != nil {
+            return nil, err
+        }
+        encrypted := NewEncrypted[T](baseCache, aead)
+        return NewInstrumented[T](encrypted, cacheConfig.Type), nil
+    }
+
+    // Without encryption: base cache stores T directly
+    baseCache, err := newBaseCache[T](ctx, cacheConfig, valkeyConfig, ttl, maxMemorySize)
+    if err != nil {
+        return nil, err
+    }
+    return NewInstrumented[T](baseCache, cacheConfig.Type), nil
+}
+
+// newBaseCache creates the underlying memory or valkey cache.
+func newBaseCache[T any](
+    ctx context.Context,
+    cacheConfig config.CacheConfig,
+    valkeyConfig config.ValkeyConfig,
+    ttl time.Duration,
+    maxMemorySize int,
+) (TokenCache[T], error) {
     switch cacheConfig.Type {
     case "valkey":
+        log.Info().
+            Str("cache_type", "valkey").
+            Str("address", valkeyConfig.Address).
+            Bool("tls", valkeyConfig.TLS).
+            Msg("initializing distributed cache")
+
+        if valkeyConfig.Address == "" {
+            return nil, fmt.Errorf("valkey address required when cache type is valkey")
+        }
+
         client, err := newValkeyClient(ctx, valkeyConfig)
         if err != nil {
             return nil, fmt.Errorf("creating valkey client: %w", err)
         }
 
-        // Initialize encryption if enabled
-        var aead encryption.AEAD
-        if cacheConfig.Encryption.Enabled {
-            aead, err = encryption.NewAEADFromKMS(
-                ctx,
-                cacheConfig.Encryption.KeysetURI,
-                cacheConfig.Encryption.KMSKeyURI,
-            )
-            if err != nil {
-                return nil, fmt.Errorf("initializing encryption: %w", err)
-            }
-        }
-
-        cache = NewDistributed[T](client, ttl, aead)
+        return NewDistributed[T](client, ttl)
 
     case "memory", "":
-        cache, err = NewMemory[T](ttl, maxMemorySize)
-        if err != nil {
-            return nil, fmt.Errorf("creating memory cache: %w", err)
-        }
+        log.Info().
+            Str("cache_type", "memory").
+            Msg("initializing in-memory cache")
 
-        // Warn if encryption requested but using memory cache
-        if cacheConfig.Encryption.Enabled {
-            // This should be caught by config validation, but log anyway
-            log.Warn().Msg("encryption configured but using memory cache - encryption not applied")
-        }
+        return NewMemory[T](ttl, maxMemorySize)
 
     default:
-        return nil, fmt.Errorf("unknown cache type: %s", cacheConfig.Type)
+        return nil, fmt.Errorf("invalid cache type %q: must be \"memory\" or \"valkey\"", cacheConfig.Type)
     }
-
-    // Wrap with instrumentation
-    return NewInstrumented(cache, cacheConfig.Type), nil
 }
 ```
 
@@ -522,7 +468,7 @@ func NewFromConfig[T any](
 
 **File: `main.go`**
 
-The cache initialization call is unchanged since encryption config is nested in `cfg.Cache`:
+Add config validation before cache creation. The cache initialization call is unchanged:
 
 ```go
 // Validate cache configuration (includes encryption validation)
@@ -542,14 +488,9 @@ if err != nil {
     log.Fatal().Err(err).Msg("creating token cache")
 }
 defer tokenCache.Close()
-
-// Log encryption status
-if cfg.Cache.Encryption.Enabled {
-    log.Info().Msg("cache encryption enabled")
-} else if cfg.Cache.Type == "valkey" {
-    log.Warn().Msg("distributed cache without encryption - not recommended for production")
-}
 ```
+
+The factory logs encryption status internally, so no additional logging needed in main.go.
 
 ### Phase 4: Observability
 
@@ -704,12 +645,15 @@ Add integration tests that verify:
 
 ### Phase 6: Migration Considerations
 
-#### 6.1 Namespace Separation
+#### 6.1 Cache Key Handling
 
-Encrypted entries use `enc:` prefix, plaintext use no prefix. This allows:
-- Clear identification of encrypted vs plaintext entries
-- Safe rollout alongside existing plaintext cache
-- Easy cleanup during migration
+When encryption is enabled, the underlying cache stores `EncryptedValue` structs instead of
+`ProfileToken` directly. The cache keys remain the same, but the stored value format changes.
+
+This means:
+- Encrypted and plaintext caches use different value schemas
+- Existing plaintext entries will fail to deserialize if encryption is enabled mid-flight
+- Short TTL (45 min) means all entries refresh quickly after config change
 
 #### 6.2 Rollout Strategy
 
@@ -726,16 +670,17 @@ Encrypted entries use `enc:` prefix, plaintext use no prefix. This allows:
 |------|---------|
 | `internal/encryption/aead.go` | Tink AEAD wrapper, KMS integration, and Secrets Manager keyset loading |
 | `internal/encryption/aead_test.go` | Unit tests for encryption |
+| `internal/cache/encrypted.go` | `Encrypted[T]` wrapper that adds encryption to any cache implementation |
+| `internal/cache/encrypted_test.go` | Unit tests for encrypted cache wrapper |
 
 ### Modified Files
 
 | File | Changes |
 |------|---------|
 | `internal/config/config.go` | Add `CacheEncryptionConfig` struct nested in `CacheConfig`, add `Validate()` method |
-| `internal/cache/distributed.go` | Add optional AEAD parameter, encryption/decryption in Get/Set, `enc:` key prefix |
-| `internal/cache/factory.go` | Initialize AEAD from `cacheConfig.Encryption` when enabled |
+| `internal/cache/factory.go` | Initialize AEAD, wrap base cache with `Encrypted` when encryption enabled |
 | `internal/cache/instrumented.go` | Add encryption metrics (optional) |
-| `main.go` | Add config validation call, add startup logging for encryption status |
+| `main.go` | Add config validation call |
 | `go.mod` | Add Tink and AWS Secrets Manager dependencies |
 
 ## Dependencies
