@@ -204,14 +204,14 @@ type CacheConfig struct {
     Type string `env:"CACHE_TYPE, default=memory"`
 
     // Encryption holds settings for cache encryption.
-    // Applies to both memory and valkey cache types.
+    // Only supported with valkey cache type.
     Encryption CacheEncryptionConfig
 }
 
 // CacheEncryptionConfig holds settings for cache encryption.
 type CacheEncryptionConfig struct {
     // Enabled turns on encryption for cached tokens.
-    // When false, tokens are stored in plaintext.
+    // Requires CACHE_TYPE=valkey.
     Enabled bool `env:"CACHE_ENCRYPTION_ENABLED, default=false"`
 
     // KeysetURI is the URI to the encrypted Tink keyset.
@@ -228,6 +228,11 @@ Add validation method to `CacheConfig`:
 
 ```go
 func (c *CacheConfig) Validate() error {
+    // Encryption requires distributed cache
+    if c.Encryption.Enabled && c.Type != "valkey" {
+        return fmt.Errorf("cache encryption requires CACHE_TYPE=valkey")
+    }
+
     // Encryption requires keyset and KMS URIs
     if c.Encryption.Enabled {
         if c.Encryption.KeysetURI == "" {
@@ -250,14 +255,18 @@ if err := cfg.Cache.Validate(); err != nil {
 }
 ```
 
-### Phase 2: Cache Component Encryption
+### Phase 2: Distributed Cache Encryption
 
-The component model injects AEAD as a dependency into each cache implementation.
-Each cache handles encryption internally - no wrapper or intermediate types needed.
+Encryption is only supported for the distributed (Valkey) cache. The in-memory cache
+does not support encryption as it operates within the same process boundary.
 
 #### 2.1 Modify `internal/cache/distributed.go`
 
-Add optional AEAD to the Distributed cache:
+Add optional AEAD to the Distributed cache. Changes from current implementation:
+- Add `aead` field and `logger` for decryption failure warnings
+- Add `storageKey()` method for `enc:` prefix
+- Encrypt in Set, decrypt in Get
+- Handle decryption failures gracefully (invalidate, warn, treat as miss)
 
 ```go
 package cache
@@ -270,89 +279,119 @@ import (
     "time"
 
     "github.com/chinmina/chinmina-bridge/internal/encryption"
+    "github.com/rs/zerolog"
     "github.com/valkey-io/valkey-go"
 )
 
+// Distributed implements TokenCache using Valkey with server-assisted
+// client-side caching.
 type Distributed[T any] struct {
     client valkey.Client
     ttl    time.Duration
     aead   encryption.AEAD // nil means no encryption
+    logger zerolog.Logger
 }
 
-// NewDistributed creates a distributed cache with optional encryption.
-func NewDistributed[T any](client valkey.Client, ttl time.Duration, aead encryption.AEAD) *Distributed[T] {
+// NewDistributed creates a new Valkey-backed cache with optional encryption.
+func NewDistributed[T any](client valkey.Client, ttl time.Duration, aead encryption.AEAD, logger zerolog.Logger) (*Distributed[T], error) {
     return &Distributed[T]{
         client: client,
         ttl:    ttl,
         aead:   aead,
-    }
+        logger: logger,
+    }, nil
 }
 
+// Get retrieves a token from the cache using server-assisted client-side caching.
 func (d *Distributed[T]) Get(ctx context.Context, key string) (T, bool, error) {
-    var result T
+    var zero T
 
     storageKey := d.storageKey(key)
-    cmd := d.client.DoCache(ctx,
-        d.client.B().Get().Key(storageKey).Cache(),
-        d.ttl,
-    )
+    cmd := d.client.B().Get().Key(storageKey).Cache()
+    result := d.client.DoCache(ctx, cmd, d.ttl)
 
-    data, err := cmd.AsBytes()
-    if err != nil {
+    if err := result.Error(); err != nil {
         if valkey.IsValkeyNil(err) {
-            return result, false, nil
+            return zero, false, nil
         }
-        return result, false, fmt.Errorf("cache get: %w", err)
+        return zero, false, fmt.Errorf("failed to get cached value: %w", err)
+    }
+
+    val, err := result.ToString()
+    if err != nil {
+        return zero, false, fmt.Errorf("failed to convert cached value to string: %w", err)
     }
 
     // Decrypt if encryption is enabled
-    plaintext := data
+    data := []byte(val)
     if d.aead != nil {
-        decoded, err := base64.StdEncoding.DecodeString(string(data))
+        decoded, err := base64.StdEncoding.DecodeString(val)
         if err != nil {
-            return result, false, fmt.Errorf("decoding ciphertext: %w", err)
+            // Decryption failure: invalidate, warn, treat as cache miss
+            d.handleDecryptionFailure(ctx, key, storageKey, "base64 decode failed", err)
+            return zero, false, nil
         }
-        plaintext, err = d.aead.Decrypt(decoded, []byte(key))
+        data, err = d.aead.Decrypt(decoded, []byte(key))
         if err != nil {
-            return result, false, fmt.Errorf("decrypting token: %w", err)
+            // Decryption failure: invalidate, warn, treat as cache miss
+            d.handleDecryptionFailure(ctx, key, storageKey, "decryption failed", err)
+            return zero, false, nil
         }
     }
 
-    if err := json.Unmarshal(plaintext, &result); err != nil {
-        return result, false, fmt.Errorf("unmarshaling token: %w", err)
+    var token T
+    if err := json.Unmarshal(data, &token); err != nil {
+        return zero, false, fmt.Errorf("failed to unmarshal cached token: %w", err)
     }
 
-    return result, true, nil
+    return token, true, nil
 }
 
+// handleDecryptionFailure invalidates the corrupted entry and logs a warning.
+// The caller should treat this as a cache miss.
+func (d *Distributed[T]) handleDecryptionFailure(ctx context.Context, key, storageKey, reason string, err error) {
+    d.logger.Warn().
+        Err(err).
+        Str("key", key).
+        Str("reason", reason).
+        Msg("cache decryption failure, invalidating entry")
+
+    // Best-effort invalidation
+    _ = d.client.Do(ctx, d.client.B().Del().Key(storageKey).Build()).Error()
+}
+
+// Set stores a token in the cache with the configured TTL.
 func (d *Distributed[T]) Set(ctx context.Context, key string, token T) error {
-    plaintext, err := json.Marshal(token)
+    data, err := json.Marshal(token)
     if err != nil {
-        return fmt.Errorf("marshaling token: %w", err)
+        return fmt.Errorf("failed to marshal token: %w", err)
     }
 
     // Encrypt if encryption is enabled
-    data := plaintext
     if d.aead != nil {
-        ciphertext, err := d.aead.Encrypt(plaintext, []byte(key))
+        ciphertext, err := d.aead.Encrypt(data, []byte(key))
         if err != nil {
-            return fmt.Errorf("encrypting token: %w", err)
+            return fmt.Errorf("failed to encrypt token: %w", err)
         }
-        // Base64 encode for safe storage as string
         data = []byte(base64.StdEncoding.EncodeToString(ciphertext))
     }
 
     storageKey := d.storageKey(key)
-    cmd := d.client.Do(ctx,
-        d.client.B().Set().Key(storageKey).Value(string(data)).Ex(d.ttl).Build(),
-    )
-
-    return cmd.Error()
+    cmd := d.client.B().Set().Key(storageKey).Value(string(data)).ExSeconds(int64(d.ttl.Seconds())).Build()
+    if err := d.client.Do(ctx, cmd).Error(); err != nil {
+        return fmt.Errorf("failed to set cached value: %w", err)
+    }
+    return nil
 }
 
+// Invalidate removes a token from the cache.
 func (d *Distributed[T]) Invalidate(ctx context.Context, key string) error {
     storageKey := d.storageKey(key)
-    return d.client.Do(ctx, d.client.B().Del().Key(storageKey).Build()).Error()
+    cmd := d.client.B().Del().Key(storageKey).Build()
+    if err := d.client.Do(ctx, cmd).Error(); err != nil {
+        return fmt.Errorf("failed to invalidate cached value: %w", err)
+    }
+    return nil
 }
 
 // storageKey returns the key with appropriate prefix.
@@ -364,140 +403,18 @@ func (d *Distributed[T]) storageKey(key string) string {
     return key
 }
 
-// Close method unchanged
-```
-
-#### 2.2 Modify `internal/cache/memory.go`
-
-Add optional AEAD to the Memory cache:
-
-```go
-package cache
-
-import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "time"
-
-    "github.com/chinmina/chinmina-bridge/internal/encryption"
-    "github.com/maypok86/otter/v2"
-)
-
-// encryptedEntry stores encrypted data in the memory cache.
-// When encryption is disabled, we store T directly via the unencrypted path.
-type encryptedEntry struct {
-    ciphertext []byte
-}
-
-type Memory[T any] struct {
-    // When aead is nil, cache stores T directly
-    // When aead is set, cache stores encryptedEntry
-    cache *otter.Cache[string, any]
-    ttl   time.Duration
-    aead  encryption.AEAD
-}
-
-// NewMemory creates a memory cache with optional encryption.
-func NewMemory[T any](ttl time.Duration, maxSize int, aead encryption.AEAD) (*Memory[T], error) {
-    cache, err := otter.NewBuilder[string, any](maxSize).
-        WithTTL(ttl).
-        Build()
-    if err != nil {
-        return nil, fmt.Errorf("creating otter cache: %w", err)
-    }
-
-    return &Memory[T]{
-        cache: cache,
-        ttl:   ttl,
-        aead:  aead,
-    }, nil
-}
-
-func (m *Memory[T]) Get(ctx context.Context, key string) (T, bool, error) {
-    var zero T
-
-    storageKey := m.storageKey(key)
-    value, found := m.cache.Get(storageKey)
-    if !found {
-        return zero, false, nil
-    }
-
-    // If encryption disabled, value is T directly
-    if m.aead == nil {
-        result, ok := value.(T)
-        if !ok {
-            return zero, false, fmt.Errorf("unexpected cache value type")
-        }
-        return result, true, nil
-    }
-
-    // Encryption enabled - value is encryptedEntry
-    entry, ok := value.(encryptedEntry)
-    if !ok {
-        return zero, false, fmt.Errorf("unexpected cache value type")
-    }
-
-    plaintext, err := m.aead.Decrypt(entry.ciphertext, []byte(key))
-    if err != nil {
-        return zero, false, fmt.Errorf("decrypting token: %w", err)
-    }
-
-    var result T
-    if err := json.Unmarshal(plaintext, &result); err != nil {
-        return zero, false, fmt.Errorf("unmarshaling token: %w", err)
-    }
-
-    return result, true, nil
-}
-
-func (m *Memory[T]) Set(ctx context.Context, key string, token T) error {
-    storageKey := m.storageKey(key)
-
-    // If encryption disabled, store T directly
-    if m.aead == nil {
-        m.cache.Set(storageKey, token)
-        return nil
-    }
-
-    // Encryption enabled - marshal, encrypt, store as encryptedEntry
-    plaintext, err := json.Marshal(token)
-    if err != nil {
-        return fmt.Errorf("marshaling token: %w", err)
-    }
-
-    ciphertext, err := m.aead.Encrypt(plaintext, []byte(key))
-    if err != nil {
-        return fmt.Errorf("encrypting token: %w", err)
-    }
-
-    m.cache.Set(storageKey, encryptedEntry{ciphertext: ciphertext})
+// Close releases resources associated with the cache client.
+func (d *Distributed[T]) Close() error {
+    d.client.Close()
     return nil
 }
-
-func (m *Memory[T]) Invalidate(ctx context.Context, key string) error {
-    storageKey := m.storageKey(key)
-    m.cache.Delete(storageKey)
-    return nil
-}
-
-// storageKey returns the key with appropriate prefix.
-// Encrypted entries use "enc:" prefix for namespace separation.
-func (m *Memory[T]) storageKey(key string) string {
-    if m.aead != nil {
-        return "enc:" + key
-    }
-    return key
-}
-
-// Close method unchanged
 ```
 
-**Component model benefits:**
-1. Each cache handles its own encryption - no wrapper indirection
-2. Simpler type system - no intermediate `EncryptedValue` type for callers
-3. AEAD is a clear dependency, nil means disabled
-4. Encryption logic lives with storage logic
+**Key design decisions:**
+1. Decryption failures are treated as cache misses (graceful degradation)
+2. Corrupted entries are invalidated to prevent repeated failures
+3. Warnings logged for visibility without failing the request
+4. `enc:` key prefix enables safe rollout alongside plaintext entries
 
 ### Phase 3: Factory and Initialization Updates
 
@@ -505,7 +422,7 @@ func (m *Memory[T]) storageKey(key string) string {
 
 **File: `internal/cache/factory.go`**
 
-The factory initializes AEAD if encryption is enabled, then passes it to whichever cache is created.
+The factory initializes AEAD if encryption is enabled (valkey only), then passes it to the distributed cache.
 
 ```go
 package cache
@@ -521,7 +438,7 @@ import (
 )
 
 // NewFromConfig creates a TokenCache based on configuration.
-// AEAD is initialized once and passed to the cache implementation.
+// Encryption is only supported for valkey cache type.
 func NewFromConfig[T any](
     ctx context.Context,
     cacheConfig config.CacheConfig,
@@ -529,27 +446,22 @@ func NewFromConfig[T any](
     ttl time.Duration,
     maxMemorySize int,
 ) (TokenCache[T], error) {
-    // Initialize AEAD if encryption enabled
-    var aead encryption.AEAD
-    if cacheConfig.Encryption.Enabled {
-        var err error
-        aead, err = encryption.NewAEADFromKMS(
-            ctx,
-            cacheConfig.Encryption.KeysetURI,
-            cacheConfig.Encryption.KMSKeyURI,
-        )
-        if err != nil {
-            return nil, fmt.Errorf("initializing encryption: %w", err)
-        }
-        log.Info().Msg("cache encryption enabled")
-    }
-
-    // Create cache with AEAD dependency (nil if encryption disabled)
-    var cache TokenCache[T]
-    var err error
-
     switch cacheConfig.Type {
     case "valkey":
+        // Initialize AEAD if encryption enabled
+        var aead encryption.AEAD
+        if cacheConfig.Encryption.Enabled {
+            var err error
+            aead, err = encryption.NewAEADFromKMS(
+                ctx,
+                cacheConfig.Encryption.KeysetURI,
+                cacheConfig.Encryption.KMSKeyURI,
+            )
+            if err != nil {
+                return nil, fmt.Errorf("initializing encryption: %w", err)
+            }
+        }
+
         log.Info().
             Str("cache_type", "valkey").
             Str("address", valkeyConfig.Address).
@@ -566,24 +478,28 @@ func NewFromConfig[T any](
             return nil, fmt.Errorf("creating valkey client: %w", err)
         }
 
-        cache = NewDistributed[T](client, ttl, aead)
+        cache, err := NewDistributed[T](client, ttl, aead, log.Logger)
+        if err != nil {
+            return nil, fmt.Errorf("creating distributed cache: %w", err)
+        }
+
+        return NewInstrumented[T](cache, "distributed"), nil
 
     case "memory", "":
         log.Info().
             Str("cache_type", "memory").
-            Bool("encryption", aead != nil).
             Msg("initializing in-memory cache")
 
-        cache, err = NewMemory[T](ttl, maxMemorySize, aead)
+        cache, err := NewMemory[T](ttl, maxMemorySize)
         if err != nil {
             return nil, fmt.Errorf("creating memory cache: %w", err)
         }
 
+        return NewInstrumented[T](cache, "memory"), nil
+
     default:
         return nil, fmt.Errorf("invalid cache type %q: must be \"memory\" or \"valkey\"", cacheConfig.Type)
     }
-
-    return NewInstrumented[T](cache, cacheConfig.Type), nil
 }
 ```
 
@@ -619,28 +535,56 @@ The factory logs encryption status internally, so no additional logging needed i
 
 #### 4.1 Encryption Metrics
 
-Add metrics to track encryption operations in `internal/cache/instrumented.go`:
+Add decryption failure metric to `internal/cache/instrumented.go` using existing OTEL pattern:
 
 ```go
-// Additional metrics for encryption operations
 var (
-    encryptionDuration = stats.Float64(
-        "cache.encryption.duration",
-        "Duration of encryption/decryption operations",
-        stats.UnitMilliseconds,
-    )
-    encryptionResult = stats.Int64(
-        "cache.encryption.operations",
-        "Count of encryption operations",
-        stats.UnitDimensionless,
-    )
+    metricsOnce          sync.Once
+    cacheOperations      metric.Int64Counter
+    cacheDuration        metric.Float64Histogram
+    decryptionFailures   metric.Int64Counter  // NEW
 )
 
-// Tags for encryption metrics
-var (
-    OperationTypeKey = tag.MustNewKey("operation") // "encrypt" or "decrypt"
-    ResultKey        = tag.MustNewKey("result")    // "success" or "error"
-)
+func initMetrics() {
+    metricsOnce.Do(func() {
+        meter := otel.Meter("github.com/chinmina/chinmina-bridge/internal/cache")
+
+        // ... existing metrics ...
+
+        decryptionFailures, err = meter.Int64Counter(
+            "cache.decryption.failures",
+            metric.WithDescription("Cache decryption failures (corrupted or invalid entries)"),
+        )
+        if err != nil {
+            otel.Handle(err)
+        }
+    })
+}
+```
+
+The decryption failure metric is recorded from `Distributed.handleDecryptionFailure()`:
+
+```go
+// In distributed.go, update handleDecryptionFailure to record metric
+func (d *Distributed[T]) handleDecryptionFailure(ctx context.Context, key, storageKey, reason string, err error) {
+    d.logger.Warn().
+        Err(err).
+        Str("key", key).
+        Str("reason", reason).
+        Msg("cache decryption failure, invalidating entry")
+
+    // Record metric
+    if decryptionFailures != nil {
+        decryptionFailures.Add(ctx, 1,
+            metric.WithAttributes(
+                attribute.String("cache.failure.reason", reason),
+            ),
+        )
+    }
+
+    // Best-effort invalidation
+    _ = d.client.Do(ctx, d.client.B().Del().Key(storageKey).Build()).Error()
+}
 ```
 
 #### 4.2 Startup Validation
@@ -738,12 +682,12 @@ func TestAEADDecryptWrongAAD(t *testing.T) {
 
 ```go
 func TestDistributedEncryption(t *testing.T) {
-    // Setup test AEAD
     testAEAD, err := encryption.NewTestAEAD()
     require.NoError(t, err)
 
-    // Create cache with encryption
-    cache := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD)
+    logger := zerolog.New(io.Discard)
+    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD, logger)
+    require.NoError(t, err)
 
     token := vendor.ProfileToken{
         Token:  "ghp_test123",
@@ -762,60 +706,57 @@ func TestDistributedEncryption(t *testing.T) {
     assert.Equal(t, token.Token, result.Token)
 }
 
-func TestDistributedEncryptionAADBinding(t *testing.T) {
+func TestDistributedEncryptionKeyPrefix(t *testing.T) {
     testAEAD, err := encryption.NewTestAEAD()
     require.NoError(t, err)
 
-    cache := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD)
-
-    token := vendor.ProfileToken{Token: "ghp_test"}
-    key1 := "digest:profile://org/test/profile/one"
-    key2 := "digest:profile://org/test/profile/two"
-
-    // Store token under key1
-    err = cache.Set(ctx, key1, token)
+    logger := zerolog.New(io.Discard)
+    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD, logger)
     require.NoError(t, err)
 
-    // Manually copy raw ciphertext from key1 to key2 in mock
-    // Then attempt to get from key2 - should fail due to AAD mismatch
-    _, _, err = cache.Get(ctx, key2)
-    assert.Error(t, err) // AAD binding prevents cross-key access
+    key := "digest:profile://org/test/profile/default"
+    expectedStorageKey := "enc:" + key
+
+    // Verify storageKey adds prefix when encryption enabled
+    assert.Equal(t, expectedStorageKey, cache.storageKey(key))
 }
-```
 
-**File: `internal/cache/memory_test.go`** - Add encryption tests:
-
-```go
-func TestMemoryEncryption(t *testing.T) {
+func TestDistributedDecryptionFailure(t *testing.T) {
     testAEAD, err := encryption.NewTestAEAD()
     require.NoError(t, err)
 
-    cache, err := NewMemory[vendor.ProfileToken](45*time.Minute, 100, testAEAD)
+    var logBuf bytes.Buffer
+    logger := zerolog.New(&logBuf)
+    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD, logger)
     require.NoError(t, err)
 
-    token := vendor.ProfileToken{
-        Token:  "ghp_test123",
-        Expiry: time.Now().Add(time.Hour),
-    }
     key := "digest:profile://org/test/profile/default"
 
-    err = cache.Set(ctx, key, token)
-    require.NoError(t, err)
+    // Store invalid ciphertext directly (simulating corruption)
+    storageKey := cache.storageKey(key)
+    mockClient.Set(storageKey, "not-valid-base64-ciphertext")
 
+    // Get should treat as cache miss, not error
     result, found, err := cache.Get(ctx, key)
-    require.NoError(t, err)
-    assert.True(t, found)
-    assert.Equal(t, token.Token, result.Token)
+    assert.NoError(t, err)  // No error returned
+    assert.False(t, found)  // Treated as miss
+    assert.Zero(t, result)
+
+    // Should have logged warning
+    assert.Contains(t, logBuf.String(), "cache decryption failure")
 }
 
-func TestMemoryNoEncryption(t *testing.T) {
-    // nil AEAD means no encryption
-    cache, err := NewMemory[vendor.ProfileToken](45*time.Minute, 100, nil)
+func TestDistributedNoEncryption(t *testing.T) {
+    logger := zerolog.New(io.Discard)
+    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, nil, logger)
     require.NoError(t, err)
 
-    token := vendor.ProfileToken{Token: "ghp_test"}
     key := "test-key"
 
+    // Verify storageKey has no prefix when encryption disabled
+    assert.Equal(t, key, cache.storageKey(key))
+
+    token := vendor.ProfileToken{Token: "ghp_test"}
     err = cache.Set(ctx, key, token)
     require.NoError(t, err)
 
@@ -830,8 +771,7 @@ func TestMemoryNoEncryption(t *testing.T) {
 
 Add integration tests in `api_integration_test.go` that verify:
 1. Encrypted tokens can be stored and retrieved through the full API flow
-2. Cache entries with different keys cannot be swapped (AAD binding)
-3. Graceful handling of decryption failures (corrupted cache entries)
+2. Decryption failures are handled gracefully (treated as cache miss, entry invalidated)
 
 ### Phase 6: Migration Considerations
 
@@ -848,9 +788,9 @@ This provides:
 
 #### 6.2 Cache Value Format
 
-When encryption is enabled, the stored value format also changes:
-- **Valkey**: Plaintext JSON → Base64-encoded ciphertext string
-- **Memory**: Direct `T` storage → `encryptedEntry{ciphertext []byte}`
+When encryption is enabled (valkey only), the stored value format changes:
+- **Plaintext**: JSON string (e.g., `{"token":"ghp_xxx","expiry":"..."}`)
+- **Encrypted**: Base64-encoded ciphertext string
 
 Combined with the key prefix, this means:
 - Existing plaintext entries are untouched (different keys)
@@ -878,13 +818,11 @@ Combined with the key prefix, this means:
 
 | File | Changes |
 |------|---------|
-| `internal/config/config.go` | Add `CacheEncryptionConfig` struct nested in `CacheConfig`, add `Validate()` method |
-| `internal/cache/distributed.go` | Add `aead` field, `storageKey()` method with `enc:` prefix, encrypt on Set, decrypt on Get |
-| `internal/cache/distributed_test.go` | Add tests for encryption and AAD binding |
-| `internal/cache/memory.go` | Add `aead` field, `encryptedEntry` type, `storageKey()` method with `enc:` prefix, encrypt on Set, decrypt on Get |
-| `internal/cache/memory_test.go` | Add tests for encryption with and without AEAD |
-| `internal/cache/factory.go` | Initialize AEAD, pass to cache constructors, log encryption status |
-| `internal/cache/instrumented.go` | Add encryption metrics (optional) |
+| `internal/config/config.go` | Add `CacheEncryptionConfig` struct nested in `CacheConfig`, add `Validate()` method requiring valkey |
+| `internal/cache/distributed.go` | Add `aead` and `logger` fields, `storageKey()` method, `handleDecryptionFailure()`, encrypt/decrypt logic |
+| `internal/cache/distributed_test.go` | Add tests for encryption, key prefix, decryption failure handling |
+| `internal/cache/factory.go` | Initialize AEAD for valkey only, pass to distributed cache constructor with logger |
+| `internal/cache/instrumented.go` | Add `cache.decryption.failures` counter metric |
 | `main.go` | Add `cfg.Cache.Validate()` call before cache creation |
 | `go.mod` | Add Tink and AWS Secrets Manager dependencies |
 
