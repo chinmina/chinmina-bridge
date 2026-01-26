@@ -118,16 +118,16 @@ func (t *tinkAEAD) Validate() error {
 // AWS Secrets Manager, encrypted with an AWS KMS key.
 //
 // keysetURI format: aws-secretsmanager://secret-name
-// kmsKeyURI format: aws-kms://arn:aws:kms:region:account:key/key-id
-func NewAEADFromKMS(ctx context.Context, keysetURI, kmsKeyURI string) (AEAD, error) {
+// kmsEnvelopeKeyURI format: aws-kms://arn:aws:kms:region:account:key/key-id
+func NewAEADFromKMS(ctx context.Context, keysetURI, kmsEnvelopeKeyURI string) (AEAD, error) {
     // Create AWS KMS client for Tink
-    awsClient, err := awskms.NewClientWithOptions(kmsKeyURI)
+    awsClient, err := awskms.NewClientWithOptions(kmsEnvelopeKeyURI)
     if err != nil {
         return nil, fmt.Errorf("creating AWS KMS client: %w", err)
     }
 
     // Get the KMS AEAD for envelope decryption of the keyset
-    kmsAEAD, err := awsClient.GetAEAD(kmsKeyURI)
+    kmsAEAD, err := awsClient.GetAEAD(kmsEnvelopeKeyURI)
     if err != nil {
         return nil, fmt.Errorf("getting KMS AEAD: %w", err)
     }
@@ -195,17 +195,35 @@ func readKeysetFromSecretsManager(ctx context.Context, uri string) (keyset.Reade
 
 **File: `internal/config/config.go`**
 
-Nest encryption configuration inside `CacheConfig` since encryption is cache-specific:
+Restructure configuration to nest both Valkey and Encryption under `CacheConfig`:
 
 ```go
-// CacheConfig specifies which cache backend to use.
+// CacheConfig specifies cache configuration.
 type CacheConfig struct {
     // Type selects the cache implementation: "memory" (default) or "valkey"
     Type string `env:"CACHE_TYPE, default=memory"`
 
-    // Encryption holds settings for cache encryption.
+    // Valkey holds distributed cache settings.
+    Valkey ValkeyConfig
+
+    // Encryption holds cache encryption settings.
     // Only supported with valkey cache type.
     Encryption CacheEncryptionConfig
+}
+
+// ValkeyConfig specifies distributed cache configuration.
+type ValkeyConfig struct {
+    // Address is the Valkey server address (host:port).
+    Address string `env:"VALKEY_ADDRESS"`
+
+    // TLS enables TLS connection to Valkey.
+    TLS bool `env:"VALKEY_TLS, default=false"`
+
+    // Username for Valkey authentication.
+    Username string `env:"VALKEY_USERNAME"`
+
+    // Password for Valkey authentication.
+    Password string `env:"VALKEY_PASSWORD"`
 }
 
 // CacheEncryptionConfig holds settings for cache encryption.
@@ -218,9 +236,9 @@ type CacheEncryptionConfig struct {
     // Format: aws-secretsmanager://secret-name
     KeysetURI string `env:"CACHE_ENCRYPTION_KEYSET_URI"`
 
-    // KMSKeyURI is the AWS KMS key URI for envelope encryption.
+    // KMSEnvelopeKeyURI is the AWS KMS key URI for envelope encryption.
     // Format: aws-kms://arn:aws:kms:region:account:key/key-id
-    KMSKeyURI string `env:"CACHE_ENCRYPTION_KMS_KEY_URI"`
+    KMSEnvelopeKeyURI string `env:"CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI"`
 }
 ```
 
@@ -238,9 +256,14 @@ func (c *CacheConfig) Validate() error {
         if c.Encryption.KeysetURI == "" {
             return fmt.Errorf("CACHE_ENCRYPTION_KEYSET_URI required when encryption enabled")
         }
-        if c.Encryption.KMSKeyURI == "" {
-            return fmt.Errorf("CACHE_ENCRYPTION_KMS_KEY_URI required when encryption enabled")
+        if c.Encryption.KMSEnvelopeKeyURI == "" {
+            return fmt.Errorf("CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI required when encryption enabled")
         }
+    }
+
+    // Valkey requires address
+    if c.Type == "valkey" && c.Valkey.Address == "" {
+        return fmt.Errorf("VALKEY_ADDRESS required when CACHE_TYPE=valkey")
     }
 
     return nil
@@ -323,7 +346,14 @@ func (d *Distributed[T]) Get(ctx context.Context, key string) (T, bool, error) {
     // Decrypt if encryption is enabled
     data := []byte(val)
     if d.aead != nil {
-        decoded, err := base64.StdEncoding.DecodeString(val)
+        // Strip cb-enc: prefix
+        if !strings.HasPrefix(val, "cb-enc:") {
+            d.handleDecryptionFailure(ctx, key, storageKey, "missing cb-enc prefix", nil)
+            return zero, false, nil
+        }
+        encodedCiphertext := strings.TrimPrefix(val, "cb-enc:")
+
+        decoded, err := base64.StdEncoding.DecodeString(encodedCiphertext)
         if err != nil {
             // Decryption failure: invalidate, warn, treat as cache miss
             d.handleDecryptionFailure(ctx, key, storageKey, "base64 decode failed", err)
@@ -371,7 +401,7 @@ func (d *Distributed[T]) Set(ctx context.Context, key string, token T) error {
         if err != nil {
             return fmt.Errorf("failed to encrypt token: %w", err)
         }
-        data = []byte(base64.StdEncoding.EncodeToString(ciphertext))
+        data = []byte("cb-enc:" + base64.StdEncoding.EncodeToString(ciphertext))
     }
 
     storageKey := d.storageKey(key)
@@ -440,7 +470,6 @@ import (
 func NewFromConfig[T any](
     ctx context.Context,
     cacheConfig config.CacheConfig,
-    valkeyConfig config.ValkeyConfig,
     ttl time.Duration,
     maxMemorySize int,
 ) (TokenCache[T], error) {
@@ -453,7 +482,7 @@ func NewFromConfig[T any](
             aead, err = encryption.NewAEADFromKMS(
                 ctx,
                 cacheConfig.Encryption.KeysetURI,
-                cacheConfig.Encryption.KMSKeyURI,
+                cacheConfig.Encryption.KMSEnvelopeKeyURI,
             )
             if err != nil {
                 return nil, fmt.Errorf("initializing encryption: %w", err)
@@ -462,16 +491,12 @@ func NewFromConfig[T any](
 
         log.Info().
             Str("cache_type", "valkey").
-            Str("address", valkeyConfig.Address).
-            Bool("tls", valkeyConfig.TLS).
+            Str("address", cacheConfig.Valkey.Address).
+            Bool("tls", cacheConfig.Valkey.TLS).
             Bool("encryption", aead != nil).
             Msg("initializing distributed cache")
 
-        if valkeyConfig.Address == "" {
-            return nil, fmt.Errorf("valkey address required when cache type is valkey")
-        }
-
-        client, err := newValkeyClient(ctx, valkeyConfig)
+        client, err := newValkeyClient(ctx, cacheConfig.Valkey)
         if err != nil {
             return nil, fmt.Errorf("creating valkey client: %w", err)
         }
@@ -517,7 +542,6 @@ if err := cfg.Cache.Validate(); err != nil {
 tokenCache, err := cache.NewFromConfig[vendor.ProfileToken](
     ctx,
     cfg.Cache,
-    cfg.Valkey,
     45*time.Minute,
     10_000,
 )
@@ -529,29 +553,178 @@ defer tokenCache.Close()
 
 The factory logs encryption status internally, so no additional logging needed in main.go.
 
-### Phase 4: Observability
+### Phase 4: Keyset Refresh
 
-#### 4.1 Encryption Metrics
+Implement automatic keyset refresh to support hot key rotation without service restart.
 
-Add decryption failure metric to `internal/cache/instrumented.go` using existing OTEL pattern:
+#### 4.1 Refreshable AEAD
+
+**File: `internal/encryption/refresh.go`**
+
+```go
+package encryption
+
+import (
+    "context"
+    "sync"
+    "time"
+
+    "github.com/rs/zerolog/log"
+)
+
+// RefreshableAEAD wraps an AEAD with periodic refresh capability.
+type RefreshableAEAD struct {
+    mu                sync.RWMutex
+    aead              AEAD
+    keysetURI         string
+    kmsEnvelopeKeyURI string
+    stopCh            chan struct{}
+    doneCh            chan struct{}
+}
+
+// NewRefreshableAEAD creates an AEAD that refreshes its keyset every 15 minutes.
+func NewRefreshableAEAD(ctx context.Context, keysetURI, kmsEnvelopeKeyURI string) (*RefreshableAEAD, error) {
+    // Load initial keyset
+    aead, err := NewAEADFromKMS(ctx, keysetURI, kmsEnvelopeKeyURI)
+    if err != nil {
+        return nil, err
+    }
+
+    r := &RefreshableAEAD{
+        aead:              aead,
+        keysetURI:         keysetURI,
+        kmsEnvelopeKeyURI: kmsEnvelopeKeyURI,
+        stopCh:            make(chan struct{}),
+        doneCh:            make(chan struct{}),
+    }
+
+    // Start refresh goroutine
+    go r.refreshLoop(ctx)
+
+    return r, nil
+}
+
+// Encrypt delegates to the current AEAD.
+func (r *RefreshableAEAD) Encrypt(plaintext, associatedData []byte) ([]byte, error) {
+    r.mu.RLock()
+    defer r.mu.RUnlock()
+    return r.aead.Encrypt(plaintext, associatedData)
+}
+
+// Decrypt delegates to the current AEAD.
+func (r *RefreshableAEAD) Decrypt(ciphertext, associatedData []byte) ([]byte, error) {
+    r.mu.RLock()
+    defer r.mu.RUnlock()
+    return r.aead.Decrypt(ciphertext, associatedData)
+}
+
+// Close stops the refresh goroutine.
+func (r *RefreshableAEAD) Close() error {
+    close(r.stopCh)
+    <-r.doneCh
+    return nil
+}
+
+// refreshLoop periodically refreshes the keyset every 15 minutes.
+func (r *RefreshableAEAD) refreshLoop(ctx context.Context) {
+    defer close(r.doneCh)
+
+    ticker := time.NewTicker(15 * time.Minute)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-r.stopCh:
+            return
+        case <-ticker.C:
+            r.refresh(ctx)
+        }
+    }
+}
+
+// refresh attempts to load a new keyset and replace the current AEAD.
+// Errors are logged but do not stop the service - we continue with the existing keyset.
+func (r *RefreshableAEAD) refresh(ctx context.Context) {
+    log.Info().Msg("refreshing encryption keyset")
+
+    newAEAD, err := NewAEADFromKMS(ctx, r.keysetURI, r.kmsEnvelopeKeyURI)
+    if err != nil {
+        log.Warn().
+            Err(err).
+            Msg("failed to refresh encryption keyset, continuing with current keyset")
+        return
+    }
+
+    r.mu.Lock()
+    r.aead = newAEAD
+    r.mu.Unlock()
+
+    log.Info().Msg("encryption keyset refreshed successfully")
+}
+```
+
+#### 4.2 Update Factory to Use RefreshableAEAD
+
+**File: `internal/cache/factory.go`**
+
+Change the factory to create `RefreshableAEAD` instead of plain AEAD:
+
+```go
+case "valkey":
+    // Initialize AEAD if encryption enabled
+    var aead encryption.AEAD
+    if cacheConfig.Encryption.Enabled {
+        var err error
+        // Use RefreshableAEAD for automatic keyset refresh
+        refreshableAEAD, err := encryption.NewRefreshableAEAD(
+            ctx,
+            cacheConfig.Encryption.KeysetURI,
+            cacheConfig.Encryption.KMSEnvelopeKeyURI,
+        )
+        if err != nil {
+            return nil, fmt.Errorf("initializing encryption: %w", err)
+        }
+        aead = refreshableAEAD
+    }
+    // ... rest of valkey initialization
+```
+
+Note: `RefreshableAEAD` implements the `AEAD` interface, so it can be used wherever `AEAD` is expected.
+
+#### 4.3 Cleanup on Shutdown
+
+The `RefreshableAEAD.Close()` method stops the refresh goroutine. This is automatically called when the cache's `Close()` method is invoked, which happens via `defer tokenCache.Close()` in `main.go`.
+
+### Phase 5: Observability
+
+#### 5.1 Encryption Metrics
+
+Add encryption metrics to `internal/cache/distributed.go` using OTEL pattern. These track encrypt/decrypt operations with duration and success/failure counts:
 
 ```go
 var (
     metricsOnce          sync.Once
-    cacheOperations      metric.Int64Counter
-    cacheDuration        metric.Float64Histogram
-    decryptionFailures   metric.Int64Counter  // NEW
+    encryptionDuration   metric.Float64Histogram
+    encryptionTotal      metric.Int64Counter
 )
 
-func initMetrics() {
+func initEncryptionMetrics() {
     metricsOnce.Do(func() {
         meter := otel.Meter("github.com/chinmina/chinmina-bridge/internal/cache")
 
-        // ... existing metrics ...
+        var err error
+        encryptionDuration, err = meter.Float64Histogram(
+            "cache.encryption.duration",
+            metric.WithDescription("Duration of cache encryption/decryption operations"),
+            metric.WithUnit("ms"),
+        )
+        if err != nil {
+            otel.Handle(err)
+        }
 
-        decryptionFailures, err = meter.Int64Counter(
-            "cache.decryption.failures",
-            metric.WithDescription("Cache decryption failures (corrupted or invalid entries)"),
+        encryptionTotal, err = meter.Int64Counter(
+            "cache.encryption.total",
+            metric.WithDescription("Total count of cache encryption/decryption operations"),
         )
         if err != nil {
             otel.Handle(err)
@@ -560,39 +733,73 @@ func initMetrics() {
 }
 ```
 
-The decryption failure metric is recorded from `Distributed.handleDecryptionFailure()`:
+Wrap encryption operations to record metrics:
 
 ```go
-// In distributed.go, update handleDecryptionFailure to record metric
-func (d *Distributed[T]) handleDecryptionFailure(ctx context.Context, key, storageKey, reason string, err error) {
-    log.Warn().
-        Err(err).
-        Str("key", key).
-        Str("reason", reason).
-        Msg("cache decryption failure, invalidating entry")
+// In distributed.go Get method, wrap decryption:
+if d.aead != nil {
+    start := time.Now()
+    // ... decryption logic ...
+    duration := time.Since(start).Seconds() * 1000 // Convert to milliseconds
 
-    // Record metric
-    if decryptionFailures != nil {
-        decryptionFailures.Add(ctx, 1,
-            metric.WithAttributes(
-                attribute.String("cache.failure.reason", reason),
-            ),
-        )
+    outcome := "success"
+    if err != nil {
+        outcome = "error"
     }
 
-    // Best-effort invalidation
-    _ = d.client.Do(ctx, d.client.B().Del().Key(storageKey).Build()).Error()
+    encryptionDuration.Record(ctx, duration,
+        metric.WithAttributes(
+            attribute.String("operation", "decrypt"),
+        ),
+    )
+    encryptionTotal.Add(ctx, 1,
+        metric.WithAttributes(
+            attribute.String("operation", "decrypt"),
+            attribute.String("outcome", outcome),
+        ),
+    )
+}
+
+// In distributed.go Set method, wrap encryption:
+if d.aead != nil {
+    start := time.Now()
+    ciphertext, err := d.aead.Encrypt(data, []byte(key))
+    duration := time.Since(start).Seconds() * 1000 // Convert to milliseconds
+
+    outcome := "success"
+    if err != nil {
+        outcome = "error"
+    }
+
+    encryptionDuration.Record(ctx, duration,
+        metric.WithAttributes(
+            attribute.String("operation", "encrypt"),
+        ),
+    )
+    encryptionTotal.Add(ctx, 1,
+        metric.WithAttributes(
+            attribute.String("operation", "encrypt"),
+            attribute.String("outcome", outcome),
+        ),
+    )
+
+    if err != nil {
+        return fmt.Errorf("failed to encrypt token: %w", err)
+    }
+    data = []byte("cb-enc:" + base64.StdEncoding.EncodeToString(ciphertext))
 }
 ```
 
-#### 4.2 Startup Validation
+Note: Decryption failures are tracked via `cache.encryption.total` with `outcome=error`, eliminating the need for a separate failures metric.
+
+#### 5.2 Startup Validation
 
 Startup validation is handled by `tinkAEAD.Validate()` (shown in Phase 1), which is called
 automatically by `NewAEADFromKMS()`. This ensures fail-fast behavior if encryption is misconfigured.
 
-### Phase 5: Testing Strategy
+### Phase 6: Testing Strategy
 
-#### 5.1 Unit Tests
+#### 6.1 Unit Tests
 
 **File: `internal/encryption/aead.go`** - Add test helper function:
 
@@ -757,15 +964,16 @@ func TestDistributedNoEncryption(t *testing.T) {
 }
 ```
 
-#### 5.2 Integration Tests
+#### 6.2 Integration Tests
 
 Add integration tests in `api_integration_test.go` that verify:
 1. Encrypted tokens can be stored and retrieved through the full API flow
 2. Decryption failures are handled gracefully (treated as cache miss, entry invalidated)
+3. Keyset refresh works correctly (requires test that waits or mocks time)
 
-### Phase 6: Migration Considerations
+### Phase 7: Migration Considerations
 
-#### 6.1 Namespace Separation
+#### 7.1 Namespace Separation
 
 Encrypted entries use `enc:` key prefix for clear namespace separation:
 - **Plaintext key**: `digest:profile://org/pipeline/uuid/slug/profile/default`
@@ -776,19 +984,19 @@ This provides:
 - Safe rollout alongside existing plaintext cache
 - No collision between old plaintext and new encrypted entries
 
-#### 6.2 Cache Value Format
+#### 7.2 Cache Value Format
 
 When encryption is enabled (valkey only), the stored value format changes:
 - **Plaintext**: JSON string (e.g., `{"token":"ghp_xxx","expiry":"..."}`)
-- **Encrypted**: Base64-encoded ciphertext string
+- **Encrypted**: `cb-enc:<base64-ciphertext>` string
 
 Combined with the key prefix, this means:
 - Existing plaintext entries are untouched (different keys)
-- New encrypted entries use `enc:` prefixed keys
+- New encrypted entries use `enc:` prefixed keys and `cb-enc:` prefixed values
 - Short TTL (45 min) means plaintext entries expire naturally
 - No explicit migration required
 
-#### 6.3 Rollout Strategy
+#### 7.3 Rollout Strategy
 
 1. **Deploy with encryption disabled** - verify no regressions
 2. **Enable encryption in staging** - monitor metrics and logs
@@ -803,17 +1011,17 @@ Combined with the key prefix, this means:
 |------|---------|
 | `internal/encryption/aead.go` | Tink AEAD wrapper, KMS integration, Secrets Manager keyset loading, `NewTestAEAD()` helper |
 | `internal/encryption/aead_test.go` | Unit tests for AEAD encrypt/decrypt and AAD binding |
+| `internal/encryption/refresh.go` | RefreshableAEAD implementation with 15-minute keyset refresh |
 
 ### Modified Files
 
 | File | Changes |
 |------|---------|
-| `internal/config/config.go` | Add `CacheEncryptionConfig` struct nested in `CacheConfig`, add `Validate()` method requiring valkey |
-| `internal/cache/distributed.go` | Add `aead` field, `storageKey()` method, `handleDecryptionFailure()`, encrypt/decrypt logic |
-| `internal/cache/distributed_test.go` | Add tests for encryption, key prefix, decryption failure handling |
-| `internal/cache/factory.go` | Initialize AEAD for valkey only, pass to distributed cache constructor |
-| `internal/cache/instrumented.go` | Add `cache.decryption.failures` counter metric |
-| `main.go` | Add `cfg.Cache.Validate()` call before cache creation |
+| `internal/config/config.go` | Restructure to nest `ValkeyConfig` and `CacheEncryptionConfig` under `CacheConfig`, rename KMS variable to `KMSEnvelopeKeyURI`, add `Validate()` method |
+| `internal/cache/distributed.go` | Add `aead` field, `storageKey()` method with `enc:` prefix, `handleDecryptionFailure()`, encrypt/decrypt logic with `cb-enc:` prefix, encryption metrics |
+| `internal/cache/distributed_test.go` | Add tests for encryption, key/value prefixes, decryption failure handling |
+| `internal/cache/factory.go` | Remove `valkeyConfig` parameter (use `cfg.Cache.Valkey`), initialize `RefreshableAEAD` for valkey when encryption enabled |
+| `main.go` | Add `cfg.Cache.Validate()` call, remove `cfg.Valkey` parameter from cache factory call |
 | `go.mod` | Add Tink and AWS Secrets Manager dependencies |
 
 ## Dependencies
@@ -828,11 +1036,28 @@ github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.x.x
 
 ## Configuration Reference
 
+### Cache Configuration
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `CACHE_ENCRYPTION_ENABLED` | No | `false` | Enable cache encryption |
+| `CACHE_TYPE` | No | `memory` | Cache implementation: `memory` or `valkey` |
+
+### Valkey Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `VALKEY_ADDRESS` | If `CACHE_TYPE=valkey` | - | Valkey server address (host:port) |
+| `VALKEY_TLS` | No | `false` | Enable TLS connection to Valkey |
+| `VALKEY_USERNAME` | No | - | Username for Valkey authentication |
+| `VALKEY_PASSWORD` | No | - | Password for Valkey authentication |
+
+### Cache Encryption Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `CACHE_ENCRYPTION_ENABLED` | No | `false` | Enable cache encryption (requires `CACHE_TYPE=valkey`) |
 | `CACHE_ENCRYPTION_KEYSET_URI` | If enabled | - | URI to encrypted Tink keyset (e.g., `aws-secretsmanager://chinmina/keyset`) |
-| `CACHE_ENCRYPTION_KMS_KEY_URI` | If enabled | - | AWS KMS key URI (e.g., `aws-kms://arn:aws:kms:us-east-1:123456789:key/abc-123`) |
+| `CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI` | If enabled | - | AWS KMS key URI for envelope encryption (e.g., `aws-kms://arn:aws:kms:us-east-1:123456789:key/abc-123`) |
 
 ## Keyset Rotation
 
