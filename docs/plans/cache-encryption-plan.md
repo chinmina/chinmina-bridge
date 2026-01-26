@@ -263,7 +263,7 @@ does not support encryption as it operates within the same process boundary.
 #### 2.1 Modify `internal/cache/distributed.go`
 
 Add optional AEAD to the Distributed cache. Changes from current implementation:
-- Add `aead` field and `logger` for decryption failure warnings
+- Add `aead` field
 - Add `storageKey()` method for `enc:` prefix
 - Encrypt in Set, decrypt in Get
 - Handle decryption failures gracefully (invalidate, warn, treat as miss)
@@ -279,7 +279,7 @@ import (
     "time"
 
     "github.com/chinmina/chinmina-bridge/internal/encryption"
-    "github.com/rs/zerolog"
+    "github.com/rs/zerolog/log"
     "github.com/valkey-io/valkey-go"
 )
 
@@ -289,16 +289,14 @@ type Distributed[T any] struct {
     client valkey.Client
     ttl    time.Duration
     aead   encryption.AEAD // nil means no encryption
-    logger zerolog.Logger
 }
 
 // NewDistributed creates a new Valkey-backed cache with optional encryption.
-func NewDistributed[T any](client valkey.Client, ttl time.Duration, aead encryption.AEAD, logger zerolog.Logger) (*Distributed[T], error) {
+func NewDistributed[T any](client valkey.Client, ttl time.Duration, aead encryption.AEAD) (*Distributed[T], error) {
     return &Distributed[T]{
         client: client,
         ttl:    ttl,
         aead:   aead,
-        logger: logger,
     }, nil
 }
 
@@ -350,7 +348,7 @@ func (d *Distributed[T]) Get(ctx context.Context, key string) (T, bool, error) {
 // handleDecryptionFailure invalidates the corrupted entry and logs a warning.
 // The caller should treat this as a cache miss.
 func (d *Distributed[T]) handleDecryptionFailure(ctx context.Context, key, storageKey, reason string, err error) {
-    d.logger.Warn().
+    log.Warn().
         Err(err).
         Str("key", key).
         Str("reason", reason).
@@ -478,7 +476,7 @@ func NewFromConfig[T any](
             return nil, fmt.Errorf("creating valkey client: %w", err)
         }
 
-        cache, err := NewDistributed[T](client, ttl, aead, log.Logger)
+        cache, err := NewDistributed[T](client, ttl, aead)
         if err != nil {
             return nil, fmt.Errorf("creating distributed cache: %w", err)
         }
@@ -567,7 +565,7 @@ The decryption failure metric is recorded from `Distributed.handleDecryptionFail
 ```go
 // In distributed.go, update handleDecryptionFailure to record metric
 func (d *Distributed[T]) handleDecryptionFailure(ctx context.Context, key, storageKey, reason string, err error) {
-    d.logger.Warn().
+    log.Warn().
         Err(err).
         Str("key", key).
         Str("reason", reason).
@@ -685,8 +683,7 @@ func TestDistributedEncryption(t *testing.T) {
     testAEAD, err := encryption.NewTestAEAD()
     require.NoError(t, err)
 
-    logger := zerolog.New(io.Discard)
-    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD, logger)
+    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD)
     require.NoError(t, err)
 
     token := vendor.ProfileToken{
@@ -710,8 +707,7 @@ func TestDistributedEncryptionKeyPrefix(t *testing.T) {
     testAEAD, err := encryption.NewTestAEAD()
     require.NoError(t, err)
 
-    logger := zerolog.New(io.Discard)
-    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD, logger)
+    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD)
     require.NoError(t, err)
 
     key := "digest:profile://org/test/profile/default"
@@ -725,9 +721,7 @@ func TestDistributedDecryptionFailure(t *testing.T) {
     testAEAD, err := encryption.NewTestAEAD()
     require.NoError(t, err)
 
-    var logBuf bytes.Buffer
-    logger := zerolog.New(&logBuf)
-    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD, logger)
+    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, testAEAD)
     require.NoError(t, err)
 
     key := "digest:profile://org/test/profile/default"
@@ -741,14 +735,10 @@ func TestDistributedDecryptionFailure(t *testing.T) {
     assert.NoError(t, err)  // No error returned
     assert.False(t, found)  // Treated as miss
     assert.Zero(t, result)
-
-    // Should have logged warning
-    assert.Contains(t, logBuf.String(), "cache decryption failure")
 }
 
 func TestDistributedNoEncryption(t *testing.T) {
-    logger := zerolog.New(io.Discard)
-    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, nil, logger)
+    cache, err := NewDistributed[vendor.ProfileToken](mockClient, 45*time.Minute, nil)
     require.NoError(t, err)
 
     key := "test-key"
@@ -819,9 +809,9 @@ Combined with the key prefix, this means:
 | File | Changes |
 |------|---------|
 | `internal/config/config.go` | Add `CacheEncryptionConfig` struct nested in `CacheConfig`, add `Validate()` method requiring valkey |
-| `internal/cache/distributed.go` | Add `aead` and `logger` fields, `storageKey()` method, `handleDecryptionFailure()`, encrypt/decrypt logic |
+| `internal/cache/distributed.go` | Add `aead` field, `storageKey()` method, `handleDecryptionFailure()`, encrypt/decrypt logic |
 | `internal/cache/distributed_test.go` | Add tests for encryption, key prefix, decryption failure handling |
-| `internal/cache/factory.go` | Initialize AEAD for valkey only, pass to distributed cache constructor with logger |
+| `internal/cache/factory.go` | Initialize AEAD for valkey only, pass to distributed cache constructor |
 | `internal/cache/instrumented.go` | Add `cache.decryption.failures` counter metric |
 | `main.go` | Add `cfg.Cache.Validate()` call before cache creation |
 | `go.mod` | Add Tink and AWS Secrets Manager dependencies |
