@@ -117,8 +117,8 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 
 	if cfg.Cache.Type == "valkey" {
 		address := testhelpers.RunValkeyContainer(t)
-		cfg.Valkey.Address = address
-		cfg.Valkey.TLS = false
+		cfg.Cache.Valkey.Address = address
+		cfg.Cache.Valkey.TLS = false
 	}
 
 	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore, &hooks)

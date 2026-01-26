@@ -140,20 +140,20 @@ func TestIntegrationDistributed_JSONRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
-		name  string
-		dummy CacheTestDummy
+		name     string
+		expected CacheTestDummy
 	}{
 		{
-			name:  "simple value",
-			dummy: CacheTestDummy{Data: "test"},
+			name:     "simple value",
+			expected: CacheTestDummy{Data: "test"},
 		},
 		{
-			name:  "empty value",
-			dummy: CacheTestDummy{Data: ""},
+			name:     "empty value",
+			expected: CacheTestDummy{Data: ""},
 		},
 		{
-			name:  "special characters",
-			dummy: CacheTestDummy{Data: "special: !@#$%^&*(){}[]|\\:\";<>?,./"},
+			name:     "special characters",
+			expected: CacheTestDummy{Data: "special: !@#$%^&*(){}[]|\\:\";<>?,./"},
 		},
 	}
 
@@ -161,14 +161,14 @@ func TestIntegrationDistributed_JSONRoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			key := "json-test-" + tt.name
 
-			err := cache.Set(ctx, key, tt.dummy)
+			err := cache.Set(ctx, key, tt.expected)
 			require.NoError(t, err)
 
 			assert.EventuallyWithT(t, func(collect *assert.CollectT) {
 				result, found, err := cache.Get(ctx, key)
 				require.NoError(collect, err)
 				assert.True(collect, found)
-				assert.Equal(collect, tt.dummy, result)
+				assert.Equal(collect, tt.expected, result)
 			}, time.Second*2, time.Millisecond*100, "cache entry should be eventually available")
 		})
 	}

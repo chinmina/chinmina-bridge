@@ -19,16 +19,17 @@ func TestIntegrationNewFromConfig_Valkey(t *testing.T) {
 	// Start Valkey container
 	address := testhelpers.RunValkeyContainer(t)
 
-	cacheConfig := config.CacheConfig{Type: "valkey"}
-	valkeyConfig := config.ValkeyConfig{
-		Address: address,
-		TLS:     false,
+	cacheConfig := config.CacheConfig{
+		Type: "valkey",
+		Valkey: config.ValkeyConfig{
+			Address: address,
+			TLS:     false,
+		},
 	}
 
 	cache, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
-		valkeyConfig,
 		1*time.Minute,
 		100,
 	)
@@ -59,16 +60,17 @@ func TestIntegrationNewFromConfig_ValkeyWithTLS(t *testing.T) {
 	// Start Valkey container (without TLS for simplicity in tests)
 	address := testhelpers.RunValkeyContainer(t)
 
-	cacheConfig := config.CacheConfig{Type: "valkey"}
-	valkeyConfig := config.ValkeyConfig{
-		Address: address,
-		TLS:     true, // Enable TLS config (though container doesn't use it)
+	cacheConfig := config.CacheConfig{
+		Type: "valkey",
+		Valkey: config.ValkeyConfig{
+			Address: address,
+			TLS:     true, // Enable TLS config (though container doesn't use it)
+		},
 	}
 
 	_, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
-		valkeyConfig,
 		1*time.Minute,
 		100,
 	)
