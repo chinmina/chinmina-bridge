@@ -4,8 +4,10 @@ package testhelpers
 
 import (
 	"context"
+	"crypto/rand"
 	"testing"
 
+	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -13,17 +15,23 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// RunValkeyContainer starts a Valkey container and returns the address.
-// Cleanup is handled automatically via t.Cleanup().
-func RunValkeyContainer(t *testing.T) string {
+// RunValkeyContainer starts a Valkey container and returns the configuration
+// including the ephemeral address and password. Cleanup is handled
+// automatically via t.Cleanup().
+func RunValkeyContainer(t *testing.T) config.CacheConfig {
 	t.Helper()
 	ctx := context.Background()
 
 	valkeyPort := "6379"
 	valkeyProtocolPort := valkeyPort + "/tcp"
 
+	password := rand.Text()
+
 	req := testcontainers.ContainerRequest{
-		Image:        "valkey/valkey:9-alpine",
+		Image: "valkey/valkey:9-alpine",
+		Env: map[string]string{
+			"VALKEY_EXTRA_FLAGS": "--requirepass " + password,
+		},
 		ExposedPorts: []string{valkeyProtocolPort},
 		WaitingFor: wait.ForAll(
 			wait.ForLog("Ready to accept connections"),
@@ -48,5 +56,13 @@ func RunValkeyContainer(t *testing.T) string {
 	// Use 127.0.0.1 explicitly to avoid IPv6 issues
 	endpoint := "127.0.0.1:" + port.Port()
 
-	return endpoint
+	return config.CacheConfig{
+		Type: "valkey",
+		Valkey: config.ValkeyConfig{
+			TLS:      false,
+			Address:  endpoint,
+			Username: "default",
+			Password: password,
+		},
+	}
 }

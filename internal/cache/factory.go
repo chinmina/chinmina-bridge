@@ -36,6 +36,8 @@ func NewFromConfig[T any](
 
 		valkeyOpts := valkey.ClientOption{
 			InitAddress: []string{cacheConfig.Valkey.Address},
+			Username:    cacheConfig.Valkey.Username,
+			Password:    cacheConfig.Valkey.Password,
 		}
 
 		// Configure TLS if enabled

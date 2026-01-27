@@ -16,10 +16,12 @@ import (
 func setupValkey(t *testing.T) valkey.Client {
 	t.Helper()
 
-	endpoint := testhelpers.RunValkeyContainer(t)
+	cacheCfg := testhelpers.RunValkeyContainer(t)
 
 	client, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress: []string{endpoint},
+		InitAddress: []string{cacheCfg.Valkey.Address},
+		Username:    cacheCfg.Valkey.Username,
+		Password:    cacheCfg.Valkey.Password,
 	})
 	require.NoError(t, err)
 

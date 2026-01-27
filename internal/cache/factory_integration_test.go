@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,15 +16,7 @@ func TestIntegrationNewFromConfig_Valkey(t *testing.T) {
 	ctx := context.Background()
 
 	// Start Valkey container
-	address := testhelpers.RunValkeyContainer(t)
-
-	cacheConfig := config.CacheConfig{
-		Type: "valkey",
-		Valkey: config.ValkeyConfig{
-			Address: address,
-			TLS:     false,
-		},
-	}
+	cacheConfig := testhelpers.RunValkeyContainer(t)
 
 	cache, err := NewFromConfig[testToken](
 		ctx,
@@ -58,15 +49,10 @@ func TestIntegrationNewFromConfig_ValkeyWithTLS(t *testing.T) {
 	ctx := context.Background()
 
 	// Start Valkey container (without TLS for simplicity in tests)
-	address := testhelpers.RunValkeyContainer(t)
+	cacheConfig := testhelpers.RunValkeyContainer(t)
 
-	cacheConfig := config.CacheConfig{
-		Type: "valkey",
-		Valkey: config.ValkeyConfig{
-			Address: address,
-			TLS:     true, // Enable TLS config (though container doesn't use it)
-		},
-	}
+	// Enable TLS config (though container doesn't use it)
+	cacheConfig.Valkey.TLS = true
 
 	_, err := NewFromConfig[testToken](
 		ctx,
