@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+echo "Configured APK cache to use local cache server"
+
+sed -i 's|https://dl-cdn.alpinelinux.org|http://apk-cache:3142|g' /etc/apk/repositories

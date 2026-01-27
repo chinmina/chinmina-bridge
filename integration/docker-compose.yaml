@@ -20,6 +20,7 @@ services:
     image: buildkite/agent:3
     depends_on:
       - chinmina-bridge
+      - apk-cache
     command: ["start"]
     environment:
       - BUILDKITE_AGENT_TOKEN
@@ -114,3 +115,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # speeds buildkite agent start by caching apk packages,
+  # particularly useful when scaling to many agents.
+  apk-cache:
+    image: tursom/apk-cache:latest
+    volumes:
+      - apk-cache:/app/cache
+    ports:
+      - "23412:3142"
+    environment:
+      - CACHE_DIR=/app/cache
+      - INDEX_CACHE=24h
+      - MEMORY_CACHE_ENABLED=false
+      - HEALTH_CHECK_INTERVAL=30s
+      - ENABLE_SELF_HEALING=true
+    restart: unless-stopped
+
+volumes:
+  apk-cache:
