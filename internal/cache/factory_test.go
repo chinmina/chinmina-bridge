@@ -17,12 +17,10 @@ type testToken struct {
 func TestNewFromConfig_Memory(t *testing.T) {
 	ctx := context.Background()
 	cacheConfig := config.CacheConfig{Type: "memory"}
-	valkeyConfig := config.ValkeyConfig{}
 
 	cache, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
-		valkeyConfig,
 		1*time.Minute,
 		100,
 	)
@@ -38,12 +36,10 @@ func TestNewFromConfig_Memory(t *testing.T) {
 func TestNewFromConfig_InvalidType(t *testing.T) {
 	ctx := context.Background()
 	cacheConfig := config.CacheConfig{Type: "redis"}
-	valkeyConfig := config.ValkeyConfig{}
 
 	cache, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
-		valkeyConfig,
 		1*time.Minute,
 		100,
 	)
@@ -56,16 +52,17 @@ func TestNewFromConfig_InvalidType(t *testing.T) {
 
 func TestNewFromConfig_ValkeyRequiresAddress(t *testing.T) {
 	ctx := context.Background()
-	cacheConfig := config.CacheConfig{Type: "valkey"}
-	valkeyConfig := config.ValkeyConfig{
-		Address: "", // Missing address
-		TLS:     true,
+	cacheConfig := config.CacheConfig{
+		Type: "valkey",
+		Valkey: config.ValkeyConfig{
+			Address: "", // Missing address
+			TLS:     true,
+		},
 	}
 
 	cache, err := NewFromConfig[testToken](
 		ctx,
 		cacheConfig,
-		valkeyConfig,
 		1*time.Minute,
 		100,
 	)

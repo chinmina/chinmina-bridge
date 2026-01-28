@@ -61,7 +61,6 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	tokenCache, err := cache.NewFromConfig[vendor.ProfileToken](
 		ctx,
 		cfg.Cache,
-		cfg.Valkey,
 		45*time.Minute,
 		10_000,
 	)

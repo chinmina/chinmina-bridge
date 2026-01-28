@@ -75,6 +75,8 @@ services:
       - VALKEY_ADDRESS=valkey:6379
       - VALKEY_USE_IAM_AUTH=false
       - VALKEY_TLS=false
+      - VALKEY_USERNAME=default
+      - VALKEY_PASSWORD=swimming-penguin-42
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire:18889
       - OBSERVE_ENABLED=true
       - OBSERVE_METRICS_ENABLED=true
@@ -105,6 +107,8 @@ services:
 
   valkey:
     image: valkey/valkey:9-alpine
+    environment:
+      - "VALKEY_EXTRA_FLAGS=--requirepass swimming-penguin-42"
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 5s

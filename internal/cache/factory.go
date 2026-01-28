@@ -15,11 +15,10 @@ import (
 // It returns the cache and any error encountered.
 //
 // The cache type must be either "memory" or "valkey". Any other value returns an error.
-// For "valkey", the valkeyConfig.Address must be provided.
+// For "valkey", the cacheConfig.Valkey.Address must be provided.
 func NewFromConfig[T any](
 	ctx context.Context,
 	cacheConfig config.CacheConfig,
-	valkeyConfig config.ValkeyConfig,
 	ttl time.Duration,
 	maxMemorySize int,
 ) (TokenCache[T], error) {
@@ -27,20 +26,22 @@ func NewFromConfig[T any](
 	case "valkey":
 		log.Info().
 			Str("cache_type", "valkey").
-			Str("address", valkeyConfig.Address).
-			Bool("tls", valkeyConfig.TLS).
+			Str("address", cacheConfig.Valkey.Address).
+			Bool("tls", cacheConfig.Valkey.TLS).
 			Msg("initializing distributed cache")
 
-		if valkeyConfig.Address == "" {
+		if cacheConfig.Valkey.Address == "" {
 			return nil, fmt.Errorf("valkey address is required when cache type is valkey")
 		}
 
 		valkeyOpts := valkey.ClientOption{
-			InitAddress: []string{valkeyConfig.Address},
+			InitAddress: []string{cacheConfig.Valkey.Address},
+			Username:    cacheConfig.Valkey.Username,
+			Password:    cacheConfig.Valkey.Password,
 		}
 
 		// Configure TLS if enabled
-		if valkeyConfig.TLS {
+		if cacheConfig.Valkey.TLS {
 			valkeyOpts.TLSConfig = &tls.Config{
 				MinVersion: tls.VersionTLS12,
 			}
