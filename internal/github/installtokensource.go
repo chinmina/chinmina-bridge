@@ -3,7 +3,7 @@ package github
 import (
 	"net/http"
 
-	"github.com/jferrl/go-githubauth"
+	"github.com/jferrl/go-githubauth/v2"
 	"golang.org/x/oauth2"
 )
 
