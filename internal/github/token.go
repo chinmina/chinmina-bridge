@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	appconfig "github.com/chinmina/chinmina-bridge/internal/config"
-	"github.com/google/go-github/v81/github"
+	"github.com/google/go-github/v82/github"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/oauth2"
