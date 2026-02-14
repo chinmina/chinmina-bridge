@@ -4,9 +4,11 @@ package cache
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/cache/encryption"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -174,6 +176,215 @@ func TestIntegrationDistributed_JSONRoundTrip(t *testing.T) {
 			}, time.Second*2, time.Millisecond*100, "cache entry should be eventually available")
 		})
 	}
+}
+
+func TestIntegrationDistributed_EncryptionRoundTrip(t *testing.T) {
+	client := setupValkey(t)
+	testAEAD, err := encryption.NewTestAEAD()
+	require.NoError(t, err)
+
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	require.NoError(t, err)
+	defer cache.Close()
+
+	ctx := context.Background()
+	key := "digest:profile://org/test/profile/default"
+
+	expected := CacheTestDummy{Data: "ghp_test123"}
+
+	err = cache.Set(ctx, key, expected)
+	require.NoError(t, err)
+
+	assert.EventuallyWithT(t, func(collect *assert.CollectT) {
+		result, found, err := cache.Get(ctx, key)
+		require.NoError(collect, err)
+		assert.True(collect, found)
+		assert.Equal(collect, expected, result)
+	}, time.Second*2, time.Millisecond*100, "encrypted value should round-trip")
+}
+
+func TestIntegrationDistributed_EncryptionKeyPrefix(t *testing.T) {
+	client := setupValkey(t)
+	testAEAD, err := encryption.NewTestAEAD()
+	require.NoError(t, err)
+
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	require.NoError(t, err)
+	defer cache.Close()
+
+	ctx := context.Background()
+	key := "test-key"
+
+	err = cache.Set(ctx, key, CacheTestDummy{Data: "value"})
+	require.NoError(t, err)
+
+	// The value should be stored under "enc:test-key", not "test-key"
+	assert.EventuallyWithT(t, func(collect *assert.CollectT) {
+		// Check that the enc:-prefixed key exists
+		cmd := client.B().Get().Key("enc:" + key).Build()
+		result := client.Do(ctx, cmd)
+		val, err := result.ToString()
+		require.NoError(collect, err)
+		assert.True(collect, len(val) > 0, "enc: prefixed key should exist")
+	}, time.Second*2, time.Millisecond*100, "enc: prefixed key should exist")
+}
+
+func TestIntegrationDistributed_EncryptionValuePrefix(t *testing.T) {
+	client := setupValkey(t)
+	testAEAD, err := encryption.NewTestAEAD()
+	require.NoError(t, err)
+
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	require.NoError(t, err)
+	defer cache.Close()
+
+	ctx := context.Background()
+	key := "test-key"
+
+	err = cache.Set(ctx, key, CacheTestDummy{Data: "value"})
+	require.NoError(t, err)
+
+	// Read raw value and verify cb-enc: prefix
+	assert.EventuallyWithT(t, func(collect *assert.CollectT) {
+		cmd := client.B().Get().Key("enc:" + key).Build()
+		val, err := client.Do(ctx, cmd).ToString()
+		require.NoError(collect, err)
+		assert.True(collect, len(val) > 7 && val[:7] == "cb-enc:", "stored value should have cb-enc: prefix")
+	}, time.Second*2, time.Millisecond*100, "stored value should have cb-enc: prefix")
+}
+
+func TestIntegrationDistributed_DecryptionFailure_CorruptedCiphertext(t *testing.T) {
+	client := setupValkey(t)
+	testAEAD, err := encryption.NewTestAEAD()
+	require.NoError(t, err)
+
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	require.NoError(t, err)
+	defer cache.Close()
+
+	ctx := context.Background()
+	key := "test-key"
+
+	// Write corrupted ciphertext directly with cb-enc: prefix
+	storageKey := "enc:" + key
+	corruptedValue := "cb-enc:" + base64.StdEncoding.EncodeToString([]byte("not-valid-ciphertext"))
+	cmd := client.B().Set().Key(storageKey).Value(corruptedValue).ExSeconds(300).Build()
+	err = client.Do(ctx, cmd).Error()
+	require.NoError(t, err)
+
+	// Get should treat as cache miss, not error
+	result, found, err := cache.Get(ctx, key)
+	assert.NoError(t, err)
+	assert.False(t, found)
+	assert.Equal(t, CacheTestDummy{}, result)
+}
+
+func TestIntegrationDistributed_DecryptionFailure_MissingPrefix(t *testing.T) {
+	client := setupValkey(t)
+	testAEAD, err := encryption.NewTestAEAD()
+	require.NoError(t, err)
+
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	require.NoError(t, err)
+	defer cache.Close()
+
+	ctx := context.Background()
+	key := "test-key"
+
+	// Write plaintext value under the enc: key (simulates mixed-mode scenario)
+	storageKey := "enc:" + key
+	cmd := client.B().Set().Key(storageKey).Value(`{"Data":"plaintext"}`).ExSeconds(300).Build()
+	err = client.Do(ctx, cmd).Error()
+	require.NoError(t, err)
+
+	// Get should treat as cache miss
+	result, found, err := cache.Get(ctx, key)
+	assert.NoError(t, err)
+	assert.False(t, found)
+	assert.Equal(t, CacheTestDummy{}, result)
+}
+
+func TestIntegrationDistributed_DecryptionFailure_InvalidBase64(t *testing.T) {
+	client := setupValkey(t)
+	testAEAD, err := encryption.NewTestAEAD()
+	require.NoError(t, err)
+
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	require.NoError(t, err)
+	defer cache.Close()
+
+	ctx := context.Background()
+	key := "test-key"
+
+	// Write value with cb-enc: prefix but invalid base64
+	storageKey := "enc:" + key
+	cmd := client.B().Set().Key(storageKey).Value("cb-enc:not-valid-base64!!!").ExSeconds(300).Build()
+	err = client.Do(ctx, cmd).Error()
+	require.NoError(t, err)
+
+	// Get should treat as cache miss
+	result, found, err := cache.Get(ctx, key)
+	assert.NoError(t, err)
+	assert.False(t, found)
+	assert.Equal(t, CacheTestDummy{}, result)
+}
+
+func TestIntegrationDistributed_DecryptionFailure_WrongAAD(t *testing.T) {
+	client := setupValkey(t)
+	testAEAD, err := encryption.NewTestAEAD()
+	require.NoError(t, err)
+
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	require.NoError(t, err)
+	defer cache.Close()
+
+	ctx := context.Background()
+	key := "test-key"
+
+	// Encrypt with one key as AAD, store under a different key
+	ciphertext, err := testAEAD.Encrypt([]byte(`{"Data":"test"}`), []byte("different-key"))
+	require.NoError(t, err)
+
+	storageKey := "enc:" + key
+	value := "cb-enc:" + base64.StdEncoding.EncodeToString(ciphertext)
+	cmd := client.B().Set().Key(storageKey).Value(value).ExSeconds(300).Build()
+	err = client.Do(ctx, cmd).Error()
+	require.NoError(t, err)
+
+	// Get should treat as cache miss because AAD won't match
+	result, found, err := cache.Get(ctx, key)
+	assert.NoError(t, err)
+	assert.False(t, found)
+	assert.Equal(t, CacheTestDummy{}, result)
+}
+
+func TestIntegrationDistributed_NoEncryptionRoundTrip(t *testing.T) {
+	client := setupValkey(t)
+
+	// nil AEAD means no encryption
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, nil)
+	require.NoError(t, err)
+	defer cache.Close()
+
+	ctx := context.Background()
+	key := "test-key"
+
+	expected := CacheTestDummy{Data: "plaintext-value"}
+
+	err = cache.Set(ctx, key, expected)
+	require.NoError(t, err)
+
+	// Verify the value is stored as plaintext JSON under the original key
+	assert.EventuallyWithT(t, func(collect *assert.CollectT) {
+		cmd := client.B().Get().Key(key).Build()
+		val, err := client.Do(ctx, cmd).ToString()
+		require.NoError(collect, err)
+		assert.Contains(collect, val, "plaintext-value")
+		assert.NotContains(collect, val, "cb-enc:")
+	}, time.Second*2, time.Millisecond*100, "plaintext value should be stored without prefix")
+
+	// Verify round-trip
+	assertEventuallyExists(t, cache, key)
 }
 
 func assertEventuallyExists(t *testing.T, cache TokenCache[CacheTestDummy], key string) {
