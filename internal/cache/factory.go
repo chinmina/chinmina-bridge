@@ -52,7 +52,7 @@ func NewFromConfig[T any](
 			return nil, fmt.Errorf("failed to create valkey client: %w", err)
 		}
 
-		distributed, err := NewDistributed[T](valkeyClient, ttl)
+		distributed, err := NewDistributed[T](valkeyClient, ttl, nil)
 		if err != nil {
 			valkeyClient.Close()
 			return nil, fmt.Errorf("failed to create distributed cache: %w", err)
