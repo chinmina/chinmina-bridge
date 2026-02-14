@@ -5,6 +5,7 @@ go 1.25
 require (
 	github.com/auth0/go-jwt-middleware/v3 v3.0.0
 	github.com/aws/aws-sdk-go-v2 v1.41.1
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.41.1
 	github.com/buildkite/go-buildkite/v4 v4.14.1
 	github.com/docker/go-connections v0.6.0
 	github.com/go-logr/logr v1.4.3
@@ -18,6 +19,7 @@ require (
 	github.com/sethvargo/go-envconfig v1.3.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.40.0
+	github.com/tink-crypto/tink-go-awskms/v3 v3.0.0-test
 	github.com/tink-crypto/tink-go/v2 v2.6.0
 	github.com/valkey-io/valkey-go v1.0.71
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.40.0
@@ -123,3 +125,8 @@ require (
 	google.golang.org/grpc v1.78.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+// Using a fork of the official package that adds support for AWS SDK v2 (avoiding dependency on the EoL v1 SDK).
+// We can switch back to the official package once it supports AWS SDK v2.
+// See: https://github.com/tink-crypto/tink-go-awskms/issues/10
+replace github.com/tink-crypto/tink-go-awskms/v3 => github.com/chinmina/tink-go-awskms/v3 v3.0.0-20260214054955-8ffd434cd534
