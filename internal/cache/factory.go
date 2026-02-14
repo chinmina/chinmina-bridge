@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
+	"github.com/chinmina/chinmina-bridge/internal/encryption"
 	"github.com/rs/zerolog/log"
+	"github.com/tink-crypto/tink-go/v2/tink"
 	"github.com/valkey-io/valkey-go"
 )
 
@@ -52,8 +54,28 @@ func NewFromConfig[T any](
 			return nil, fmt.Errorf("failed to create valkey client: %w", err)
 		}
 
-		distributed, err := NewDistributed[T](valkeyClient, ttl, nil)
+		// Initialize AEAD for cache encryption if enabled.
+		var aead tink.AEAD
+		if cacheConfig.Encryption.Enabled {
+			refreshable, err := encryption.NewRefreshableAEAD(
+				ctx,
+				cacheConfig.Encryption.KeysetURI,
+				cacheConfig.Encryption.KMSEnvelopeKeyURI,
+			)
+			if err != nil {
+				valkeyClient.Close()
+				return nil, fmt.Errorf("initializing encryption: %w", err)
+			}
+			aead = refreshable
+
+			log.Info().Msg("cache encryption enabled with automatic keyset refresh")
+		}
+
+		distributed, err := NewDistributed[T](valkeyClient, ttl, aead)
 		if err != nil {
+			if closer, ok := aead.(interface{ Close() error }); ok {
+				_ = closer.Close()
+			}
 			valkeyClient.Close()
 			return nil, fmt.Errorf("failed to create distributed cache: %w", err)
 		}

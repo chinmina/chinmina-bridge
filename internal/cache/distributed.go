@@ -143,8 +143,15 @@ func (d *Distributed[T]) handleDecryptionFailure(ctx context.Context, key, stora
 	_ = d.client.Do(ctx, d.client.B().Del().Key(storageKey).Build()).Error()
 }
 
-// Close releases resources associated with the cache client.
+// Close releases resources associated with the cache client. If the AEAD
+// implements io.Closer (e.g. RefreshableAEAD), its Close method is called
+// to stop background goroutines.
 func (d *Distributed[T]) Close() error {
+	if closer, ok := d.aead.(interface{ Close() error }); ok {
+		if err := closer.Close(); err != nil {
+			log.Warn().Err(err).Msg("error closing AEAD")
+		}
+	}
 	d.client.Close()
 	return nil
 }
