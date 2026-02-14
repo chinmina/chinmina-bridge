@@ -30,6 +30,15 @@ func NewDistributed[T any](valkeyClient valkey.Client, ttl time.Duration, aead t
 	}, nil
 }
 
+// storageKey returns the cache key with appropriate prefix.
+// Encrypted entries use "enc:" prefix for namespace separation during rollout.
+func (d *Distributed[T]) storageKey(key string) string {
+	if d.aead != nil {
+		return "enc:" + key
+	}
+	return key
+}
+
 // Get retrieves a token from the cache using server-assisted client-side caching.
 // Returns the token, whether it was found, and any error.
 func (d *Distributed[T]) Get(ctx context.Context, key string) (T, bool, error) {
@@ -37,7 +46,7 @@ func (d *Distributed[T]) Get(ctx context.Context, key string) (T, bool, error) {
 
 	// Use DoCache for server-assisted client-side caching
 	// The .Cache() method enables client-side caching with server tracking
-	cmd := d.client.B().Get().Key(key).Cache()
+	cmd := d.client.B().Get().Key(d.storageKey(key)).Cache()
 	result := d.client.DoCache(ctx, cmd, d.ttl)
 
 	if err := result.Error(); err != nil {
@@ -69,7 +78,7 @@ func (d *Distributed[T]) Set(ctx context.Context, key string, token T) error {
 		return fmt.Errorf("failed to marshal token: %w", err)
 	}
 
-	cmd := d.client.B().Set().Key(key).Value(string(data)).ExSeconds(int64(d.ttl.Seconds())).Build()
+	cmd := d.client.B().Set().Key(d.storageKey(key)).Value(string(data)).ExSeconds(int64(d.ttl.Seconds())).Build()
 	if err := d.client.Do(ctx, cmd).Error(); err != nil {
 		return fmt.Errorf("failed to set cached value: %w", err)
 	}
@@ -78,7 +87,7 @@ func (d *Distributed[T]) Set(ctx context.Context, key string, token T) error {
 
 // Invalidate removes a token from the cache.
 func (d *Distributed[T]) Invalidate(ctx context.Context, key string) error {
-	cmd := d.client.B().Del().Key(key).Build()
+	cmd := d.client.B().Del().Key(d.storageKey(key)).Build()
 	if err := d.client.Do(ctx, cmd).Error(); err != nil {
 		return fmt.Errorf("failed to invalidate cached value: %w", err)
 	}
