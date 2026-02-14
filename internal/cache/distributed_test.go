@@ -35,7 +35,7 @@ func setupValkey(t *testing.T) valkey.Client {
 func TestIntegrationDistributed_SetAndGet(t *testing.T) {
 	client := setupValkey(t)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, nil)
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -57,7 +57,7 @@ func TestIntegrationDistributed_SetAndGet(t *testing.T) {
 func TestIntegrationDistributed_GetNotFound(t *testing.T) {
 	client := setupValkey(t)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, nil)
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -72,7 +72,7 @@ func TestIntegrationDistributed_GetNotFound(t *testing.T) {
 func TestIntegrationDistributed_Invalidate(t *testing.T) {
 	client := setupValkey(t)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, nil)
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -106,7 +106,7 @@ func TestIntegrationDistributed_TTL(t *testing.T) {
 	client := setupValkey(t)
 
 	// Short TTL for testing
-	cache, err := NewDistributed[CacheTestDummy](client, 1*time.Second)
+	cache, err := NewDistributed[CacheTestDummy](client, 1*time.Second, nil)
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -135,7 +135,7 @@ func TestIntegrationDistributed_TTL(t *testing.T) {
 func TestIntegrationDistributed_JSONRoundTrip(t *testing.T) {
 	client := setupValkey(t)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, nil)
 	require.NoError(t, err)
 	defer cache.Close()
 

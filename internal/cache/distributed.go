@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/tink-crypto/tink-go/v2/tink"
 	"github.com/valkey-io/valkey-go"
 )
 
@@ -15,14 +16,17 @@ import (
 type Distributed[T any] struct {
 	client valkey.Client
 	ttl    time.Duration
+	aead   tink.AEAD // nil means no encryption
 }
 
 // NewDistributed creates a new Valkey-backed cache with server-assisted client-side caching.
 // The ttl parameter specifies how long tokens remain valid in the cache.
-func NewDistributed[T any](valkeyClient valkey.Client, ttl time.Duration) (*Distributed[T], error) {
+// The aead parameter enables encryption for cached values; nil disables encryption.
+func NewDistributed[T any](valkeyClient valkey.Client, ttl time.Duration, aead tink.AEAD) (*Distributed[T], error) {
 	return &Distributed[T]{
 		client: valkeyClient,
 		ttl:    ttl,
+		aead:   aead,
 	}, nil
 }
 
