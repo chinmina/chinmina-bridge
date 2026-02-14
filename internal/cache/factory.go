@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/cache/encryption"
+	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/rs/zerolog/log"
 	"github.com/valkey-io/valkey-go"
 )
@@ -56,23 +56,18 @@ func NewFromConfig[T any](
 		// Initialize encryption strategy if enabled.
 		var strategy EncryptionStrategy
 		if cacheConfig.Encryption.Enabled {
-			handle, err := encryption.LoadKeysetFromAWS(
+			aead, err := encryption.NewRefreshableAEAD(
 				ctx,
 				cacheConfig.Encryption.KeysetURI,
 				cacheConfig.Encryption.KMSEnvelopeKeyURI,
 			)
 			if err != nil {
 				valkeyClient.Close()
-				return nil, fmt.Errorf("loading encryption keyset: %w", err)
-			}
-			aead, err := encryption.NewAEAD(handle)
-			if err != nil {
-				valkeyClient.Close()
 				return nil, fmt.Errorf("initializing encryption: %w", err)
 			}
 			strategy = NewTinkEncryptionStrategy(aead)
 
-			log.Info().Msg("cache encryption enabled")
+			log.Info().Msg("cache encryption enabled with automatic keyset refresh")
 		}
 
 		distributed, err := NewDistributed[T](valkeyClient, ttl, strategy)
