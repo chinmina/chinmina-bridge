@@ -1,6 +1,7 @@
 package encryption
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -36,6 +37,43 @@ func TestValidate_RoundTripMismatch(t *testing.T) {
 	err := Validate(&mismatchAEAD{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "validation round-trip failed")
+}
+
+func TestReadKeysetFromSecretsManager_InvalidURI(t *testing.T) {
+	tests := []struct {
+		name        string
+		uri         string
+		errContains string
+	}{
+		{
+			name:        "missing prefix",
+			uri:         "https://example.com/secret",
+			errContains: "must start with aws-secretsmanager://",
+		},
+		{
+			name:        "wrong scheme",
+			uri:         "aws-kms://some-key",
+			errContains: "must start with aws-secretsmanager://",
+		},
+		{
+			name:        "empty string",
+			uri:         "",
+			errContains: "must start with aws-secretsmanager://",
+		},
+		{
+			name:        "prefix only with no secret name",
+			uri:         "aws-secretsmanager://",
+			errContains: "secret name is empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := readKeysetFromSecretsManager(context.Background(), tt.uri)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errContains)
+		})
+	}
 }
 
 // failingAEAD is a test double implementing tink.AEAD that fails encrypt or
