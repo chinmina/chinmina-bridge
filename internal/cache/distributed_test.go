@@ -183,7 +183,7 @@ func TestIntegrationDistributed_EncryptionRoundTrip(t *testing.T) {
 	testAEAD, err := encryption.NewTestAEAD()
 	require.NoError(t, err)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -208,7 +208,7 @@ func TestIntegrationDistributed_EncryptionKeyPrefix(t *testing.T) {
 	testAEAD, err := encryption.NewTestAEAD()
 	require.NoError(t, err)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -234,7 +234,7 @@ func TestIntegrationDistributed_EncryptionValuePrefix(t *testing.T) {
 	testAEAD, err := encryption.NewTestAEAD()
 	require.NoError(t, err)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -258,7 +258,7 @@ func TestIntegrationDistributed_DecryptionFailure_CorruptedCiphertext(t *testing
 	testAEAD, err := encryption.NewTestAEAD()
 	require.NoError(t, err)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -272,9 +272,9 @@ func TestIntegrationDistributed_DecryptionFailure_CorruptedCiphertext(t *testing
 	err = client.Do(ctx, cmd).Error()
 	require.NoError(t, err)
 
-	// Get should treat as cache miss, not error
+	// Get should return an error for decryption failure
 	result, found, err := cache.Get(ctx, key)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.False(t, found)
 	assert.Equal(t, CacheTestDummy{}, result)
 }
@@ -284,7 +284,7 @@ func TestIntegrationDistributed_DecryptionFailure_MissingPrefix(t *testing.T) {
 	testAEAD, err := encryption.NewTestAEAD()
 	require.NoError(t, err)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -297,9 +297,9 @@ func TestIntegrationDistributed_DecryptionFailure_MissingPrefix(t *testing.T) {
 	err = client.Do(ctx, cmd).Error()
 	require.NoError(t, err)
 
-	// Get should treat as cache miss
+	// Get should return an error for decryption failure
 	result, found, err := cache.Get(ctx, key)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.False(t, found)
 	assert.Equal(t, CacheTestDummy{}, result)
 }
@@ -309,7 +309,7 @@ func TestIntegrationDistributed_DecryptionFailure_InvalidBase64(t *testing.T) {
 	testAEAD, err := encryption.NewTestAEAD()
 	require.NoError(t, err)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -322,9 +322,9 @@ func TestIntegrationDistributed_DecryptionFailure_InvalidBase64(t *testing.T) {
 	err = client.Do(ctx, cmd).Error()
 	require.NoError(t, err)
 
-	// Get should treat as cache miss
+	// Get should return an error for decryption failure
 	result, found, err := cache.Get(ctx, key)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.False(t, found)
 	assert.Equal(t, CacheTestDummy{}, result)
 }
@@ -334,7 +334,7 @@ func TestIntegrationDistributed_DecryptionFailure_WrongAAD(t *testing.T) {
 	testAEAD, err := encryption.NewTestAEAD()
 	require.NoError(t, err)
 
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, testAEAD)
+	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
 	defer cache.Close()
 
@@ -351,9 +351,9 @@ func TestIntegrationDistributed_DecryptionFailure_WrongAAD(t *testing.T) {
 	err = client.Do(ctx, cmd).Error()
 	require.NoError(t, err)
 
-	// Get should treat as cache miss because AAD won't match
+	// Get should return an error because AAD won't match
 	result, found, err := cache.Get(ctx, key)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.False(t, found)
 	assert.Equal(t, CacheTestDummy{}, result)
 }
@@ -361,7 +361,7 @@ func TestIntegrationDistributed_DecryptionFailure_WrongAAD(t *testing.T) {
 func TestIntegrationDistributed_NoEncryptionRoundTrip(t *testing.T) {
 	client := setupValkey(t)
 
-	// nil AEAD means no encryption
+	// nil strategy means no encryption
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, nil)
 	require.NoError(t, err)
 	defer cache.Close()
