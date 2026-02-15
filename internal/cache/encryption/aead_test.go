@@ -6,11 +6,22 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/cache/encryption"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tink-crypto/tink-go/v2/aead"
+	"github.com/tink-crypto/tink-go/v2/keyset"
+	"github.com/tink-crypto/tink-go/v2/tink"
 )
 
-func TestAEADEncryptDecrypt(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
+func newTestAEAD(t testing.TB) tink.AEAD {
+	t.Helper()
+	handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
 	require.NoError(t, err)
+	primitive, err := encryption.NewAEAD(handle)
+	require.NoError(t, err)
+	return primitive
+}
+
+func TestAEADEncryptDecrypt(t *testing.T) {
+	testAEAD := newTestAEAD(t)
 
 	tests := []struct {
 		name      string
@@ -48,8 +59,7 @@ func TestAEADEncryptDecrypt(t *testing.T) {
 }
 
 func TestAEADDecryptWrongAAD(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newTestAEAD(t)
 
 	plaintext := []byte(`{"token":"ghp_xxx"}`)
 	correctAAD := []byte("correct-key")
@@ -63,8 +73,7 @@ func TestAEADDecryptWrongAAD(t *testing.T) {
 }
 
 func TestAEADDecryptCorruptedCiphertext(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newTestAEAD(t)
 
 	plaintext := []byte("test data")
 	aad := []byte("key")
@@ -80,11 +89,8 @@ func TestAEADDecryptCorruptedCiphertext(t *testing.T) {
 }
 
 func TestAEADDifferentKeysProduceDifferentCiphertext(t *testing.T) {
-	aead1, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
-
-	aead2, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	aead1 := newTestAEAD(t)
+	aead2 := newTestAEAD(t)
 
 	plaintext := []byte("same plaintext")
 	aad := []byte("same-aad")

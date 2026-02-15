@@ -14,6 +14,40 @@ import (
 	"github.com/tink-crypto/tink-go/v2/tink"
 )
 
+// KMSAPI is the interface for AWS KMS operations required by this package.
+type KMSAPI = awskms.KMSAPI
+
+// SecretsManagerAPI is the interface for AWS Secrets Manager operations
+// required by this package.
+type SecretsManagerAPI interface {
+	GetSecretValue(ctx context.Context, params *secretsmanager.GetSecretValueInput,
+		optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+}
+
+type awsOptions struct {
+	kmsClient KMSAPI
+	smClient  SecretsManagerAPI
+}
+
+// AWSOption configures LoadKeysetFromAWS behaviour.
+type AWSOption func(*awsOptions)
+
+// WithKMSClient provides a custom KMS client, bypassing default AWS
+// credential resolution for KMS.
+func WithKMSClient(c KMSAPI) AWSOption {
+	return func(o *awsOptions) {
+		o.kmsClient = c
+	}
+}
+
+// WithSecretsManagerClient provides a custom Secrets Manager client, bypassing
+// default AWS credential resolution for Secrets Manager.
+func WithSecretsManagerClient(c SecretsManagerAPI) AWSOption {
+	return func(o *awsOptions) {
+		o.smClient = c
+	}
+}
+
 // Validate performs a test encryption/decryption cycle to verify the AEAD is
 // working. Call this at startup to fail fast if encryption is misconfigured.
 func Validate(a tink.AEAD) error {
@@ -37,28 +71,8 @@ func Validate(a tink.AEAD) error {
 	return nil
 }
 
-// NewAEADFromKMS creates a tink.AEAD from a keyset stored in AWS Secrets
-// Manager, encrypted with an AWS KMS key. The KMS key is only used at startup
-// to decrypt the keyset; all subsequent encrypt/decrypt operations are local.
-//
-// keysetURI format: aws-secretsmanager://secret-name
-// kmsEnvelopeKeyURI format: aws-kms://arn:aws:kms:region:account:key/key-id
-func NewAEADFromKMS(ctx context.Context, keysetURI, kmsEnvelopeKeyURI string) (tink.AEAD, error) {
-	kmsAEAD, err := awskms.NewAEADWithContext(kmsEnvelopeKeyURI)
-	if err != nil {
-		return nil, fmt.Errorf("creating KMS AEAD: %w", err)
-	}
-
-	keysetReader, err := readKeysetFromSecretsManager(ctx, keysetURI)
-	if err != nil {
-		return nil, fmt.Errorf("reading keyset: %w", err)
-	}
-
-	handle, err := keyset.ReadWithContext(ctx, keysetReader, kmsAEAD, nil)
-	if err != nil {
-		return nil, fmt.Errorf("decrypting keyset: %w", err)
-	}
-
+// NewAEAD creates a validated tink.AEAD from a keyset handle.
+func NewAEAD(handle *keyset.Handle) (tink.AEAD, error) {
 	primitive, err := aead.New(handle)
 	if err != nil {
 		return nil, fmt.Errorf("creating AEAD primitive: %w", err)
@@ -71,9 +85,53 @@ func NewAEADFromKMS(ctx context.Context, keysetURI, kmsEnvelopeKeyURI string) (t
 	return primitive, nil
 }
 
+// LoadKeysetFromAWS fetches an encrypted keyset from Secrets Manager,
+// decrypts it with KMS, and returns the handle. By default, AWS clients are
+// created from the default credential chain. Use WithKMSClient and
+// WithSecretsManagerClient to inject custom clients.
+//
+// keysetURI format: aws-secretsmanager://secret-name
+// kmsKeyURI format: aws-kms://arn:aws:kms:region:account:key/key-id
+func LoadKeysetFromAWS(ctx context.Context, keysetURI, kmsKeyURI string, opts ...AWSOption) (*keyset.Handle, error) {
+	var o awsOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	var kmsOpts []awskms.ClientOption
+	if o.kmsClient != nil {
+		kmsOpts = append(kmsOpts, awskms.WithKMS(o.kmsClient))
+	}
+	kmsAEAD, err := awskms.NewAEADWithContext(kmsKeyURI, kmsOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating KMS AEAD: %w", err)
+	}
+
+	smClient := o.smClient
+	if smClient == nil {
+		cfg, err := awsconfig.LoadDefaultConfig(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("loading AWS config: %w", err)
+		}
+		smClient = secretsmanager.NewFromConfig(cfg)
+	}
+
+	keysetReader, err := readKeysetFromSecretsManager(ctx, keysetURI, smClient)
+	if err != nil {
+		return nil, fmt.Errorf("reading keyset: %w", err)
+	}
+
+	handle, err := keyset.ReadWithContext(ctx, keysetReader, kmsAEAD, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decrypting keyset: %w", err)
+	}
+
+	return handle, nil
+}
+
 // readKeysetFromSecretsManager reads a Tink keyset from AWS Secrets Manager.
 // URI format: aws-secretsmanager://secret-name
-func readKeysetFromSecretsManager(ctx context.Context, uri string) (*keyset.JSONReader, error) {
+func readKeysetFromSecretsManager(ctx context.Context, uri string, client SecretsManagerAPI) (*keyset.JSONReader, error) {
 	const prefix = "aws-secretsmanager://"
 	if !strings.HasPrefix(uri, prefix) {
 		return nil, fmt.Errorf("invalid secrets manager URI %q: must start with %s", uri, prefix)
@@ -83,13 +141,6 @@ func readKeysetFromSecretsManager(ctx context.Context, uri string) (*keyset.JSON
 	if secretName == "" {
 		return nil, fmt.Errorf("invalid secrets manager URI %q: secret name is empty", uri)
 	}
-
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("loading AWS config: %w", err)
-	}
-
-	client := secretsmanager.NewFromConfig(cfg)
 
 	result, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
 		SecretId: &secretName,
@@ -103,18 +154,4 @@ func readKeysetFromSecretsManager(ctx context.Context, uri string) (*keyset.JSON
 	}
 
 	return keyset.NewJSONReader(strings.NewReader(*result.SecretString)), nil
-}
-
-// NewTestAEAD creates a tink.AEAD for testing without KMS.
-// Only use in tests — keys are not persisted or protected.
-func NewTestAEAD() (tink.AEAD, error) {
-	handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
-	if err != nil {
-		return nil, fmt.Errorf("creating test keyset handle: %w", err)
-	}
-	primitive, err := aead.New(handle)
-	if err != nil {
-		return nil, fmt.Errorf("creating test AEAD primitive: %w", err)
-	}
-	return primitive, nil
 }
