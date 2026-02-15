@@ -59,5 +59,10 @@
       groupName: "aws-sdk-go-v2",
       matchDepPatterns: ["^github\\.com/aws/aws-sdk-go-v2"],
     },
+    {
+      // v2 is not a valid release: block major version updates
+      matchDepNames: ["github.com/jferrl/go-githubauth"],
+      allowedVersions: "<2.0.0",
+    },
   ],
 }
