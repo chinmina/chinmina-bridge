@@ -56,11 +56,16 @@ func NewFromConfig[T any](
 		// Initialize encryption strategy if enabled.
 		var strategy EncryptionStrategy
 		if cacheConfig.Encryption.Enabled {
-			aead, err := encryption.NewAEADFromKMS(
+			handle, err := encryption.LoadKeysetFromAWS(
 				ctx,
 				cacheConfig.Encryption.KeysetURI,
 				cacheConfig.Encryption.KMSEnvelopeKeyURI,
 			)
+			if err != nil {
+				valkeyClient.Close()
+				return nil, fmt.Errorf("loading encryption keyset: %w", err)
+			}
+			aead, err := encryption.NewAEAD(handle)
 			if err != nil {
 				valkeyClient.Close()
 				return nil, fmt.Errorf("initializing encryption: %w", err)

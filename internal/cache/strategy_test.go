@@ -2,12 +2,25 @@ package cache
 
 import (
 	"encoding/base64"
+	"errors"
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/cache/encryption"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tink-crypto/tink-go/v2/aead"
+	"github.com/tink-crypto/tink-go/v2/keyset"
+	"github.com/tink-crypto/tink-go/v2/tink"
 )
+
+func newTestAEAD(t testing.TB) tink.AEAD {
+	t.Helper()
+	handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
+	require.NoError(t, err)
+	primitive, err := encryption.NewAEAD(handle)
+	require.NoError(t, err)
+	return primitive
+}
 
 func TestNoEncryptionStrategy_RoundTrip(t *testing.T) {
 	s := &NoEncryptionStrategy{}
@@ -35,8 +48,7 @@ func TestNoEncryptionStrategy_Close(t *testing.T) {
 }
 
 func TestTinkEncryptionStrategy_RoundTrip(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newTestAEAD(t)
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
@@ -54,8 +66,7 @@ func TestTinkEncryptionStrategy_RoundTrip(t *testing.T) {
 }
 
 func TestTinkEncryptionStrategy_StorageKey(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newTestAEAD(t)
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
@@ -77,43 +88,39 @@ func TestTinkEncryptionStrategy_StorageKey(t *testing.T) {
 }
 
 func TestTinkEncryptionStrategy_DecryptValue_MissingPrefix(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newTestAEAD(t)
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
-	_, err = s.DecryptValue(`{"Data":"plaintext"}`, "key")
+	_, err := s.DecryptValue(`{"Data":"plaintext"}`, "key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing")
 	assert.Contains(t, err.Error(), "prefix")
 }
 
 func TestTinkEncryptionStrategy_DecryptValue_InvalidBase64(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newTestAEAD(t)
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
-	_, err = s.DecryptValue("cb-enc:not-valid-base64!!!", "key")
+	_, err := s.DecryptValue("cb-enc:not-valid-base64!!!", "key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "base64")
 }
 
 func TestTinkEncryptionStrategy_DecryptValue_CorruptedCiphertext(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newTestAEAD(t)
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
 	corrupted := "cb-enc:" + base64.StdEncoding.EncodeToString([]byte("not-valid-ciphertext"))
-	_, err = s.DecryptValue(corrupted, "key")
+	_, err := s.DecryptValue(corrupted, "key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "decryption failed")
 }
 
 func TestTinkEncryptionStrategy_DecryptValue_WrongAAD(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newTestAEAD(t)
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
@@ -125,6 +132,17 @@ func TestTinkEncryptionStrategy_DecryptValue_WrongAAD(t *testing.T) {
 	_, err = s.DecryptValue(encrypted, "wrong-key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "decryption failed")
+}
+
+func TestTinkEncryptionStrategy_EncryptValue_AEADError(t *testing.T) {
+	s := NewTinkEncryptionStrategy(&failingAEAD{
+		encryptErr: errors.New("hardware fault"),
+	})
+
+	_, err := s.EncryptValue([]byte("data"), "key")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "encrypting value")
+	assert.Contains(t, err.Error(), "hardware fault")
 }
 
 func TestTinkEncryptionStrategy_Close_WithCloser(t *testing.T) {
@@ -140,11 +158,10 @@ func TestTinkEncryptionStrategy_Close_WithCloser(t *testing.T) {
 }
 
 func TestTinkEncryptionStrategy_Close_WithoutCloser(t *testing.T) {
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newTestAEAD(t)
 
 	s := NewTinkEncryptionStrategy(testAEAD)
-	err = s.Close()
+	err := s.Close()
 	assert.NoError(t, err)
 }
 
@@ -163,4 +180,17 @@ func (c *closableAEAD) Decrypt(ciphertext, associatedData []byte) ([]byte, error
 
 func (c *closableAEAD) Close() error {
 	return c.closeFn()
+}
+
+// failingAEAD is a test double that returns errors on demand.
+type failingAEAD struct {
+	encryptErr error
+}
+
+func (f *failingAEAD) Encrypt(plaintext, associatedData []byte) ([]byte, error) {
+	return nil, f.encryptErr
+}
+
+func (f *failingAEAD) Decrypt(ciphertext, associatedData []byte) ([]byte, error) {
+	return ciphertext, nil
 }

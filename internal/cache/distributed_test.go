@@ -12,8 +12,20 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tink-crypto/tink-go/v2/aead"
+	"github.com/tink-crypto/tink-go/v2/keyset"
+	"github.com/tink-crypto/tink-go/v2/tink"
 	"github.com/valkey-io/valkey-go"
 )
+
+func newIntegrationTestAEAD(t testing.TB) tink.AEAD {
+	t.Helper()
+	handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
+	require.NoError(t, err)
+	primitive, err := encryption.NewAEAD(handle)
+	require.NoError(t, err)
+	return primitive
+}
 
 func setupValkey(t *testing.T) valkey.Client {
 	t.Helper()
@@ -180,8 +192,7 @@ func TestIntegrationDistributed_JSONRoundTrip(t *testing.T) {
 
 func TestIntegrationDistributed_EncryptionRoundTrip(t *testing.T) {
 	client := setupValkey(t)
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newIntegrationTestAEAD(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
@@ -205,8 +216,7 @@ func TestIntegrationDistributed_EncryptionRoundTrip(t *testing.T) {
 
 func TestIntegrationDistributed_EncryptionKeyPrefix(t *testing.T) {
 	client := setupValkey(t)
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newIntegrationTestAEAD(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
@@ -231,8 +241,7 @@ func TestIntegrationDistributed_EncryptionKeyPrefix(t *testing.T) {
 
 func TestIntegrationDistributed_EncryptionValuePrefix(t *testing.T) {
 	client := setupValkey(t)
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newIntegrationTestAEAD(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
@@ -255,8 +264,7 @@ func TestIntegrationDistributed_EncryptionValuePrefix(t *testing.T) {
 
 func TestIntegrationDistributed_DecryptionFailure_CorruptedCiphertext(t *testing.T) {
 	client := setupValkey(t)
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newIntegrationTestAEAD(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
@@ -281,8 +289,7 @@ func TestIntegrationDistributed_DecryptionFailure_CorruptedCiphertext(t *testing
 
 func TestIntegrationDistributed_DecryptionFailure_MissingPrefix(t *testing.T) {
 	client := setupValkey(t)
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newIntegrationTestAEAD(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
@@ -306,8 +313,7 @@ func TestIntegrationDistributed_DecryptionFailure_MissingPrefix(t *testing.T) {
 
 func TestIntegrationDistributed_DecryptionFailure_InvalidBase64(t *testing.T) {
 	client := setupValkey(t)
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newIntegrationTestAEAD(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
@@ -331,8 +337,7 @@ func TestIntegrationDistributed_DecryptionFailure_InvalidBase64(t *testing.T) {
 
 func TestIntegrationDistributed_DecryptionFailure_WrongAAD(t *testing.T) {
 	client := setupValkey(t)
-	testAEAD, err := encryption.NewTestAEAD()
-	require.NoError(t, err)
+	testAEAD := newIntegrationTestAEAD(t)
 
 	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, NewTinkEncryptionStrategy(testAEAD))
 	require.NoError(t, err)
