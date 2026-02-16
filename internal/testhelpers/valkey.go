@@ -5,6 +5,8 @@ package testhelpers
 import (
 	"context"
 	"crypto/rand"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
@@ -13,6 +15,9 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/log"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/tink-crypto/tink-go/v2/aead"
+	"github.com/tink-crypto/tink-go/v2/insecurecleartextkeyset"
+	"github.com/tink-crypto/tink-go/v2/keyset"
 )
 
 // RunValkeyContainer starts a Valkey container and returns the configuration
@@ -56,6 +61,9 @@ func RunValkeyContainer(t *testing.T) config.CacheConfig {
 	// Use 127.0.0.1 explicitly to avoid IPv6 issues
 	endpoint := "127.0.0.1:" + port.Port()
 
+	// Generate a cleartext keyset file for integration test encryption.
+	keysetFile := writeTestKeyset(t)
+
 	return config.CacheConfig{
 		Type: "valkey",
 		Valkey: config.ValkeyConfig{
@@ -64,5 +72,29 @@ func RunValkeyContainer(t *testing.T) config.CacheConfig {
 			Username: "default",
 			Password: password,
 		},
+		Encryption: config.CacheEncryptionConfig{
+			Enabled:    true,
+			KeysetFile: keysetFile,
+		},
 	}
+}
+
+// writeTestKeyset generates an AES256-GCM Tink keyset and writes it as
+// cleartext JSON to a temp file. The file is cleaned up automatically via
+// t.TempDir().
+func writeTestKeyset(t *testing.T) string {
+	t.Helper()
+
+	handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
+	require.NoError(t, err)
+
+	keysetPath := filepath.Join(t.TempDir(), "test-keyset.json")
+	f, err := os.Create(keysetPath)
+	require.NoError(t, err)
+	defer f.Close()
+
+	err = insecurecleartextkeyset.Write(handle, keyset.NewJSONWriter(f))
+	require.NoError(t, err)
+
+	return keysetPath
 }

@@ -48,6 +48,22 @@ func NewRefreshableAEAD(ctx context.Context, keysetURI, kmsEnvelopeKeyURI string
 	return newRefreshableAEAD(ctx, loader, 15*time.Minute)
 }
 
+// NewRefreshableAEADFromFile creates an AEAD that refreshes its keyset from a
+// cleartext JSON file every 15 minutes. Intended for local development only.
+// The file is re-read on each refresh, enabling key rotation testing by
+// updating the file on disk.
+func NewRefreshableAEADFromFile(ctx context.Context, filePath string) (*RefreshableAEAD, error) {
+	loader := func(_ context.Context) (tink.AEAD, error) {
+		handle, err := LoadKeysetFromFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+		return NewAEAD(handle)
+	}
+
+	return newRefreshableAEAD(ctx, loader, 15*time.Minute)
+}
+
 // newRefreshableAEAD is the internal constructor that accepts a loader and
 // interval, enabling testing with short intervals and fake AEADs.
 func newRefreshableAEAD(ctx context.Context, loader aeadLoader, interval time.Duration) (*RefreshableAEAD, error) {

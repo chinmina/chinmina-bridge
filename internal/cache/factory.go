@@ -56,11 +56,15 @@ func NewFromConfig[T any](
 		// Initialize encryption strategy if enabled.
 		var strategy EncryptionStrategy
 		if cacheConfig.Encryption.Enabled {
-			aead, err := encryption.NewRefreshableAEAD(
-				ctx,
-				cacheConfig.Encryption.KeysetURI,
-				cacheConfig.Encryption.KMSEnvelopeKeyURI,
-			)
+			var aead *encryption.RefreshableAEAD
+			var err error
+
+			switch {
+			case cacheConfig.Encryption.KeysetFile != "":
+				aead, err = encryption.NewRefreshableAEADFromFile(ctx, cacheConfig.Encryption.KeysetFile)
+			default:
+				aead, err = encryption.NewRefreshableAEAD(ctx, cacheConfig.Encryption.KeysetURI, cacheConfig.Encryption.KMSEnvelopeKeyURI)
+			}
 			if err != nil {
 				valkeyClient.Close()
 				return nil, fmt.Errorf("initializing encryption: %w", err)
