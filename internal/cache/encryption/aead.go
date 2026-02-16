@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/tink-crypto/tink-go-awskms/v3/integration/awskms"
 	"github.com/tink-crypto/tink-go/v2/aead"
+	"github.com/tink-crypto/tink-go/v2/insecurecleartextkeyset"
 	"github.com/tink-crypto/tink-go/v2/keyset"
 	"github.com/tink-crypto/tink-go/v2/tink"
 )
@@ -154,4 +156,22 @@ func readKeysetFromSecretsManager(ctx context.Context, uri string, client Secret
 	}
 
 	return keyset.NewJSONReader(strings.NewReader(*result.SecretString)), nil
+}
+
+// LoadKeysetFromFile reads a cleartext Tink keyset JSON file and returns
+// the keyset handle. This is intended for local development only — production
+// deployments should use LoadKeysetFromAWS with envelope encryption.
+func LoadKeysetFromFile(path string) (*keyset.Handle, error) {
+	f, err := os.Open(path) //nolint:gosec // path is from trusted configuration, not user input
+	if err != nil {
+		return nil, fmt.Errorf("opening keyset file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	handle, err := insecurecleartextkeyset.Read(keyset.NewJSONReader(f))
+	if err != nil {
+		return nil, fmt.Errorf("reading cleartext keyset: %w", err)
+	}
+
+	return handle, nil
 }

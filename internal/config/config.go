@@ -62,11 +62,17 @@ type CacheEncryptionConfig struct {
 
 	// KeysetURI is the URI to the encrypted Tink keyset.
 	// Format: aws-secretsmanager://secret-name
+	// Mutually exclusive with KeysetFile.
 	KeysetURI string `env:"CACHE_ENCRYPTION_KEYSET_URI"`
 
 	// KMSEnvelopeKeyURI is the AWS KMS key URI for envelope encryption.
 	// Format: aws-kms://arn:aws:kms:region:account:key/key-id
+	// Required when KeysetURI is set.
 	KMSEnvelopeKeyURI string `env:"CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI"`
+
+	// KeysetFile is a path to a cleartext Tink keyset JSON file.
+	// For local development only — mutually exclusive with KeysetURI/KMSEnvelopeKeyURI.
+	KeysetFile string `env:"CACHE_ENCRYPTION_KEYSET_FILE"`
 }
 
 type AuthorizationConfig struct {
@@ -132,13 +138,26 @@ func (c *CacheConfig) Validate() error {
 		return fmt.Errorf("cache encryption requires CACHE_TYPE=valkey")
 	}
 
-	// Encryption requires keyset and KMS URIs
+	// Encryption requires either file-based or AWS-based keyset config
 	if c.Encryption.Enabled {
-		if c.Encryption.KeysetURI == "" {
-			return fmt.Errorf("CACHE_ENCRYPTION_KEYSET_URI required when encryption enabled")
+		hasAWS := c.Encryption.KeysetURI != "" || c.Encryption.KMSEnvelopeKeyURI != ""
+		hasFile := c.Encryption.KeysetFile != ""
+
+		if hasFile && hasAWS {
+			return fmt.Errorf("CACHE_ENCRYPTION_KEYSET_FILE is mutually exclusive with CACHE_ENCRYPTION_KEYSET_URI/CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI")
 		}
-		if c.Encryption.KMSEnvelopeKeyURI == "" {
-			return fmt.Errorf("CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI required when encryption enabled")
+
+		if !hasFile && !hasAWS {
+			return fmt.Errorf("encryption enabled but no keyset source configured: set CACHE_ENCRYPTION_KEYSET_FILE or CACHE_ENCRYPTION_KEYSET_URI with CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI")
+		}
+
+		if hasAWS {
+			if c.Encryption.KeysetURI == "" {
+				return fmt.Errorf("CACHE_ENCRYPTION_KEYSET_URI required when CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI is set")
+			}
+			if c.Encryption.KMSEnvelopeKeyURI == "" {
+				return fmt.Errorf("CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI required when CACHE_ENCRYPTION_KEYSET_URI is set")
+			}
 		}
 	}
 

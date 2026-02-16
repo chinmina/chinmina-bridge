@@ -112,7 +112,7 @@ func TestCacheConfig_Validate_Success(t *testing.T) {
 			},
 		},
 		{
-			name: "valkey with encryption",
+			name: "valkey with AWS encryption",
 			config: CacheConfig{
 				Type: "valkey",
 				Valkey: ValkeyConfig{
@@ -122,6 +122,19 @@ func TestCacheConfig_Validate_Success(t *testing.T) {
 					Enabled:           true,
 					KeysetURI:         "aws-secretsmanager://my-keyset",
 					KMSEnvelopeKeyURI: "aws-kms://arn:aws:kms:us-east-1:123456789012:key/abc",
+				},
+			},
+		},
+		{
+			name: "valkey with file encryption",
+			config: CacheConfig{
+				Type: "valkey",
+				Valkey: ValkeyConfig{
+					Address: "localhost:6379",
+				},
+				Encryption: CacheEncryptionConfig{
+					Enabled:    true,
+					KeysetFile: "/path/to/keyset.json",
 				},
 			},
 		},
@@ -154,7 +167,7 @@ func TestCacheConfig_Validate_Failures(t *testing.T) {
 			expectedErr: "cache encryption requires CACHE_TYPE=valkey",
 		},
 		{
-			name: "encryption requires keyset URI",
+			name: "AWS encryption requires keyset URI when KMS URI set",
 			config: CacheConfig{
 				Type: "valkey",
 				Valkey: ValkeyConfig{
@@ -165,10 +178,10 @@ func TestCacheConfig_Validate_Failures(t *testing.T) {
 					KMSEnvelopeKeyURI: "aws-kms://arn:aws:kms:us-east-1:123456789012:key/abc",
 				},
 			},
-			expectedErr: "CACHE_ENCRYPTION_KEYSET_URI required when encryption enabled",
+			expectedErr: "CACHE_ENCRYPTION_KEYSET_URI required when CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI is set",
 		},
 		{
-			name: "encryption requires KMS URI",
+			name: "AWS encryption requires KMS URI when keyset URI set",
 			config: CacheConfig{
 				Type: "valkey",
 				Valkey: ValkeyConfig{
@@ -179,7 +192,51 @@ func TestCacheConfig_Validate_Failures(t *testing.T) {
 					KeysetURI: "aws-secretsmanager://my-keyset",
 				},
 			},
-			expectedErr: "CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI required when encryption enabled",
+			expectedErr: "CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI required when CACHE_ENCRYPTION_KEYSET_URI is set",
+		},
+		{
+			name: "encryption enabled with no keyset source",
+			config: CacheConfig{
+				Type: "valkey",
+				Valkey: ValkeyConfig{
+					Address: "localhost:6379",
+				},
+				Encryption: CacheEncryptionConfig{
+					Enabled: true,
+				},
+			},
+			expectedErr: "encryption enabled but no keyset source configured",
+		},
+		{
+			name: "file and AWS keyset are mutually exclusive",
+			config: CacheConfig{
+				Type: "valkey",
+				Valkey: ValkeyConfig{
+					Address: "localhost:6379",
+				},
+				Encryption: CacheEncryptionConfig{
+					Enabled:           true,
+					KeysetFile:        "/path/to/keyset.json",
+					KeysetURI:         "aws-secretsmanager://my-keyset",
+					KMSEnvelopeKeyURI: "aws-kms://arn:aws:kms:us-east-1:123456789012:key/abc",
+				},
+			},
+			expectedErr: "CACHE_ENCRYPTION_KEYSET_FILE is mutually exclusive",
+		},
+		{
+			name: "file and partial AWS config are mutually exclusive",
+			config: CacheConfig{
+				Type: "valkey",
+				Valkey: ValkeyConfig{
+					Address: "localhost:6379",
+				},
+				Encryption: CacheEncryptionConfig{
+					Enabled:    true,
+					KeysetFile: "/path/to/keyset.json",
+					KeysetURI:  "aws-secretsmanager://my-keyset",
+				},
+			},
+			expectedErr: "CACHE_ENCRYPTION_KEYSET_FILE is mutually exclusive",
 		},
 		{
 			name: "valkey requires address",
