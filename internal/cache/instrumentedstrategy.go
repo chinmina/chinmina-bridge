@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -60,6 +61,7 @@ func (s *InstrumentedStrategy) EncryptValue(ctx context.Context, token []byte, k
 	duration := time.Since(start)
 	recordEncryptionDuration(ctx, "encrypt", duration)
 	recordEncryptionOutcome(ctx, "encrypt", err)
+	setEncryptionSpanAttributes(ctx, "encrypt", duration, err)
 
 	return result, err
 }
@@ -72,6 +74,7 @@ func (s *InstrumentedStrategy) DecryptValue(ctx context.Context, value string, k
 	duration := time.Since(start)
 	recordEncryptionDuration(ctx, "decrypt", duration)
 	recordEncryptionOutcome(ctx, "decrypt", err)
+	setEncryptionSpanAttributes(ctx, "decrypt", duration, err)
 
 	return result, err
 }
@@ -82,6 +85,18 @@ func (s *InstrumentedStrategy) StorageKey(key string) string {
 
 func (s *InstrumentedStrategy) Close() error {
 	return s.wrapped.Close()
+}
+
+func setEncryptionSpanAttributes(ctx context.Context, operation string, duration time.Duration, err error) {
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.Float64("cache."+operation+".duration", duration.Seconds()),
+		attribute.String("cache."+operation+".outcome", outcome),
+	)
 }
 
 func recordEncryptionDuration(ctx context.Context, operation string, duration time.Duration) {

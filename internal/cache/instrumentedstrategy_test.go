@@ -7,6 +7,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 type mockStrategy struct {
@@ -133,4 +136,116 @@ func TestInstrumentedStrategy_Close_Error(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t, expectedErr, err)
+}
+
+// tracedContext creates a context with an active span backed by a SpanRecorder,
+// returning the context and a function to retrieve the finished span's attributes.
+func tracedContext(t *testing.T) (context.Context, func() []attribute.KeyValue) {
+	t.Helper()
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	ctx, span := tp.Tracer("test").Start(t.Context(), t.Name())
+
+	return ctx, func() []attribute.KeyValue {
+		span.End()
+		spans := recorder.Ended()
+		require.Len(t, spans, 1, "expected exactly one recorded span")
+		return spans[0].Attributes()
+	}
+}
+
+func spanAttribute(attrs []attribute.KeyValue, key string) (attribute.Value, bool) {
+	for _, a := range attrs {
+		if string(a.Key) == key {
+			return a.Value, true
+		}
+	}
+	return attribute.Value{}, false
+}
+
+func TestInstrumentedStrategy_EncryptValue_SpanAttributes(t *testing.T) {
+	tests := []struct {
+		name            string
+		mock            *mockStrategy
+		expectedOutcome string
+	}{
+		{
+			name:            "success",
+			mock:            &mockStrategy{encryptResult: "encrypted"},
+			expectedOutcome: "success",
+		},
+		{
+			name:            "error",
+			mock:            &mockStrategy{encryptErr: errors.New("encrypt failed")},
+			expectedOutcome: "error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, getAttrs := tracedContext(t)
+			instrumented := NewInstrumentedStrategy(tt.mock)
+
+			_, _ = instrumented.EncryptValue(ctx, []byte("plaintext"), "key")
+
+			attrs := getAttrs()
+
+			dur, ok := spanAttribute(attrs, "cache.encrypt.duration")
+			require.True(t, ok, "missing cache.encrypt.duration attribute")
+			assert.GreaterOrEqual(t, dur.AsFloat64(), 0.0)
+
+			outcome, ok := spanAttribute(attrs, "cache.encrypt.outcome")
+			require.True(t, ok, "missing cache.encrypt.outcome attribute")
+			assert.Equal(t, tt.expectedOutcome, outcome.AsString())
+		})
+	}
+}
+
+func TestInstrumentedStrategy_DecryptValue_SpanAttributes(t *testing.T) {
+	tests := []struct {
+		name            string
+		mock            *mockStrategy
+		expectedOutcome string
+	}{
+		{
+			name:            "success",
+			mock:            &mockStrategy{decryptResult: []byte("plaintext")},
+			expectedOutcome: "success",
+		},
+		{
+			name:            "error",
+			mock:            &mockStrategy{decryptErr: errors.New("decrypt failed")},
+			expectedOutcome: "error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, getAttrs := tracedContext(t)
+			instrumented := NewInstrumentedStrategy(tt.mock)
+
+			_, _ = instrumented.DecryptValue(ctx, "encrypted-value", "key")
+
+			attrs := getAttrs()
+
+			dur, ok := spanAttribute(attrs, "cache.decrypt.duration")
+			require.True(t, ok, "missing cache.decrypt.duration attribute")
+			assert.GreaterOrEqual(t, dur.AsFloat64(), 0.0)
+
+			outcome, ok := spanAttribute(attrs, "cache.decrypt.outcome")
+			require.True(t, ok, "missing cache.decrypt.outcome attribute")
+			assert.Equal(t, tt.expectedOutcome, outcome.AsString())
+		})
+	}
+}
+
+func TestInstrumentedStrategy_NoSpanInContext(t *testing.T) {
+	// Verifies no panic when context has no active span (uses the no-op span).
+	mock := &mockStrategy{encryptResult: "encrypted"}
+	instrumented := NewInstrumentedStrategy(mock)
+
+	result, err := instrumented.EncryptValue(t.Context(), []byte("plaintext"), "key")
+
+	require.NoError(t, err)
+	assert.Equal(t, "encrypted", result)
 }
