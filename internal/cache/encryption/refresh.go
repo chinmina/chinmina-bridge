@@ -19,12 +19,13 @@ type aeadLoader func(ctx context.Context) (tink.AEAD, error)
 // without service restart. Refresh failures are logged but non-fatal: the
 // existing keyset continues to be used.
 type RefreshableAEAD struct {
-	mu        sync.RWMutex
-	aead      tink.AEAD
-	loader    aeadLoader
-	stopCh    chan struct{}
-	doneCh    chan struct{}
-	closeOnce sync.Once
+	mu         sync.RWMutex
+	aead       tink.AEAD
+	loader     aeadLoader
+	stopCh     chan struct{}
+	doneCh     chan struct{}
+	loopCancel context.CancelFunc
+	closeOnce  sync.Once
 }
 
 // NewRefreshableAEAD creates an AEAD that refreshes its keyset every 15 minutes.
@@ -55,14 +56,17 @@ func newRefreshableAEAD(ctx context.Context, loader aeadLoader, interval time.Du
 		return nil, fmt.Errorf("loading initial AEAD: %w", err)
 	}
 
+	loopCtx, loopCancel := context.WithCancel(ctx)
+
 	r := &RefreshableAEAD{
-		aead:   initial,
-		loader: loader,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		aead:       initial,
+		loader:     loader,
+		stopCh:     make(chan struct{}),
+		doneCh:     make(chan struct{}),
+		loopCancel: loopCancel,
 	}
 
-	go r.refreshLoop(ctx, interval)
+	go r.refreshLoop(loopCtx, interval)
 
 	return r, nil
 }
@@ -84,7 +88,10 @@ func (r *RefreshableAEAD) Decrypt(ciphertext, associatedData []byte) ([]byte, er
 // Close stops the refresh goroutine and waits for it to exit. It is safe to
 // call multiple times or concurrently.
 func (r *RefreshableAEAD) Close() error {
-	r.closeOnce.Do(func() { close(r.stopCh) })
+	r.closeOnce.Do(func() {
+		close(r.stopCh)
+		r.loopCancel()
+	})
 	<-r.doneCh
 	return nil
 }

@@ -146,6 +146,47 @@ func TestRefreshableAEAD_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
+func TestRefreshableAEAD_CloseCancelsInflightRefresh(t *testing.T) {
+	ctx := context.Background()
+	loaderStarted := make(chan struct{})
+
+	calls := atomic.Int32{}
+	loader := func(ctx context.Context) (tink.AEAD, error) {
+		n := calls.Add(1)
+		if n == 1 {
+			return &recordingAEAD{}, nil
+		}
+		// Signal that the slow refresh has started, then block until
+		// the context is cancelled (which Close should trigger).
+		close(loaderStarted)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	r, err := newRefreshableAEAD(ctx, loader, 10*time.Millisecond)
+	require.NoError(t, err)
+
+	// Wait for the slow refresh call to be in-flight.
+	select {
+	case <-loaderStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for refresh to start")
+	}
+
+	// Close should return promptly because it cancels the in-flight loader.
+	done := make(chan struct{})
+	go func() {
+		assert.NoError(t, r.Close())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Close blocked despite in-flight refresh; context cancellation not working")
+	}
+}
+
 func TestRefreshableAEAD_DoubleCloseIsSafe(t *testing.T) {
 	ctx := context.Background()
 	r, err := newRefreshableAEAD(ctx, staticLoader(&recordingAEAD{}), time.Hour)
