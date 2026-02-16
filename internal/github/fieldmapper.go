@@ -29,8 +29,7 @@ func NewFieldMapper[T any]() (*FieldMapper[T], error) {
 
 	fields := make(map[string]reflect.StructField)
 
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
+	for field := range t.Fields() {
 
 		// Only include string and *string fields
 		isString := field.Type.Kind() == reflect.String

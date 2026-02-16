@@ -17,17 +17,17 @@ func TestScopesToPermissions(t *testing.T) {
 			name:   "valid scopes",
 			scopes: []string{"contents:read", "packages:write"},
 			expected: &api.InstallationPermissions{
-				Contents: api.Ptr("read"),
-				Packages: api.Ptr("write"),
+				Contents: new("read"),
+				Packages: new("write"),
 			},
 		},
 		{
 			name:   "multiple scopes",
 			scopes: []string{"pull_requests:write", "actions:read", "metadata:read"},
 			expected: &api.InstallationPermissions{
-				PullRequests: api.Ptr("write"),
-				Actions:      api.Ptr("read"),
-				Metadata:     api.Ptr("read"),
+				PullRequests: new("write"),
+				Actions:      new("read"),
+				Metadata:     new("read"),
 			},
 		},
 	}

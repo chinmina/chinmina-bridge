@@ -68,7 +68,7 @@ func TestCreateAccessToken_Succeeds(t *testing.T) {
 		actualInstallation = r.PathValue("installationID")
 
 		JSON(w, &api.InstallationToken{
-			Token:     api.Ptr("expected-token"),
+			Token:     new("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -108,7 +108,7 @@ func TestCreateAccessToken_Succeeds_If_Some_URLs_Valid(t *testing.T) {
 		actualInstallation = r.PathValue("installationID")
 
 		JSON(w, &api.InstallationToken{
-			Token:     api.Ptr("expected-token"),
+			Token:     new("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -182,7 +182,7 @@ func TestTransportOptions(t *testing.T) {
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
 
 		JSON(w, &api.InstallationToken{
-			Token:     api.Ptr("expected-token"),
+			Token:     new("expected-token"),
 			ExpiresAt: &api.Timestamp{Time: expectedExpiry},
 		})
 	})
@@ -240,9 +240,9 @@ func TestGetFileContent_Succeeds(t *testing.T) {
 
 	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, &api.RepositoryContent{
-			Type:     api.Ptr("file"),
-			Content:  api.Ptr(base64.StdEncoding.EncodeToString([]byte("expected content"))),
-			Encoding: api.Ptr("base64"),
+			Type:     new("file"),
+			Content:  new(base64.StdEncoding.EncodeToString([]byte("expected content"))),
+			Encoding: new("base64"),
 		})
 	})
 
@@ -267,12 +267,12 @@ func TestGetFileContent_Fails_On_Directory(t *testing.T) {
 	router.HandleFunc("GET /repos/{owner}/{repo}/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, []*api.RepositoryContent{
 			{
-				Type: api.Ptr("file"),
-				Name: api.Ptr("file1.txt"),
+				Type: new("file"),
+				Name: new("file1.txt"),
 			},
 			{
-				Type: api.Ptr("file"),
-				Name: api.Ptr("file2.txt"),
+				Type: new("file"),
+				Name: new("file2.txt"),
 			},
 		})
 	})
