@@ -2,6 +2,7 @@ package encryption
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -18,11 +19,12 @@ type aeadLoader func(ctx context.Context) (tink.AEAD, error)
 // without service restart. Refresh failures are logged but non-fatal: the
 // existing keyset continues to be used.
 type RefreshableAEAD struct {
-	mu     sync.RWMutex
-	aead   tink.AEAD
-	loader aeadLoader
-	stopCh chan struct{}
-	doneCh chan struct{}
+	mu        sync.RWMutex
+	aead      tink.AEAD
+	loader    aeadLoader
+	stopCh    chan struct{}
+	doneCh    chan struct{}
+	closeOnce sync.Once
 }
 
 // NewRefreshableAEAD creates an AEAD that refreshes its keyset every 15 minutes.
@@ -33,9 +35,13 @@ func NewRefreshableAEAD(ctx context.Context, keysetURI, kmsEnvelopeKeyURI string
 	loader := func(ctx context.Context) (tink.AEAD, error) {
 		handle, err := LoadKeysetFromAWS(ctx, keysetURI, kmsEnvelopeKeyURI)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("loading keyset from AWS: %w", err)
 		}
-		return NewAEAD(handle)
+		aead, err := NewAEAD(handle)
+		if err != nil {
+			return nil, fmt.Errorf("creating AEAD from keyset: %w", err)
+		}
+		return aead, nil
 	}
 
 	return newRefreshableAEAD(ctx, loader, 15*time.Minute)
@@ -46,7 +52,7 @@ func NewRefreshableAEAD(ctx context.Context, keysetURI, kmsEnvelopeKeyURI string
 func newRefreshableAEAD(ctx context.Context, loader aeadLoader, interval time.Duration) (*RefreshableAEAD, error) {
 	initial, err := loader(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("loading initial AEAD: %w", err)
 	}
 
 	r := &RefreshableAEAD{
@@ -75,9 +81,10 @@ func (r *RefreshableAEAD) Decrypt(ciphertext, associatedData []byte) ([]byte, er
 	return r.aead.Decrypt(ciphertext, associatedData)
 }
 
-// Close stops the refresh goroutine and waits for it to exit.
+// Close stops the refresh goroutine and waits for it to exit. It is safe to
+// call multiple times or concurrently.
 func (r *RefreshableAEAD) Close() error {
-	close(r.stopCh)
+	r.closeOnce.Do(func() { close(r.stopCh) })
 	<-r.doneCh
 	return nil
 }

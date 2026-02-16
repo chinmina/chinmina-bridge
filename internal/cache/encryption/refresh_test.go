@@ -39,6 +39,7 @@ func TestRefreshableAEAD_InitialLoadFailure(t *testing.T) {
 
 	assert.Nil(t, r)
 	assert.ErrorIs(t, err, loadErr)
+	assert.ErrorContains(t, err, "loading initial AEAD")
 }
 
 func TestRefreshableAEAD_RefreshReplacesAEAD(t *testing.T) {
@@ -143,6 +144,15 @@ func TestRefreshableAEAD_ConcurrentAccess(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+func TestRefreshableAEAD_DoubleCloseIsSafe(t *testing.T) {
+	ctx := context.Background()
+	r, err := newRefreshableAEAD(ctx, staticLoader(&recordingAEAD{}), time.Hour)
+	require.NoError(t, err)
+
+	assert.NoError(t, r.Close())
+	assert.NoError(t, r.Close(), "second Close should not panic")
 }
 
 // -- test helpers --
