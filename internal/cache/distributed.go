@@ -61,7 +61,7 @@ func (d *Distributed[T]) Get(ctx context.Context, key string) (T, bool, error) {
 		return zero, false, fmt.Errorf("failed to convert cached value to string: %w", err)
 	}
 
-	data, err := d.strategy.DecryptValue(val, key)
+	data, err := d.strategy.DecryptValue(ctx, val, key)
 	if err != nil {
 		// Best-effort invalidation of the corrupted entry.
 		_ = d.client.Do(ctx, d.client.B().Del().Key(storageKey).Build()).Error()
@@ -85,7 +85,7 @@ func (d *Distributed[T]) Set(ctx context.Context, key string, token T) error {
 		return fmt.Errorf("failed to marshal token: %w", err)
 	}
 
-	value, err := d.strategy.EncryptValue(data, key)
+	value, err := d.strategy.EncryptValue(ctx, data, key)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt token: %w", err)
 	}
