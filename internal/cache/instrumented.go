@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -71,6 +72,7 @@ func (i *Instrumented[T]) Get(ctx context.Context, key string) (T, bool, error) 
 		status = "hit"
 	}
 	i.recordOperation(ctx, "get", status)
+	i.setSpanAttributes(ctx, "get", status, duration)
 
 	return value, found, err
 }
@@ -89,6 +91,7 @@ func (i *Instrumented[T]) Set(ctx context.Context, key string, value T) error {
 		status = "error"
 	}
 	i.recordOperation(ctx, "set", status)
+	i.setSpanAttributes(ctx, "set", status, duration)
 
 	return err
 }
@@ -107,6 +110,7 @@ func (i *Instrumented[T]) Invalidate(ctx context.Context, key string) error {
 		status = "error"
 	}
 	i.recordOperation(ctx, "invalidate", status)
+	i.setSpanAttributes(ctx, "invalidate", status, duration)
 
 	return err
 }
@@ -138,5 +142,14 @@ func (i *Instrumented[T]) recordDuration(ctx context.Context, operation string, 
 			attribute.String("cache.type", i.cacheType),
 			attribute.String("cache.operation", operation),
 		),
+	)
+}
+
+func (i *Instrumented[T]) setSpanAttributes(ctx context.Context, operation, status string, duration time.Duration) {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("cache.type", i.cacheType),
+		attribute.String("cache."+operation+".status", status),
+		attribute.Float64("cache."+operation+".duration", duration.Seconds()),
 	)
 }

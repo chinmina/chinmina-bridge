@@ -58,33 +58,36 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 
 			cachedToken, found, err := tokenCache.Get(ctx, key)
 			if err != nil {
+				// retrieval errors are effectively cache misses, but we record them
+				// separately to identify cache issues in production
+				recordOutcome(ctx, "error")
 				log.Warn().Err(err).Str("key", key).Msg("cache get failed")
-			} else if found {
-				log.Debug().Time("expiry", cachedToken.Expiry).
-					Str("key", key).
-					Msg("hit: existing token found for pipeline")
-
-				if token, ok := checkTokenRepository(cachedToken, requestedRepository); ok {
-					recordOutcome(ctx, "hit")
-					return NewVendorSuccess(token)
-				}
-
+			} else if !found {
+				// successfully found that the key is not in the cache
+				recordOutcome(ctx, "miss")
+			} else if token, ok := checkTokenRepository(cachedToken, requestedRepository); !ok {
+				// the pipeline's repository has changed since the token was cached, so
+				// we can't use the cached token -- treat as a cache miss and invalidate
+				// the cache
+				recordOutcome(ctx, "mismatch")
 				log.Debug().
 					Time("expiry", cachedToken.Expiry).
 					Str("key", key).
 					Str("requestedRepository", requestedRepository).
 					Msg("dropping cached token due to repository mismatch: will request new token")
 
-				recordOutcome(ctx, "mismatch")
-
-				// the delete is required as "set" is not guaranteed to write to the cache
+				// forced invalidation is more effective than setting the value to be
+				// empty -- some caches don't guarantee writes.
 				if err := tokenCache.Invalidate(ctx, key); err != nil {
 					log.Warn().Err(err).Str("key", key).Msg("cache invalidate failed")
 				}
+			} else {
+				// short circuit and return on a cache hit
+				recordOutcome(ctx, "hit")
+				return NewVendorSuccess(token)
 			}
 
 			// cache miss: request and cache
-			recordOutcome(ctx, "miss")
 			result := v(ctx, ref, requestedRepository)
 
 			// Only cache successful results
