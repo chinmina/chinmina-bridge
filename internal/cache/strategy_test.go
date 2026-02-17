@@ -25,12 +25,13 @@ func newTestAEAD(t testing.TB) tink.AEAD {
 func TestNoEncryptionStrategy_RoundTrip(t *testing.T) {
 	s := &NoEncryptionStrategy{}
 
+	ctx := t.Context()
 	input := []byte(`{"token":"abc123"}`)
-	encrypted, err := s.EncryptValue(input, "some-key")
+	encrypted, err := s.EncryptValue(ctx, input, "some-key")
 	require.NoError(t, err)
 	assert.Equal(t, string(input), encrypted)
 
-	decrypted, err := s.DecryptValue(encrypted, "some-key")
+	decrypted, err := s.DecryptValue(ctx, encrypted, "some-key")
 	require.NoError(t, err)
 	assert.Equal(t, input, decrypted)
 }
@@ -52,15 +53,16 @@ func TestTinkEncryptionStrategy_RoundTrip(t *testing.T) {
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
+	ctx := t.Context()
 	input := []byte(`{"token":"ghp_secret"}`)
 	key := "digest:profile://org/repo"
 
-	encrypted, err := s.EncryptValue(input, key)
+	encrypted, err := s.EncryptValue(ctx, input, key)
 	require.NoError(t, err)
 	assert.True(t, len(encrypted) > len(valuePrefix), "encrypted value should be longer than prefix")
 	assert.Equal(t, valuePrefix, encrypted[:len(valuePrefix)])
 
-	decrypted, err := s.DecryptValue(encrypted, key)
+	decrypted, err := s.DecryptValue(ctx, encrypted, key)
 	require.NoError(t, err)
 	assert.Equal(t, input, decrypted)
 }
@@ -92,7 +94,7 @@ func TestTinkEncryptionStrategy_DecryptValue_MissingPrefix(t *testing.T) {
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
-	_, err := s.DecryptValue(`{"Data":"plaintext"}`, "key")
+	_, err := s.DecryptValue(t.Context(), `{"Data":"plaintext"}`, "key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing")
 	assert.Contains(t, err.Error(), "prefix")
@@ -103,7 +105,7 @@ func TestTinkEncryptionStrategy_DecryptValue_InvalidBase64(t *testing.T) {
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
-	_, err := s.DecryptValue("cb-enc:not-valid-base64!!!", "key")
+	_, err := s.DecryptValue(t.Context(), "cb-enc:not-valid-base64!!!", "key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "base64")
 }
@@ -114,7 +116,7 @@ func TestTinkEncryptionStrategy_DecryptValue_CorruptedCiphertext(t *testing.T) {
 	s := NewTinkEncryptionStrategy(testAEAD)
 
 	corrupted := "cb-enc:" + base64.StdEncoding.EncodeToString([]byte("not-valid-ciphertext"))
-	_, err := s.DecryptValue(corrupted, "key")
+	_, err := s.DecryptValue(t.Context(), corrupted, "key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "decryption failed")
 }
@@ -124,12 +126,14 @@ func TestTinkEncryptionStrategy_DecryptValue_WrongAAD(t *testing.T) {
 
 	s := NewTinkEncryptionStrategy(testAEAD)
 
+	ctx := t.Context()
+
 	// Encrypt with one key
-	encrypted, err := s.EncryptValue([]byte(`{"data":"test"}`), "correct-key")
+	encrypted, err := s.EncryptValue(ctx, []byte(`{"data":"test"}`), "correct-key")
 	require.NoError(t, err)
 
 	// Decrypt with a different key
-	_, err = s.DecryptValue(encrypted, "wrong-key")
+	_, err = s.DecryptValue(ctx, encrypted, "wrong-key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "decryption failed")
 }
@@ -139,7 +143,7 @@ func TestTinkEncryptionStrategy_EncryptValue_AEADError(t *testing.T) {
 		encryptErr: errors.New("hardware fault"),
 	})
 
-	_, err := s.EncryptValue([]byte("data"), "key")
+	_, err := s.EncryptValue(t.Context(), []byte("data"), "key")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "encrypting value")
 	assert.Contains(t, err.Error(), "hardware fault")

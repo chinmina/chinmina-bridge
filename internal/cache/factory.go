@@ -69,7 +69,7 @@ func NewFromConfig[T any](
 				valkeyClient.Close()
 				return nil, fmt.Errorf("initializing encryption: %w", err)
 			}
-			strategy = NewTinkEncryptionStrategy(aead)
+			strategy = NewInstrumentedStrategy(NewTinkEncryptionStrategy(aead))
 
 			log.Info().Msg("cache encryption enabled with automatic keyset refresh")
 		}

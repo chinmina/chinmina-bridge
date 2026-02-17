@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -22,11 +23,11 @@ const storageKeyPrefix = "enc:"
 type EncryptionStrategy interface {
 	// EncryptValue encrypts token bytes for storage. The key parameter is used
 	// as associated data to bind ciphertext to a specific cache entry.
-	EncryptValue(token []byte, key string) (string, error)
+	EncryptValue(ctx context.Context, token []byte, key string) (string, error)
 
 	// DecryptValue decrypts a stored value back to token bytes. The key
 	// parameter must match the key used during encryption.
-	DecryptValue(value string, key string) ([]byte, error)
+	DecryptValue(ctx context.Context, value string, key string) ([]byte, error)
 
 	// StorageKey returns the cache key, potentially decorated with a prefix.
 	StorageKey(key string) string
@@ -38,11 +39,11 @@ type EncryptionStrategy interface {
 // NoEncryptionStrategy is a pass-through that stores values as-is.
 type NoEncryptionStrategy struct{}
 
-func (s *NoEncryptionStrategy) EncryptValue(token []byte, _ string) (string, error) {
+func (s *NoEncryptionStrategy) EncryptValue(_ context.Context, token []byte, _ string) (string, error) {
 	return string(token), nil
 }
 
-func (s *NoEncryptionStrategy) DecryptValue(value string, _ string) ([]byte, error) {
+func (s *NoEncryptionStrategy) DecryptValue(_ context.Context, value string, _ string) ([]byte, error) {
 	return []byte(value), nil
 }
 
@@ -67,7 +68,7 @@ func NewTinkEncryptionStrategy(aead tink.AEAD) *TinkEncryptionStrategy {
 	return &TinkEncryptionStrategy{aead: aead}
 }
 
-func (s *TinkEncryptionStrategy) EncryptValue(token []byte, key string) (string, error) {
+func (s *TinkEncryptionStrategy) EncryptValue(_ context.Context, token []byte, key string) (string, error) {
 	ciphertext, err := s.aead.Encrypt(token, []byte(key))
 	if err != nil {
 		return "", fmt.Errorf("encrypting value: %w", err)
@@ -75,7 +76,7 @@ func (s *TinkEncryptionStrategy) EncryptValue(token []byte, key string) (string,
 	return valuePrefix + base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-func (s *TinkEncryptionStrategy) DecryptValue(value string, key string) ([]byte, error) {
+func (s *TinkEncryptionStrategy) DecryptValue(_ context.Context, value string, key string) ([]byte, error) {
 	if !strings.HasPrefix(value, valuePrefix) {
 		return nil, fmt.Errorf("missing %q prefix: value may be unencrypted or corrupted", valuePrefix)
 	}
