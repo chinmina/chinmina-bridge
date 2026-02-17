@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // mockCache is a mock implementation of TokenCache for testing.
@@ -206,4 +207,150 @@ func TestInstrumented_CacheType(t *testing.T) {
 			assert.Equal(t, tt.cacheType, instrumented.cacheType)
 		})
 	}
+}
+
+func TestInstrumented_Get_SpanAttributes(t *testing.T) {
+	tests := []struct {
+		name     string
+		mock     *mockCache[string]
+		expected struct {
+			status string
+		}
+	}{
+		{
+			name: "hit",
+			mock: &mockCache[string]{getValue: "token", getFound: true},
+			expected: struct{ status string }{
+				status: "hit",
+			},
+		},
+		{
+			name: "miss",
+			mock: &mockCache[string]{getFound: false},
+			expected: struct{ status string }{
+				status: "miss",
+			},
+		},
+		{
+			name: "error",
+			mock: &mockCache[string]{getError: errors.New("fail")},
+			expected: struct{ status string }{
+				status: "error",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, getAttrs := tracedContext(t)
+			instrumented := NewInstrumented(tt.mock, "test")
+
+			_, _, _ = instrumented.Get(ctx, "key")
+
+			attrs := getAttrs()
+			assertCacheSpanAttributes(t, attrs, "get", "test", tt.expected.status)
+		})
+	}
+}
+
+func TestInstrumented_Set_SpanAttributes(t *testing.T) {
+	tests := []struct {
+		name     string
+		mock     *mockCache[string]
+		expected struct {
+			status string
+		}
+	}{
+		{
+			name: "success",
+			mock: &mockCache[string]{},
+			expected: struct{ status string }{
+				status: "success",
+			},
+		},
+		{
+			name: "error",
+			mock: &mockCache[string]{setError: errors.New("fail")},
+			expected: struct{ status string }{
+				status: "error",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, getAttrs := tracedContext(t)
+			instrumented := NewInstrumented(tt.mock, "test")
+
+			_ = instrumented.Set(ctx, "key", "value")
+
+			attrs := getAttrs()
+			assertCacheSpanAttributes(t, attrs, "set", "test", tt.expected.status)
+		})
+	}
+}
+
+func TestInstrumented_Invalidate_SpanAttributes(t *testing.T) {
+	tests := []struct {
+		name     string
+		mock     *mockCache[string]
+		expected struct {
+			status string
+		}
+	}{
+		{
+			name: "success",
+			mock: &mockCache[string]{},
+			expected: struct{ status string }{
+				status: "success",
+			},
+		},
+		{
+			name: "error",
+			mock: &mockCache[string]{invError: errors.New("fail")},
+			expected: struct{ status string }{
+				status: "error",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, getAttrs := tracedContext(t)
+			instrumented := NewInstrumented(tt.mock, "test")
+
+			_ = instrumented.Invalidate(ctx, "key")
+
+			attrs := getAttrs()
+			assertCacheSpanAttributes(t, attrs, "invalidate", "test", tt.expected.status)
+		})
+	}
+}
+
+func TestInstrumented_NoSpanInContext(t *testing.T) {
+	mock := &mockCache[string]{getValue: "token", getFound: true}
+	instrumented := NewInstrumented(mock, "test")
+
+	// context.Background() has no span — should not panic
+	value, found, err := instrumented.Get(context.Background(), "key")
+
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "token", value)
+}
+
+func assertCacheSpanAttributes(t *testing.T, attrs []attribute.KeyValue, operation, cacheType, expectedStatus string) {
+	t.Helper()
+
+	cacheTypeAttr, ok := spanAttribute(attrs, "cache.type")
+	require.True(t, ok, "missing cache.type attribute")
+	assert.Equal(t, cacheType, cacheTypeAttr.AsString())
+
+	status, ok := spanAttribute(attrs, "cache."+operation+".status")
+	require.True(t, ok, "missing cache.%s.status attribute", operation)
+	assert.Equal(t, expectedStatus, status.AsString())
+
+	dur, ok := spanAttribute(attrs, "cache."+operation+".duration")
+	require.True(t, ok, "missing cache.%s.duration attribute", operation)
+	assert.GreaterOrEqual(t, dur.AsFloat64(), 0.0)
 }
