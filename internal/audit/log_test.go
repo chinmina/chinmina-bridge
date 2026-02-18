@@ -1,7 +1,9 @@
 package audit_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMiddleware(t *testing.T) {
@@ -220,8 +223,10 @@ func TestBuildkiteFieldsSerialization(t *testing.T) {
 	testhelpers.SetupLogger(t)
 
 	tests := []struct {
-		name  string
-		entry audit.Entry
+		name            string
+		entry           audit.Entry
+		expectedPresent []string
+		expectedAbsent  []string
 	}{
 		{
 			name: "all buildkite fields populated",
@@ -233,10 +238,12 @@ func TestBuildkiteFieldsSerialization(t *testing.T) {
 				StepKey:          "deploy",
 				BuildBranch:      "main",
 			},
+			expectedPresent: []string{"organizationSlug", "pipelineSlug", "jobID", "buildNumber", "stepKey", "buildBranch"},
 		},
 		{
-			name:  "all buildkite fields zero-valued",
-			entry: audit.Entry{},
+			name:           "all buildkite fields zero-valued",
+			entry:          audit.Entry{},
+			expectedAbsent: []string{"organizationSlug", "pipelineSlug", "jobID", "buildNumber", "stepKey", "buildBranch"},
 		},
 		{
 			name: "mixed - some fields set, some zero",
@@ -244,15 +251,26 @@ func TestBuildkiteFieldsSerialization(t *testing.T) {
 				OrganizationSlug: "acme",
 				BuildNumber:      1,
 			},
+			expectedPresent: []string{"organizationSlug", "buildNumber"},
+			expectedAbsent:  []string{"pipelineSlug", "jobID", "stepKey", "buildBranch"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Verify the marshaler doesn't panic and runs successfully
-			assert.NotPanics(t, func() {
-				tt.entry.MarshalZerologObject(zerolog.Dict())
-			})
+			var buf bytes.Buffer
+			logger := zerolog.New(&buf)
+			logger.Log().EmbedObject(&tt.entry).Send()
+
+			var result map[string]any
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+
+			for _, key := range tt.expectedPresent {
+				assert.Contains(t, result, key, "expected field %q to be present in log output", key)
+			}
+			for _, key := range tt.expectedAbsent {
+				assert.NotContains(t, result, key, "expected field %q to be absent from log output", key)
+			}
 		})
 	}
 }
