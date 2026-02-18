@@ -22,6 +22,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
 	"github.com/stretchr/testify/require"
+	"github.com/valkey-io/valkey-go"
 )
 
 // APITestHarness manages the complete test environment for API integration tests.
@@ -36,6 +37,8 @@ type APITestHarness struct {
 	BuildkiteMock       *testhelpers.MockBuildkiteServer
 	ProfileStore        *profile.ProfileStore
 	jwk                 jwxtest.JWK
+	valkeyAddr          string
+	valkeyPassword      string
 }
 
 // APITestHarnessOption configures the API test harness.
@@ -118,6 +121,8 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 	if cfg.Cache.Type == "valkey" {
 		cacheCfg := testhelpers.RunValkeyContainer(t)
 		cfg.Cache = cacheCfg
+		harness.valkeyAddr = cacheCfg.Valkey.Address
+		harness.valkeyPassword = cacheCfg.Valkey.Password
 	}
 
 	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore, &hooks)
@@ -193,6 +198,29 @@ func (h *APITestHarness) Client() *TestClient {
 		baseURL: h.Server.URL,
 		client:  http.DefaultClient,
 	}
+}
+
+// newTestValkeyClient returns a connected valkey client for direct Valkey
+// access in tests. Skips the test if this harness does not use Valkey.
+func (h *APITestHarness) newTestValkeyClient(t *testing.T) valkey.Client {
+	t.Helper()
+
+	if h.valkeyAddr == "" {
+		t.Skip("not a Valkey harness")
+	}
+
+	client, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress: []string{h.valkeyAddr},
+		Username:    "default",
+		Password:    h.valkeyPassword,
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		client.Close()
+	})
+
+	return client
 }
 
 // APIError represents a non-2xx response from the API.
