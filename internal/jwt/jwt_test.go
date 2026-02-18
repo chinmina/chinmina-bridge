@@ -158,7 +158,6 @@ func TestMiddleware(t *testing.T) {
 				assert.Equal(t, "test-pipeline", auditEntry.PipelineSlug)
 				assert.Equal(t, "default-jobid", auditEntry.JobID)
 				assert.Equal(t, 0, auditEntry.BuildNumber)
-				assert.Equal(t, "default-stepkey", auditEntry.StepKey)
 				assert.Equal(t, "default-buildbranch", auditEntry.BuildBranch)
 			} else {
 				assert.False(t, auditEntry.Authorized)
@@ -172,7 +171,6 @@ func TestMiddleware(t *testing.T) {
 				assert.Empty(t, auditEntry.PipelineSlug)
 				assert.Empty(t, auditEntry.JobID)
 				assert.Zero(t, auditEntry.BuildNumber)
-				assert.Empty(t, auditEntry.StepKey)
 				assert.Empty(t, auditEntry.BuildBranch)
 			}
 		})
@@ -194,7 +192,6 @@ func TestAuditClaimsMiddleware_SpanAttributes(t *testing.T) {
 		PipelineSlug:     "test-pipeline",
 		JobID:            "test-job-123",
 		BuildNumber:      42,
-		StepKey:          "test-step",
 		BuildBranch:      "test-branch",
 	}
 
@@ -229,7 +226,6 @@ func TestAuditClaimsMiddleware_SpanAttributes(t *testing.T) {
 		attribute.String("buildkite.pipeline_slug", "test-pipeline"),
 		attribute.String("buildkite.job_id", "test-job-123"),
 		attribute.Int("buildkite.build_number", 42),
-		attribute.String("buildkite.step_key", "test-step"),
 		attribute.String("buildkite.build_branch", "test-branch"),
 	}
 
@@ -247,7 +243,6 @@ func custom(org, pipeline string) BuildkiteClaims {
 		BuildNumber:      0,
 		BuildBranch:      "default-buildbranch",
 		BuildCommit:      "default-buildcommit",
-		StepKey:          "default-stepkey",
 		JobID:            "default-jobid",
 		AgentID:          "default-agentid",
 	}

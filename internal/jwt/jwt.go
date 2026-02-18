@@ -150,7 +150,6 @@ func auditClaimsMiddleware() func(next http.Handler) http.Handler {
 					entry.PipelineSlug = bkClaims.PipelineSlug
 					entry.JobID = bkClaims.JobID
 					entry.BuildNumber = bkClaims.BuildNumber
-					entry.StepKey = bkClaims.StepKey
 					entry.BuildBranch = bkClaims.BuildBranch
 
 					// Set span attributes for observability
@@ -160,7 +159,6 @@ func auditClaimsMiddleware() func(next http.Handler) http.Handler {
 						attribute.String("buildkite.pipeline_slug", bkClaims.PipelineSlug),
 						attribute.String("buildkite.job_id", bkClaims.JobID),
 						attribute.Int("buildkite.build_number", bkClaims.BuildNumber),
-						attribute.String("buildkite.step_key", bkClaims.StepKey),
 						attribute.String("buildkite.build_branch", bkClaims.BuildBranch),
 					)
 				}

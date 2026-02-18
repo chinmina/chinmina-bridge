@@ -67,7 +67,6 @@ type Entry struct {
 	PipelineSlug        string
 	JobID               string
 	BuildNumber         int
-	StepKey             string
 	BuildBranch         string
 	Error               string
 	Repositories        []string
@@ -110,10 +109,6 @@ func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 
 	if e.BuildNumber > 0 {
 		event.Int("buildNumber", e.BuildNumber)
-	}
-
-	if e.StepKey != "" {
-		event.Str("stepKey", e.StepKey)
 	}
 
 	if e.BuildBranch != "" {
