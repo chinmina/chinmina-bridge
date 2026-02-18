@@ -1,7 +1,9 @@
 package audit_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMiddleware(t *testing.T) {
@@ -212,6 +215,61 @@ func TestClaimMatchSerialization(t *testing.T) {
 			assert.NotPanics(t, func() {
 				tt.entry.MarshalZerologObject(zerolog.Dict())
 			})
+		})
+	}
+}
+
+func TestBuildkiteFieldsSerialization(t *testing.T) {
+	testhelpers.SetupLogger(t)
+
+	tests := []struct {
+		name            string
+		entry           audit.Entry
+		expectedPresent []string
+		expectedAbsent  []string
+	}{
+		{
+			name: "all buildkite fields populated",
+			entry: audit.Entry{
+				OrganizationSlug: "acme",
+				PipelineSlug:     "main-pipeline",
+				JobID:            "job-123",
+				BuildNumber:      42,
+				BuildBranch:      "main",
+			},
+			expectedPresent: []string{"organizationSlug", "pipelineSlug", "jobID", "buildNumber", "buildBranch"},
+		},
+		{
+			name:           "all buildkite fields zero-valued",
+			entry:          audit.Entry{},
+			expectedAbsent: []string{"organizationSlug", "pipelineSlug", "jobID", "buildNumber", "buildBranch"},
+		},
+		{
+			name: "mixed - some fields set, some zero",
+			entry: audit.Entry{
+				OrganizationSlug: "acme",
+				BuildNumber:      1,
+			},
+			expectedPresent: []string{"organizationSlug", "buildNumber"},
+			expectedAbsent:  []string{"pipelineSlug", "jobID", "buildBranch"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := zerolog.New(&buf)
+			logger.Log().EmbedObject(&tt.entry).Send()
+
+			var result map[string]any
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+
+			for _, key := range tt.expectedPresent {
+				assert.Contains(t, result, key, "expected field %q to be present in log output", key)
+			}
+			for _, key := range tt.expectedAbsent {
+				assert.NotContains(t, result, key, "expected field %q to be absent from log output", key)
+			}
 		})
 	}
 }

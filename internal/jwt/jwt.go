@@ -13,6 +13,8 @@ import (
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v3"
 	"github.com/auth0/go-jwt-middleware/v3/jwks"
 	"github.com/auth0/go-jwt-middleware/v3/validator"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/config"
@@ -140,6 +142,26 @@ func auditClaimsMiddleware() func(next http.Handler) http.Handler {
 				entry.AuthIssuer = reg.Issuer
 				entry.AuthAudience = reg.Audience
 				entry.AuthExpirySecs = reg.Expiry
+
+				// Populate Buildkite identity fields from custom claims
+				bkClaims := BuildkiteClaimsFromContext(r.Context())
+				if bkClaims != nil {
+					entry.OrganizationSlug = bkClaims.OrganizationSlug
+					entry.PipelineSlug = bkClaims.PipelineSlug
+					entry.JobID = bkClaims.JobID
+					entry.BuildNumber = bkClaims.BuildNumber
+					entry.BuildBranch = bkClaims.BuildBranch
+
+					// Set span attributes for observability
+					span := trace.SpanFromContext(r.Context())
+					span.SetAttributes(
+						attribute.String("buildkite.organization_slug", bkClaims.OrganizationSlug),
+						attribute.String("buildkite.pipeline_slug", bkClaims.PipelineSlug),
+						attribute.String("buildkite.job_id", bkClaims.JobID),
+						attribute.Int("buildkite.build_number", bkClaims.BuildNumber),
+						attribute.String("buildkite.build_branch", bkClaims.BuildBranch),
+					)
+				}
 			}
 
 			next.ServeHTTP(w, r)

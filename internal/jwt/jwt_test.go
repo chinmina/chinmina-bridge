@@ -16,6 +16,10 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 /*
@@ -149,6 +153,12 @@ func TestMiddleware(t *testing.T) {
 				assert.Equal(t, "subject", auditEntry.AuthSubject)
 				assert.ElementsMatch(t, []string{"audience"}, auditEntry.AuthAudience)
 				assert.NotZero(t, auditEntry.AuthExpirySecs)
+				// Verify Buildkite identity fields are populated from claims
+				assert.Equal(t, expectedOrganizationSlug, auditEntry.OrganizationSlug)
+				assert.Equal(t, "test-pipeline", auditEntry.PipelineSlug)
+				assert.Equal(t, "default-jobid", auditEntry.JobID)
+				assert.Equal(t, 0, auditEntry.BuildNumber)
+				assert.Equal(t, "default-buildbranch", auditEntry.BuildBranch)
 			} else {
 				assert.False(t, auditEntry.Authorized)
 				assert.NotEmpty(t, auditEntry.Error)
@@ -156,8 +166,71 @@ func TestMiddleware(t *testing.T) {
 				assert.Empty(t, auditEntry.AuthSubject)
 				assert.Empty(t, auditEntry.AuthAudience)
 				assert.Zero(t, auditEntry.AuthExpirySecs)
+				// Verify Buildkite identity fields remain zero-valued on auth failure
+				assert.Empty(t, auditEntry.OrganizationSlug)
+				assert.Empty(t, auditEntry.PipelineSlug)
+				assert.Empty(t, auditEntry.JobID)
+				assert.Zero(t, auditEntry.BuildNumber)
+				assert.Empty(t, auditEntry.BuildBranch)
 			}
 		})
+	}
+}
+
+func TestAuditClaimsMiddleware_SpanAttributes(t *testing.T) {
+	testhelpers.SetupLogger(t)
+
+	// Set up span recorder to capture span attributes
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := trace.NewTracerProvider(trace.WithSpanProcessor(spanRecorder))
+	otel.SetTracerProvider(tracerProvider)
+	tracer := tracerProvider.Tracer("test")
+
+	// Create test claims
+	claims := &BuildkiteClaims{
+		OrganizationSlug: "test-org",
+		PipelineSlug:     "test-pipeline",
+		JobID:            "test-job-123",
+		BuildNumber:      42,
+		BuildBranch:      "test-branch",
+	}
+
+	// Set up context with claims and span
+	ctx, span := tracer.Start(context.Background(), "test-span")
+	ctx = ContextWithBuildkiteClaims(ctx, claims)
+	ctx, _ = audit.Context(ctx)
+
+	// Create test request and response
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	// Call middleware
+	handler := auditClaimsMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	handler.ServeHTTP(w, req)
+
+	// End span explicitly to ensure it's recorded
+	span.End()
+
+	// Get recorded spans
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 1, "expected exactly one span to be recorded")
+	recordedSpan := spans[0]
+
+	// Verify span attributes
+	attrs := recordedSpan.Attributes()
+	expectedAttrs := []attribute.KeyValue{
+		attribute.String("buildkite.organization_slug", "test-org"),
+		attribute.String("buildkite.pipeline_slug", "test-pipeline"),
+		attribute.String("buildkite.job_id", "test-job-123"),
+		attribute.Int("buildkite.build_number", 42),
+		attribute.String("buildkite.build_branch", "test-branch"),
+	}
+
+	for _, expectedAttr := range expectedAttrs {
+		assert.Contains(t, attrs, expectedAttr, "span should contain attribute %s", expectedAttr.Key)
 	}
 }
 
@@ -170,7 +243,6 @@ func custom(org, pipeline string) BuildkiteClaims {
 		BuildNumber:      0,
 		BuildBranch:      "default-buildbranch",
 		BuildCommit:      "default-buildcommit",
-		StepKey:          "default-stepkey",
 		JobID:            "default-jobid",
 		AgentID:          "default-agentid",
 	}
