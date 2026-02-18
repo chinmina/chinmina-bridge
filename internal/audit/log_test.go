@@ -215,3 +215,44 @@ func TestClaimMatchSerialization(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildkiteFieldsSerialization(t *testing.T) {
+	testhelpers.SetupLogger(t)
+
+	tests := []struct {
+		name  string
+		entry audit.Entry
+	}{
+		{
+			name: "all buildkite fields populated",
+			entry: audit.Entry{
+				OrganizationSlug: "acme",
+				PipelineSlug:     "main-pipeline",
+				JobID:            "job-123",
+				BuildNumber:      42,
+				StepKey:          "deploy",
+				BuildBranch:      "main",
+			},
+		},
+		{
+			name:  "all buildkite fields zero-valued",
+			entry: audit.Entry{},
+		},
+		{
+			name: "mixed - some fields set, some zero",
+			entry: audit.Entry{
+				OrganizationSlug: "acme",
+				BuildNumber:      1,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Verify the marshaler doesn't panic and runs successfully
+			assert.NotPanics(t, func() {
+				tt.entry.MarshalZerologObject(zerolog.Dict())
+			})
+		})
+	}
+}

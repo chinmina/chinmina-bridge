@@ -63,6 +63,12 @@ type Entry struct {
 	AuthIssuer          string
 	AuthAudience        []string
 	AuthExpirySecs      int64
+	OrganizationSlug    string
+	PipelineSlug        string
+	JobID               string
+	BuildNumber         int
+	StepKey             string
+	BuildBranch         string
 	Error               string
 	Repositories        []string
 	Permissions         []string
@@ -74,6 +80,8 @@ type Entry struct {
 // MarshalZerologObject implements zerolog.LogObjectMarshaler. This avoids the
 // need for reflection when logging, at the cost of requiring maintenance when
 // the Entry struct changes.
+//
+//nolint:gocyclo // marshaling function with many conditional fields
 func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 	event.Str("method", e.Method).
 		Str("path", e.Path).
@@ -87,6 +95,30 @@ func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 		Str("authSubject", e.AuthSubject).
 		Str("authIssuer", e.AuthIssuer).
 		Str("error", e.Error)
+
+	if e.OrganizationSlug != "" {
+		event.Str("organizationSlug", e.OrganizationSlug)
+	}
+
+	if e.PipelineSlug != "" {
+		event.Str("pipelineSlug", e.PipelineSlug)
+	}
+
+	if e.JobID != "" {
+		event.Str("jobID", e.JobID)
+	}
+
+	if e.BuildNumber > 0 {
+		event.Int("buildNumber", e.BuildNumber)
+	}
+
+	if e.StepKey != "" {
+		event.Str("stepKey", e.StepKey)
+	}
+
+	if e.BuildBranch != "" {
+		event.Str("buildBranch", e.BuildBranch)
+	}
 
 	now := time.Now()
 	if e.AuthExpirySecs > 0 {
