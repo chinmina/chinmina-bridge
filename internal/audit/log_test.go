@@ -237,10 +237,12 @@ func TestBuildkiteFieldsSerialization(t *testing.T) {
 				BuildNumber:      42,
 				BuildBranch:      "main",
 			},
+			expectedPresent: []string{"organizationSlug", "pipelineSlug", "jobID", "buildNumber", "buildBranch"},
 		},
 		{
-			name:  "all buildkite fields zero-valued",
-			entry: audit.Entry{},
+			name:           "all buildkite fields zero-valued",
+			entry:          audit.Entry{},
+			expectedAbsent: []string{"organizationSlug", "pipelineSlug", "jobID", "buildNumber", "buildBranch"},
 		},
 		{
 			name: "mixed - some fields set, some zero",
@@ -249,6 +251,7 @@ func TestBuildkiteFieldsSerialization(t *testing.T) {
 				BuildNumber:      1,
 			},
 			expectedPresent: []string{"organizationSlug", "buildNumber"},
+			expectedAbsent:  []string{"pipelineSlug", "jobID", "buildBranch"},
 		},
 	}
 
