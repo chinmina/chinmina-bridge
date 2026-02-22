@@ -191,7 +191,7 @@ func remoteJWKS(cfg config.AuthorizationConfig) (url.URL, KeyFunc, error) {
 
 	provider, err := jwks.NewCachingProvider(
 		jwks.WithIssuerURL(issuerURL),
-		jwks.WithCacheTTL(5*time.Minute),
+		jwks.WithCacheTTL(1*time.Hour),
 	)
 	if err != nil {
 		return url.URL{}, nil, fmt.Errorf("failed to create JWKS provider: %w", err)
