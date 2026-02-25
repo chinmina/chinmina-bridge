@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/chinmina/chinmina-bridge/internal/cache/encryption"
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/rs/zerolog/log"
@@ -37,8 +38,25 @@ func NewFromConfig[T any](
 
 		valkeyOpts := valkey.ClientOption{
 			InitAddress: []string{cacheConfig.Valkey.Address},
-			Username:    cacheConfig.Valkey.Username,
-			Password:    cacheConfig.Valkey.Password,
+		}
+
+		if cacheConfig.Valkey.IAMEnabled {
+			awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("loading AWS config for IAM auth: %w", err)
+			}
+
+			credsFn, err := IAMCredentialsFn(cacheConfig.Valkey, awsCfg)
+			if err != nil {
+				return nil, fmt.Errorf("configuring IAM credentials: %w", err)
+			}
+			valkeyOpts.AuthCredentialsFn = credsFn
+			valkeyOpts.ConnLifetime = 11 * time.Hour
+		} else {
+			valkeyOpts.AuthCredentialsFn = StaticCredentialsFn(
+				cacheConfig.Valkey.Username,
+				cacheConfig.Valkey.Password,
+			)
 		}
 
 		// Configure TLS if enabled

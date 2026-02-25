@@ -52,6 +52,19 @@ type ValkeyConfig struct {
 
 	// Password for Valkey authentication.
 	Password string `env:"VALKEY_PASSWORD"`
+
+	// IAMEnabled enables IAM-based authentication for AWS ElastiCache.
+	// When true, Username is used as the IAM user ID and must be set,
+	// IAMCacheName is required, Password must be empty, and TLS is
+	// automatically enabled.
+	IAMEnabled bool `env:"VALKEY_IAM_ENABLED, default=false"`
+
+	// IAMCacheName is the ElastiCache replication group ID or serverless cache
+	// name. Required when IAMEnabled is true.
+	IAMCacheName string `env:"VALKEY_IAM_CACHE_NAME"`
+
+	// IAMServerless marks the target as an ElastiCache serverless cache.
+	IAMServerless bool `env:"VALKEY_IAM_SERVERLESS, default=false"`
 }
 
 // CacheEncryptionConfig holds settings for cache encryption.
@@ -133,31 +146,9 @@ func load(ctx context.Context, lookup envconfig.Lookuper) (Config, error) {
 
 // Validate checks that the cache configuration is valid.
 func (c *CacheConfig) Validate() error {
-	// Encryption requires distributed cache
-	if c.Encryption.Enabled && c.Type != "valkey" {
-		return fmt.Errorf("cache encryption requires CACHE_TYPE=valkey")
-	}
-
-	// Encryption requires either file-based or AWS-based keyset config
 	if c.Encryption.Enabled {
-		hasAWS := c.Encryption.KeysetURI != "" || c.Encryption.KMSEnvelopeKeyURI != ""
-		hasFile := c.Encryption.KeysetFile != ""
-
-		if hasFile && hasAWS {
-			return fmt.Errorf("CACHE_ENCRYPTION_KEYSET_FILE is mutually exclusive with CACHE_ENCRYPTION_KEYSET_URI/CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI")
-		}
-
-		if !hasFile && !hasAWS {
-			return fmt.Errorf("encryption enabled but no keyset source configured: set CACHE_ENCRYPTION_KEYSET_FILE or CACHE_ENCRYPTION_KEYSET_URI with CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI")
-		}
-
-		if hasAWS {
-			if c.Encryption.KeysetURI == "" {
-				return fmt.Errorf("CACHE_ENCRYPTION_KEYSET_URI required when CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI is set")
-			}
-			if c.Encryption.KMSEnvelopeKeyURI == "" {
-				return fmt.Errorf("CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI required when CACHE_ENCRYPTION_KEYSET_URI is set")
-			}
+		if err := c.validateEncryption(); err != nil {
+			return err
 		}
 	}
 
@@ -166,5 +157,59 @@ func (c *CacheConfig) Validate() error {
 		return fmt.Errorf("VALKEY_ADDRESS required when CACHE_TYPE=valkey")
 	}
 
+	if c.Valkey.IAMEnabled {
+		if err := c.Valkey.validateIAM(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateEncryption checks encryption-specific field constraints. Called only
+// when Encryption.Enabled is true.
+func (c *CacheConfig) validateEncryption() error {
+	if c.Type != "valkey" {
+		return fmt.Errorf("cache encryption requires CACHE_TYPE=valkey")
+	}
+
+	hasAWS := c.Encryption.KeysetURI != "" || c.Encryption.KMSEnvelopeKeyURI != ""
+	hasFile := c.Encryption.KeysetFile != ""
+
+	if hasFile && hasAWS {
+		return fmt.Errorf("CACHE_ENCRYPTION_KEYSET_FILE is mutually exclusive with CACHE_ENCRYPTION_KEYSET_URI/CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI")
+	}
+
+	if !hasFile && !hasAWS {
+		return fmt.Errorf("encryption enabled but no keyset source configured: set CACHE_ENCRYPTION_KEYSET_FILE or CACHE_ENCRYPTION_KEYSET_URI with CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI")
+	}
+
+	if hasAWS {
+		if c.Encryption.KeysetURI == "" {
+			return fmt.Errorf("CACHE_ENCRYPTION_KEYSET_URI required when CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI is set")
+		}
+		if c.Encryption.KMSEnvelopeKeyURI == "" {
+			return fmt.Errorf("CACHE_ENCRYPTION_KMS_ENVELOPE_KEY_URI required when CACHE_ENCRYPTION_KEYSET_URI is set")
+		}
+	}
+
+	return nil
+}
+
+// validateIAM checks IAM-specific field constraints and forces TLS on.
+// Called only when IAMEnabled is true.
+func (v *ValkeyConfig) validateIAM() error {
+	if v.Username == "" {
+		return fmt.Errorf("VALKEY_USERNAME required as IAM user ID when VALKEY_IAM_ENABLED=true")
+	}
+	if v.IAMCacheName == "" {
+		return fmt.Errorf("VALKEY_IAM_CACHE_NAME required when VALKEY_IAM_ENABLED=true")
+	}
+	if v.Password != "" {
+		return fmt.Errorf("VALKEY_PASSWORD must be empty when IAM authentication is enabled")
+	}
+	// IAM auth requires in-transit encryption; force it on rather than
+	// treating a mismatch as a configuration error.
+	v.TLS = true
 	return nil
 }

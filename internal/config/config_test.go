@@ -51,6 +51,51 @@ func TestValkeyConfig(t *testing.T) {
 	assert.Equal(t, expected, cfg.Cache.Valkey)
 }
 
+func TestValkeyConfig_IAM(t *testing.T) {
+	configMap := map[string]string{
+		"CACHE_TYPE":            "valkey",
+		"VALKEY_ADDRESS":        "master.my-cluster.abc123.use1.cache.amazonaws.com:6379",
+		"VALKEY_IAM_ENABLED":    "true",
+		"VALKEY_USERNAME":       "iam-user",
+		"VALKEY_IAM_CACHE_NAME": "my-cluster",
+	}
+	lookuper := envconfig.MultiLookuper(
+		envconfig.MapLookuper(requiredConfig),
+		envconfig.MapLookuper(configMap),
+	)
+
+	cfg, err := load(context.Background(), lookuper)
+	assert.NoError(t, err)
+
+	expected := ValkeyConfig{
+		Address:      "master.my-cluster.abc123.use1.cache.amazonaws.com:6379",
+		TLS:          true, // forced on by IAM validation
+		IAMEnabled:   true,
+		Username:     "iam-user",
+		IAMCacheName: "my-cluster",
+	}
+	assert.Equal(t, expected, cfg.Cache.Valkey)
+}
+
+func TestValkeyConfig_IAM_ForcesTLS(t *testing.T) {
+	configMap := map[string]string{
+		"CACHE_TYPE":            "valkey",
+		"VALKEY_ADDRESS":        "localhost:6379",
+		"VALKEY_TLS":            "false",
+		"VALKEY_IAM_ENABLED":    "true",
+		"VALKEY_USERNAME":       "iam-user",
+		"VALKEY_IAM_CACHE_NAME": "my-cluster",
+	}
+	lookuper := envconfig.MultiLookuper(
+		envconfig.MapLookuper(requiredConfig),
+		envconfig.MapLookuper(configMap),
+	)
+
+	cfg, err := load(context.Background(), lookuper)
+	assert.NoError(t, err)
+	assert.True(t, cfg.Cache.Valkey.TLS, "IAM auth should force TLS on")
+}
+
 func TestValkeyConfig_TLSTrue(t *testing.T) {
 	configMap := map[string]string{
 		"VALKEY_ADDRESS": "localhost:6379",
@@ -135,6 +180,31 @@ func TestCacheConfig_Validate_Success(t *testing.T) {
 				Encryption: CacheEncryptionConfig{
 					Enabled:    true,
 					KeysetFile: "/path/to/keyset.json",
+				},
+			},
+		},
+		{
+			name: "IAM enabled",
+			config: CacheConfig{
+				Type: "valkey",
+				Valkey: ValkeyConfig{
+					Address:      "localhost:6379",
+					IAMEnabled:   true,
+					Username:     "iam-user",
+					IAMCacheName: "my-cluster",
+				},
+			},
+		},
+		{
+			name: "IAM enabled with serverless",
+			config: CacheConfig{
+				Type: "valkey",
+				Valkey: ValkeyConfig{
+					Address:       "localhost:6379",
+					IAMEnabled:    true,
+					Username:      "iam-user",
+					IAMCacheName:  "my-serverless-cache",
+					IAMServerless: true,
 				},
 			},
 		},
@@ -244,6 +314,44 @@ func TestCacheConfig_Validate_Failures(t *testing.T) {
 				Type: "valkey",
 			},
 			expectedErr: "VALKEY_ADDRESS required when CACHE_TYPE=valkey",
+		},
+		{
+			name: "IAM missing username",
+			config: CacheConfig{
+				Type: "valkey",
+				Valkey: ValkeyConfig{
+					Address:      "localhost:6379",
+					IAMEnabled:   true,
+					IAMCacheName: "my-cluster",
+				},
+			},
+			expectedErr: "VALKEY_USERNAME required as IAM user ID",
+		},
+		{
+			name: "IAM missing cache name",
+			config: CacheConfig{
+				Type: "valkey",
+				Valkey: ValkeyConfig{
+					Address:    "localhost:6379",
+					IAMEnabled: true,
+					Username:   "iam-user",
+				},
+			},
+			expectedErr: "VALKEY_IAM_CACHE_NAME required",
+		},
+		{
+			name: "IAM with password set",
+			config: CacheConfig{
+				Type: "valkey",
+				Valkey: ValkeyConfig{
+					Address:      "localhost:6379",
+					IAMEnabled:   true,
+					Username:     "iam-user",
+					IAMCacheName: "my-cluster",
+					Password:     "static-pass",
+				},
+			},
+			expectedErr: "VALKEY_PASSWORD must be empty when IAM authentication is enabled",
 		},
 	}
 
