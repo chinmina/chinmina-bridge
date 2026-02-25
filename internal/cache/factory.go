@@ -30,6 +30,7 @@ func NewFromConfig[T any](
 			Str("cache_type", "valkey").
 			Str("address", cacheConfig.Valkey.Address).
 			Bool("tls", cacheConfig.Valkey.TLS).
+			Bool("iam_enabled", cacheConfig.Valkey.IAMEnabled).
 			Msg("initializing distributed cache")
 
 		if cacheConfig.Valkey.Address == "" {

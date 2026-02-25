@@ -152,14 +152,14 @@ func (c *CacheConfig) Validate() error {
 		}
 	}
 
-	// Valkey requires address
-	if c.Type == "valkey" && c.Valkey.Address == "" {
-		return fmt.Errorf("VALKEY_ADDRESS required when CACHE_TYPE=valkey")
-	}
-
-	if c.Valkey.IAMEnabled {
-		if err := c.Valkey.validateIAM(); err != nil {
-			return err
+	if c.Type == "valkey" {
+		if c.Valkey.Address == "" {
+			return fmt.Errorf("VALKEY_ADDRESS required when CACHE_TYPE=valkey")
+		}
+		if c.Valkey.IAMEnabled {
+			if err := c.Valkey.validateIAM(); err != nil {
+				return err
+			}
 		}
 	}
 
