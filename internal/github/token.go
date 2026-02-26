@@ -89,7 +89,7 @@ func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scope
 		return "", time.Time{}, err
 	}
 
-	tok, r, err := c.client.Apps.CreateInstallationToken(ctx, c.installationID,
+	tok, _, err := c.client.Apps.CreateInstallationToken(ctx, c.installationID,
 		&github.InstallationTokenOptions{
 			Repositories: repoNames,
 			Permissions:  tokenPermissions,
@@ -98,8 +98,6 @@ func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scope
 	if err != nil {
 		return "", time.Time{}, err
 	}
-
-	log.Info().Int("limit", r.Rate.Limit).Int("remaining", r.Rate.Remaining).Msg("github token API rate")
 
 	return tok.GetToken(), tok.GetExpiresAt().Time, nil
 }
