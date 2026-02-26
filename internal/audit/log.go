@@ -82,80 +82,63 @@ type Entry struct {
 //
 //nolint:gocyclo // marshaling function with many conditional fields
 func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
-	event.Str("method", e.Method).
+
+	// request fields
+	event.Dict("request", zerolog.Dict().
+		Str("method", e.Method).
 		Str("path", e.Path).
 		Int("status", e.Status).
 		Str("sourceIP", e.SourceIP).
-		Str("userAgent", e.UserAgent).
-		Str("requestedProfile", e.RequestedProfile).
-		Str("requestedRepository", e.RequestedRepository).
-		Str("vendedRepository", e.VendedRepository).
+		Str("userAgent", e.UserAgent),
+	)
+
+	// pipeline/job details
+	NewOptionalEvent(zerolog.Dict()).
+		Str("pipelineSlug", e.PipelineSlug).
+		Str("organizationSlug", e.OrganizationSlug).
+		Str("jobID", e.JobID).
+		Int("buildNumber", e.BuildNumber).
+		Str("buildBranch", e.BuildBranch).
+		Set(event, "pipeline")
+
+	// JWT auth details
+	authDetails := NewOptionalEvent(zerolog.Dict()).
 		Bool("authorized", e.Authorized).
-		Str("authSubject", e.AuthSubject).
-		Str("authIssuer", e.AuthIssuer).
-		Str("error", e.Error)
-
-	if e.OrganizationSlug != "" {
-		event.Str("organizationSlug", e.OrganizationSlug)
-	}
-
-	if e.PipelineSlug != "" {
-		event.Str("pipelineSlug", e.PipelineSlug)
-	}
-
-	if e.JobID != "" {
-		event.Str("jobID", e.JobID)
-	}
-
-	if e.BuildNumber > 0 {
-		event.Int("buildNumber", e.BuildNumber)
-	}
-
-	if e.BuildBranch != "" {
-		event.Str("buildBranch", e.BuildBranch)
-	}
+		Str("subject", e.AuthSubject).
+		Str("issuer", e.AuthIssuer).
+		Strs("audience", e.AuthAudience)
 
 	now := time.Now()
 	if e.AuthExpirySecs > 0 {
 		exp := time.Unix(e.AuthExpirySecs, 0)
 		remaining := exp.Sub(now).Round(time.Millisecond)
-		event.Time("authExpiry", exp)
-		event.Dur("authExpiryRemaining", remaining)
+		authDetails.Event().Time("expiry", exp)
+		authDetails.Event().Dur("expiryRemaining", remaining)
 	}
+
+	authDetails.Set(event, "authorization")
+
+	// vended token details
+	tokenDetails := NewOptionalEvent(zerolog.Dict()).
+		Str("requestedProfile", e.RequestedProfile).
+		Str("requestedRepository", e.RequestedRepository).
+		Str("vendedRepository", e.VendedRepository).
+		Strs("repositories", e.Repositories).
+		Strs("permissions", e.Permissions).
+		Arr("matches", arr(e.ClaimsMatched)).
+		Arr("attemptedPatterns", arr(e.ClaimsFailed))
 
 	if e.ExpirySecs > 0 {
 		exp := time.Unix(e.ExpirySecs, 0)
 		remaining := exp.Sub(now).Round(time.Millisecond)
-		event.Time("expiry", exp)
-		event.Dur("expiryRemaining", remaining)
+		tokenDetails.Event().Time("expiry", exp)
+		tokenDetails.Event().Dur("expiryRemaining", remaining)
 	}
 
-	if len(e.AuthAudience) > 0 {
-		event.Strs("authAudience", e.AuthAudience)
-	}
+	tokenDetails.Set(event, "token")
 
-	if len(e.Repositories) > 0 {
-		event.Strs("repositories", e.Repositories)
-	}
-
-	if len(e.Permissions) > 0 {
-		event.Strs("permissions", e.Permissions)
-	}
-
-	if e.ClaimsMatched != nil {
-		arr := zerolog.Arr()
-		for _, match := range e.ClaimsMatched {
-			arr.Object(match)
-		}
-		event.Array("matches", arr)
-	}
-
-	if e.ClaimsFailed != nil {
-		arr := zerolog.Arr()
-		for _, failure := range e.ClaimsFailed {
-			arr.Object(failure)
-		}
-		event.Array("attemptedPatterns", arr)
+	if e.Error != "" {
+		event.Str("error", e.Error)
 	}
 }
 

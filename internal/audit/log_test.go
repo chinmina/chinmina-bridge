@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
@@ -155,121 +156,388 @@ func withLogHook(ctx context.Context, hook zerolog.HookFunc) context.Context {
 	return testLog.WithContext(ctx)
 }
 
-func TestClaimMatchSerialization(t *testing.T) {
+func TestTokenFieldsSerialization(t *testing.T) {
 	testhelpers.SetupLogger(t)
 
-	tests := []struct {
-		name  string
-		entry audit.Entry
-	}{
-		{
-			name: "successful matches",
-			entry: audit.Entry{
-				ClaimsMatched: []audit.ClaimMatch{
-					{Claim: "pipeline_slug", Value: "silk-prod"},
-					{Claim: "build_branch", Value: "main"},
-				},
-			},
-		},
-		{
-			name: "failed matches",
-			entry: audit.Entry{
-				ClaimsFailed: []audit.ClaimFailure{
-					{Claim: "pipeline_slug", Pattern: ".*-release", Value: "silk-staging"},
-				},
-			},
-		},
-		{
-			name: "empty matches array",
-			entry: audit.Entry{
-				ClaimsMatched: []audit.ClaimMatch{},
-			},
-		},
-		{
-			name:  "nil matches not serialized",
-			entry: audit.Entry{},
-		},
-		{
-			name: "both matches and failures",
-			entry: audit.Entry{
-				ClaimsMatched: []audit.ClaimMatch{
-					{Claim: "pipeline_slug", Value: "silk-prod"},
-				},
-				ClaimsFailed: []audit.ClaimFailure{
-					{Claim: "build_branch", Pattern: "main", Value: "feature"},
-				},
-			},
-		},
-		{
-			name: "repository fields",
-			entry: audit.Entry{
-				RequestedRepository: "https://github.com/org/requested-repo",
-				VendedRepository:    "https://github.com/org/vended-repo",
-			},
-		},
+	serializeToken := func(t *testing.T, entry audit.Entry) map[string]any {
+		t.Helper()
+		var buf bytes.Buffer
+		logger := zerolog.New(&buf)
+		logger.Log().EmbedObject(&entry).Send()
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+
+		token, ok := result["token"].(map[string]any)
+		require.True(t, ok, "expected 'token' dict in log output")
+		return token
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Verify the marshaler doesn't panic and runs successfully
-			assert.NotPanics(t, func() {
-				tt.entry.MarshalZerologObject(zerolog.Dict())
-			})
+	t.Run("successful matches serialized", func(t *testing.T) {
+		token := serializeToken(t, audit.Entry{
+			ClaimsMatched: []audit.ClaimMatch{
+				{Claim: "pipeline_slug", Value: "silk-prod"},
+				{Claim: "build_branch", Value: "main"},
+			},
 		})
-	}
+
+		matches, ok := token["matches"].([]any)
+		require.True(t, ok, "expected 'matches' array")
+		require.Len(t, matches, 2)
+
+		first := matches[0].(map[string]any)
+		assert.Equal(t, "pipeline_slug", first["claim"])
+		assert.Equal(t, "silk-prod", first["value"])
+
+		second := matches[1].(map[string]any)
+		assert.Equal(t, "build_branch", second["claim"])
+		assert.Equal(t, "main", second["value"])
+	})
+
+	t.Run("failed matches serialized", func(t *testing.T) {
+		token := serializeToken(t, audit.Entry{
+			ClaimsFailed: []audit.ClaimFailure{
+				{Claim: "pipeline_slug", Pattern: ".*-release", Value: "silk-staging"},
+			},
+		})
+
+		patterns, ok := token["attemptedPatterns"].([]any)
+		require.True(t, ok, "expected 'attemptedPatterns' array")
+		require.Len(t, patterns, 1)
+
+		first := patterns[0].(map[string]any)
+		assert.Equal(t, "pipeline_slug", first["claim"])
+		assert.Equal(t, ".*-release", first["pattern"])
+		assert.Equal(t, "silk-staging", first["value"])
+	})
+
+	t.Run("empty matches array serialized", func(t *testing.T) {
+		token := serializeToken(t, audit.Entry{
+			ClaimsMatched: []audit.ClaimMatch{},
+		})
+
+		matches, ok := token["matches"].([]any)
+		require.True(t, ok, "expected 'matches' array")
+		assert.Empty(t, matches)
+	})
+
+	t.Run("nil matches omits token dict entirely", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := zerolog.New(&buf)
+		entry := audit.Entry{}
+		logger.Log().EmbedObject(&entry).Send()
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+		assert.NotContains(t, result, "token")
+	})
+
+	t.Run("both matches and failures", func(t *testing.T) {
+		token := serializeToken(t, audit.Entry{
+			ClaimsMatched: []audit.ClaimMatch{
+				{Claim: "pipeline_slug", Value: "silk-prod"},
+			},
+			ClaimsFailed: []audit.ClaimFailure{
+				{Claim: "build_branch", Pattern: "main", Value: "feature"},
+			},
+		})
+		assert.Contains(t, token, "matches")
+		assert.Contains(t, token, "attemptedPatterns")
+	})
+
+	t.Run("repository fields", func(t *testing.T) {
+		token := serializeToken(t, audit.Entry{
+			RequestedRepository: "https://github.com/org/requested-repo",
+			VendedRepository:    "https://github.com/org/vended-repo",
+		})
+		assert.Equal(t, "https://github.com/org/requested-repo", token["requestedRepository"])
+		assert.Equal(t, "https://github.com/org/vended-repo", token["vendedRepository"])
+	})
 }
 
-func TestBuildkiteFieldsSerialization(t *testing.T) {
+func TestNestedDictSerialization(t *testing.T) {
 	testhelpers.SetupLogger(t)
 
-	tests := []struct {
-		name            string
-		entry           audit.Entry
-		expectedPresent []string
-		expectedAbsent  []string
-	}{
-		{
-			name: "all buildkite fields populated",
-			entry: audit.Entry{
-				OrganizationSlug: "acme",
-				PipelineSlug:     "main-pipeline",
-				JobID:            "job-123",
-				BuildNumber:      42,
-				BuildBranch:      "main",
-			},
-			expectedPresent: []string{"organizationSlug", "pipelineSlug", "jobID", "buildNumber", "buildBranch"},
-		},
-		{
-			name:           "all buildkite fields zero-valued",
-			entry:          audit.Entry{},
-			expectedAbsent: []string{"organizationSlug", "pipelineSlug", "jobID", "buildNumber", "buildBranch"},
-		},
-		{
-			name: "mixed - some fields set, some zero",
-			entry: audit.Entry{
-				OrganizationSlug: "acme",
-				BuildNumber:      1,
-			},
-			expectedPresent: []string{"organizationSlug", "buildNumber"},
-			expectedAbsent:  []string{"pipelineSlug", "jobID", "buildBranch"},
-		},
+	entry := audit.Entry{
+		Method:           "POST",
+		Path:             "/token",
+		Status:           200,
+		SourceIP:         "10.0.0.1",
+		UserAgent:        "test/1.0",
+		OrganizationSlug: "acme",
+		PipelineSlug:     "main-pipeline",
+		JobID:            "job-123",
+		BuildNumber:      42,
+		BuildBranch:      "main",
+		Authorized:       true,
+		AuthSubject:      "buildkite:org:acme",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			logger := zerolog.New(&buf)
-			logger.Log().EmbedObject(&tt.entry).Send()
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf)
+	logger.Log().EmbedObject(&entry).Send()
 
-			var result map[string]any
-			require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
 
-			for _, key := range tt.expectedPresent {
-				assert.Contains(t, result, key, "expected field %q to be present in log output", key)
-			}
-			for _, key := range tt.expectedAbsent {
-				assert.NotContains(t, result, key, "expected field %q to be absent from log output", key)
-			}
+	t.Run("request fields nested", func(t *testing.T) {
+		request, ok := result["request"].(map[string]any)
+		require.True(t, ok, "expected 'request' dict in log output")
+		assert.Equal(t, "POST", request["method"])
+		assert.Equal(t, "/token", request["path"])
+		assert.Equal(t, float64(200), request["status"])
+		assert.Equal(t, "10.0.0.1", request["sourceIP"])
+		assert.Equal(t, "test/1.0", request["userAgent"])
+	})
+
+	t.Run("pipeline fields nested", func(t *testing.T) {
+		pipeline, ok := result["pipeline"].(map[string]any)
+		require.True(t, ok, "expected 'pipeline' dict in log output")
+		assert.Equal(t, "acme", pipeline["organizationSlug"])
+		assert.Equal(t, "main-pipeline", pipeline["pipelineSlug"])
+		assert.Equal(t, "job-123", pipeline["jobID"])
+		assert.Equal(t, float64(42), pipeline["buildNumber"])
+		assert.Equal(t, "main", pipeline["buildBranch"])
+	})
+
+	t.Run("authorization fields nested", func(t *testing.T) {
+		auth, ok := result["authorization"].(map[string]any)
+		require.True(t, ok, "expected 'authorization' dict in log output")
+		assert.Equal(t, true, auth["authorized"])
+		assert.Equal(t, "buildkite:org:acme", auth["subject"])
+	})
+
+	t.Run("error omitted when empty", func(t *testing.T) {
+		assert.NotContains(t, result, "error")
+	})
+
+	t.Run("error present when set", func(t *testing.T) {
+		errorEntry := audit.Entry{Error: "something broke"}
+		var errBuf bytes.Buffer
+		errLogger := zerolog.New(&errBuf)
+		errLogger.Log().EmbedObject(&errorEntry).Send()
+
+		var errResult map[string]any
+		require.NoError(t, json.Unmarshal(errBuf.Bytes(), &errResult))
+		assert.Equal(t, "something broke", errResult["error"])
+	})
+}
+
+func TestOptionalDictElision(t *testing.T) {
+	testhelpers.SetupLogger(t)
+
+	serialize := func(t *testing.T, entry audit.Entry) map[string]any {
+		t.Helper()
+		var buf bytes.Buffer
+		logger := zerolog.New(&buf)
+		logger.Log().EmbedObject(&entry).Send()
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+		return result
+	}
+
+	t.Run("empty entry omits optional dicts without unconditional fields", func(t *testing.T) {
+		result := serialize(t, audit.Entry{})
+		assert.Contains(t, result, "request", "request dict is always present")
+		assert.Contains(t, result, "authorization", "authorization dict is always present (contains authorized bool)")
+		assert.NotContains(t, result, "pipeline")
+		assert.NotContains(t, result, "token")
+		assert.NotContains(t, result, "error")
+	})
+
+	t.Run("pipeline present when any pipeline field set", func(t *testing.T) {
+		result := serialize(t, audit.Entry{PipelineSlug: "deploy"})
+		pipeline, ok := result["pipeline"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "deploy", pipeline["pipelineSlug"])
+	})
+
+	t.Run("pipeline absent when all pipeline fields empty", func(t *testing.T) {
+		result := serialize(t, audit.Entry{Method: "GET"})
+		assert.NotContains(t, result, "pipeline")
+	})
+
+	t.Run("authorization present when auth subject set", func(t *testing.T) {
+		result := serialize(t, audit.Entry{
+			Authorized:  true,
+			AuthSubject: "buildkite:org:acme",
 		})
+		auth, ok := result["authorization"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, true, auth["authorized"])
+		assert.Equal(t, "buildkite:org:acme", auth["subject"])
+	})
+
+	t.Run("authorization always present due to authorized bool", func(t *testing.T) {
+		result := serialize(t, audit.Entry{Authorized: true})
+		auth, ok := result["authorization"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, true, auth["authorized"])
+	})
+
+	t.Run("authorization present via audience", func(t *testing.T) {
+		result := serialize(t, audit.Entry{
+			AuthAudience: []string{"https://buildkite.com"},
+		})
+		auth, ok := result["authorization"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, false, auth["authorized"])
+		audiences, ok := auth["audience"].([]any)
+		require.True(t, ok)
+		assert.Equal(t, "https://buildkite.com", audiences[0])
+	})
+
+	t.Run("token present when repository requested", func(t *testing.T) {
+		result := serialize(t, audit.Entry{
+			RequestedRepository: "https://github.com/org/repo",
+		})
+		token, ok := result["token"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "https://github.com/org/repo", token["requestedRepository"])
+	})
+
+	t.Run("token absent when no token fields set", func(t *testing.T) {
+		result := serialize(t, audit.Entry{AuthSubject: "sub"})
+		assert.NotContains(t, result, "token")
+	})
+}
+
+func TestFullyPopulatedEntry(t *testing.T) {
+	testhelpers.SetupLogger(t)
+
+	authExpiry := time.Now().Add(1 * time.Hour)
+	tokenExpiry := time.Now().Add(45 * time.Minute)
+
+	entry := audit.Entry{
+		Method:              "POST",
+		Path:                "/token",
+		Status:              200,
+		SourceIP:            "10.0.0.1",
+		UserAgent:           "test/1.0",
+		OrganizationSlug:    "acme",
+		PipelineSlug:        "main-pipeline",
+		JobID:               "job-123",
+		BuildNumber:         42,
+		BuildBranch:         "main",
+		Authorized:          true,
+		AuthSubject:         "buildkite:org:acme",
+		AuthIssuer:          "https://agent.buildkite.com",
+		AuthAudience:        []string{"https://buildkite.com"},
+		AuthExpirySecs:      authExpiry.Unix(),
+		RequestedProfile:    "org/repo",
+		RequestedRepository: "https://github.com/org/repo",
+		VendedRepository:    "https://github.com/org/vended-repo",
+		Repositories:        []string{"org/repo"},
+		Permissions:         []string{"contents:read"},
+		ExpirySecs:          tokenExpiry.Unix(),
+		ClaimsMatched:       []audit.ClaimMatch{{Claim: "pipeline_slug", Value: "main-pipeline"}},
+		ClaimsFailed:        []audit.ClaimFailure{{Claim: "build_branch", Pattern: "release-.*", Value: "main"}},
+		Error:               "partial failure",
 	}
+
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf)
+	logger.Log().EmbedObject(&entry).Send()
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+
+	t.Run("all top-level keys present", func(t *testing.T) {
+		assert.Contains(t, result, "request")
+		assert.Contains(t, result, "pipeline")
+		assert.Contains(t, result, "authorization")
+		assert.Contains(t, result, "token")
+		assert.Equal(t, "partial failure", result["error"])
+	})
+
+	t.Run("authorization contains all fields", func(t *testing.T) {
+		auth, ok := result["authorization"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, true, auth["authorized"])
+		assert.Equal(t, "buildkite:org:acme", auth["subject"])
+		assert.Equal(t, "https://agent.buildkite.com", auth["issuer"])
+
+		audiences, ok := auth["audience"].([]any)
+		require.True(t, ok)
+		assert.Equal(t, []any{"https://buildkite.com"}, audiences)
+
+		assert.Contains(t, auth, "expiry")
+		assert.Contains(t, auth, "expiryRemaining")
+	})
+
+	t.Run("token contains all fields", func(t *testing.T) {
+		token, ok := result["token"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "org/repo", token["requestedProfile"])
+		assert.Equal(t, "https://github.com/org/repo", token["requestedRepository"])
+		assert.Equal(t, "https://github.com/org/vended-repo", token["vendedRepository"])
+
+		repos, ok := token["repositories"].([]any)
+		require.True(t, ok)
+		assert.Equal(t, []any{"org/repo"}, repos)
+
+		perms, ok := token["permissions"].([]any)
+		require.True(t, ok)
+		assert.Equal(t, []any{"contents:read"}, perms)
+
+		assert.Contains(t, token, "expiry")
+		assert.Contains(t, token, "expiryRemaining")
+		assert.Contains(t, token, "matches")
+		assert.Contains(t, token, "attemptedPatterns")
+	})
+}
+
+func TestExpiryFields(t *testing.T) {
+	testhelpers.SetupLogger(t)
+
+	serialize := func(t *testing.T, entry audit.Entry) map[string]any {
+		t.Helper()
+		var buf bytes.Buffer
+		logger := zerolog.New(&buf)
+		logger.Log().EmbedObject(&entry).Send()
+
+		var result map[string]any
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+		return result
+	}
+
+	t.Run("auth expiry present when AuthExpirySecs set", func(t *testing.T) {
+		future := time.Now().Add(time.Hour).Unix()
+		result := serialize(t, audit.Entry{AuthExpirySecs: future})
+		auth, ok := result["authorization"].(map[string]any)
+		require.True(t, ok)
+		assert.Contains(t, auth, "expiry")
+		assert.Contains(t, auth, "expiryRemaining")
+	})
+
+	t.Run("auth expiry absent when AuthExpirySecs zero", func(t *testing.T) {
+		result := serialize(t, audit.Entry{})
+		auth, ok := result["authorization"].(map[string]any)
+		require.True(t, ok)
+		assert.NotContains(t, auth, "expiry")
+		assert.NotContains(t, auth, "expiryRemaining")
+	})
+
+	t.Run("token expiry present when ExpirySecs set", func(t *testing.T) {
+		future := time.Now().Add(time.Hour).Unix()
+		result := serialize(t, audit.Entry{
+			ExpirySecs:          future,
+			RequestedRepository: "repo", // trigger token dict
+		})
+		token, ok := result["token"].(map[string]any)
+		require.True(t, ok)
+		assert.Contains(t, token, "expiry")
+		assert.Contains(t, token, "expiryRemaining")
+	})
+
+	t.Run("token expiry absent when ExpirySecs zero", func(t *testing.T) {
+		result := serialize(t, audit.Entry{
+			RequestedRepository: "repo",
+		})
+		token, ok := result["token"].(map[string]any)
+		require.True(t, ok)
+		assert.NotContains(t, token, "expiry")
+		assert.NotContains(t, token, "expiryRemaining")
+	})
 }
