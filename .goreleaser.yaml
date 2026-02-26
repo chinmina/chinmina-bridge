@@ -10,7 +10,9 @@ env:
 builds:
   - id: release
     binary: chinmina-bridge
-    flags: "-trimpath" # don't include the full path of the source files
+    flags:
+      - "-trimpath" # don't include the full path of the source files
+      - "-buildmode=pie"
     ldflags: "-w" # don't include DWARF symbols
     env:
       - CGO_ENABLED=0
