@@ -34,20 +34,20 @@ services:
     image: traefik:v3
     depends_on:
       - chinmina-bridge-worker
-    command:
-      - "--api.insecure=true"                       # Enable Dashboard
-      - "--providers.docker=true"                   # Enable Docker Auto-discovery
-      - "--providers.docker.exposedbydefault=false" # Don't expose containers unless explicitly told
+    environment:
+      - TRAEFIK_API_INSECURE=true                            # Enable Dashboard
+      - TRAEFIK_PROVIDERS_DOCKER=true                        # Enable Docker Auto-discovery
+      - TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT=false      # Don't expose containers unless explicitly told
       # --- TRACING (OTLP gRPC) ---
-      - "--tracing.otlp=true"
-      - "--tracing.otlp.grpc.endpoint=aspire:18889" # Aspire OTLP
-      - "--tracing.otlp.grpc.insecure=true"
+      - TRAEFIK_TRACING_OTLP=true
+      - TRAEFIK_TRACING_OTLP_GRPC_ENDPOINT=aspire:18889     # Aspire OTLP
+      - TRAEFIK_TRACING_OTLP_GRPC_INSECURE=true
       # --- METRICS (OTLP gRPC) ---
-      - "--metrics.otlp=true"
-      - "--metrics.otlp.grpc.endpoint=aspire:18889"
-      - "--metrics.otlp.grpc.insecure=true"
-      - "--metrics.otlp.addEntryPointsLabels=true" # Adds port info (port 80 vs 443)
-      - "--metrics.otlp.addServicesLabels=true"    # Adds service info (whoami, etc.)
+      - TRAEFIK_METRICS_OTLP=true
+      - TRAEFIK_METRICS_OTLP_GRPC_ENDPOINT=aspire:18889
+      - TRAEFIK_METRICS_OTLP_GRPC_INSECURE=true
+      - TRAEFIK_METRICS_OTLP_ADDENTRYPOINTSLABELS=true       # Adds port info (port 80 vs 443)
+      - TRAEFIK_METRICS_OTLP_ADDSERVICESLABELS=true          # Adds service info (whoami, etc.)
     ports:
       - "18889:8080"  # dashboard
     volumes:
