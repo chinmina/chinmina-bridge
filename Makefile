@@ -1,5 +1,8 @@
 .DEFAULT_GOAL := build
 
+# Build flags shared across build targets
+GO_BUILD_FLAGS := -ldflags="-w" -trimpath
+
 # Fuzz test durations
 FUZZING_LOCAL_SECS ?= 30
 FUZZING_CI_SECS ?= 10
@@ -51,14 +54,15 @@ dist:
 	mkdir -p dist
 
 .PHONY: build
+build: CGO_ENABLED=0
 build: dist mod
 	# build for container use: in future we will need to either use "ko" or
 	# "goreleaser" (or both) to create executables and images in the required
 	# architectures.
-	CGO_ENABLED=0 GOOS=linux go build -buildmode=pie -ldflags="-w" -trimpath -o dist/chinmina-bridge .
+	GOOS=linux go build $(GO_BUILD_FLAGS) -o dist/chinmina-bridge .
 	# build for local use, whatever the local platform is
-	CGO_ENABLED=0 go build -buildmode=pie -ldflags="-w" -trimpath -o dist/chinmina-bridge-local .
-	CGO_ENABLED=0 go build -o dist/oidc-local cmd/create/main.go
+	go build $(GO_BUILD_FLAGS) -o dist/chinmina-bridge-local .
+	go build -o dist/oidc-local cmd/create/main.go
 
 .PHONY: run
 run: build
