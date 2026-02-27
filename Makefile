@@ -1,9 +1,5 @@
 .DEFAULT_GOAL := build
 
-# Disable cgo by default for all commands
-CGO_ENABLED ?= 0
-export CGO_ENABLED
-
 # Build flags shared across build targets
 GO_BUILD_FLAGS := -ldflags="-w" -trimpath
 
@@ -58,6 +54,7 @@ dist:
 	mkdir -p dist
 
 .PHONY: build
+build: CGO_ENABLED=0
 build: dist mod
 	# build for container use: in future we will need to either use "ko" or
 	# "goreleaser" (or both) to create executables and images in the required
