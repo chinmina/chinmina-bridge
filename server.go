@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
-	"github.com/rs/zerolog/log"
 )
 
 type AuthServer interface {
@@ -29,7 +29,7 @@ func serveHTTP(serverCfg config.ServerConfig, server AuthServer) error {
 	// Start the server in a new goroutine
 	serverErr := make(chan error, 1)
 	go func() {
-		log.Info().Int("port", serverCfg.Port).Msg("starting server")
+		slog.Info("starting server", "port", serverCfg.Port)
 		serverErr <- server.ListenAndServe()
 	}()
 
@@ -39,12 +39,12 @@ func serveHTTP(serverCfg config.ServerConfig, server AuthServer) error {
 	case err := <-serverErr:
 		// Error when starting HTTP server.
 		if err != nil && err != http.ErrServerClosed {
-			log.Error().Err(err).Msg("failed to start server")
+			slog.Error("failed to start server", "error", err)
 		}
 		// save this error to return, keep processing shutdown sequence
 		startupError = err
 	case <-ctx.Done():
-		log.Info().Msg("server shutdown requested")
+		slog.Info("server shutdown requested")
 		// Stop receiving signal notifications as soon as possible.
 		stop()
 	}
@@ -60,7 +60,7 @@ func serveHTTP(serverCfg config.ServerConfig, server AuthServer) error {
 		return fmt.Errorf("server shutdown failed: %w", err)
 	}
 
-	log.Info().Msg("server shutdown complete")
+	slog.Info("server shutdown complete")
 
 	// if startup failed the error is returned
 	return startupError
