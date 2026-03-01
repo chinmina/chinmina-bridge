@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -15,12 +16,11 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
+	"github.com/chinmina/chinmina-bridge/internal/loginfra"
 	"github.com/chinmina/chinmina-bridge/internal/observe"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 
 	"github.com/justinas/alice"
 )
@@ -102,7 +102,8 @@ func main() {
 
 	err := launchServer()
 	if err != nil {
-		log.Fatal().Err(err).Msg("server failed to start")
+		slog.Error("server failed to start", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -195,21 +196,26 @@ func launchServer() error {
 }
 
 func configureLogging() {
-	// Set global level to the minimum: allows the Open Telemetry logging to be
-	// configured separately. However, it means that any logger that sets its
-	// level will log as this effectively disables the global level.
-	zerolog.SetGlobalLevel(zerolog.Level(-128))
+	replaceAttr := loginfra.ReplaceLevel(map[slog.Level]string{
+		audit.SlogLevel:            audit.SlogLevelName,
+		observe.SlogOTelInfoLevel:  observe.SlogOTelInfoLevelName,
+		observe.SlogOTelDebugLevel: observe.SlogOTelDebugLevelName,
+	})
 
-	// default level is Info
-	log.Logger = log.Level(zerolog.InfoLevel)
-
+	var handler slog.Handler
 	if os.Getenv("ENV") == "development" {
-		log.Logger = log.
-			Output(zerolog.ConsoleWriter{Out: os.Stdout}).
-			Level(zerolog.DebugLevel)
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level:       slog.LevelDebug,
+			ReplaceAttr: replaceAttr,
+		})
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level:       slog.LevelInfo,
+			ReplaceAttr: replaceAttr,
+		})
 	}
 
-	zerolog.DefaultContextLogger = &log.Logger
+	slog.SetDefault(slog.New(handler))
 }
 
 func logBuildInfo() {
@@ -217,16 +223,16 @@ func logBuildInfo() {
 	if !ok {
 		return
 	}
-	ev := log.Info()
+	var attrs []any
 	for _, v := range buildInfo.Settings {
 		if strings.HasPrefix(v.Key, "vcs.") ||
 			strings.HasPrefix(v.Key, "GO") ||
 			v.Key == "CGO_ENABLED" {
-			ev = ev.Str(v.Key, v.Value)
+			attrs = append(attrs, v.Key, v.Value)
 		}
 	}
 
-	ev.Msg("build information")
+	slog.Info("build information", attrs...)
 }
 
 func configureHTTPTransport(cfg config.ServerConfig) *http.Transport {
