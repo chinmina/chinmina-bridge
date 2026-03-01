@@ -1,0 +1,296 @@
+
+[TestAuditEntrySnapshots/minimal_entry - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ }
+}
+---
+
+[TestAuditEntrySnapshots/unauthorized_request_with_error - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "error": "access denied",
+ "request": {
+  "method": "POST",
+  "path": "/token",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ }
+}
+---
+
+[TestAuditEntrySnapshots/with_pipeline_details - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "pipeline": {
+  "buildBranch": "main",
+  "buildNumber": 42,
+  "jobID": "job-123",
+  "organizationSlug": "acme",
+  "pipelineSlug": "main-pipeline"
+ },
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ }
+}
+---
+
+[TestAuditEntrySnapshots/with_authorization_expiry - 1]
+{
+ "authorization": {
+  "authorized": true,
+  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiryRemaining": "<Any value>",
+  "subject": "buildkite:org:acme"
+ },
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ }
+}
+---
+
+[TestAuditEntrySnapshots/with_token_fields_no_expiry - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ },
+ "token": {
+  "permissions": [
+   "contents:read"
+  ],
+  "repositories": [
+   "org/repo"
+  ],
+  "requestedProfile": "org/repo",
+  "requestedRepository": "https://github.com/org/repo",
+  "vendedRepository": "https://github.com/org/vended-repo"
+ }
+}
+---
+
+[TestAuditEntrySnapshots/with_token_and_expiry - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ },
+ "token": {
+  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiryRemaining": "<Any value>",
+  "requestedRepository": "https://github.com/org/repo"
+ }
+}
+---
+
+[TestAuditEntrySnapshots/with_claim_matches - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ },
+ "token": {
+  "matches": [
+   {
+    "claim": "pipeline_slug",
+    "value": "silk-prod"
+   },
+   {
+    "claim": "build_branch",
+    "value": "main"
+   }
+  ],
+  "requestedRepository": "https://github.com/org/repo"
+ }
+}
+---
+
+[TestAuditEntrySnapshots/with_claim_failures - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ },
+ "token": {
+  "attemptedPatterns": [
+   {
+    "claim": "pipeline_slug",
+    "pattern": ".*-release",
+    "value": "silk-staging"
+   }
+  ],
+  "requestedRepository": "https://github.com/org/repo"
+ }
+}
+---
+
+[TestAuditEntrySnapshots/empty_matches_array - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ },
+ "token": {
+  "matches": [],
+  "requestedRepository": "https://github.com/org/repo"
+ }
+}
+---
+
+[TestAuditEntrySnapshots/fully_populated - 1]
+{
+ "authorization": {
+  "audience": [
+   "https://buildkite.com"
+  ],
+  "authorized": true,
+  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiryRemaining": "<Any value>",
+  "issuer": "https://agent.buildkite.com",
+  "subject": "buildkite:org:acme"
+ },
+ "error": "partial failure",
+ "pipeline": {
+  "buildBranch": "main",
+  "buildNumber": 42,
+  "jobID": "job-123",
+  "organizationSlug": "acme",
+  "pipelineSlug": "main-pipeline"
+ },
+ "request": {
+  "method": "POST",
+  "path": "/token",
+  "sourceIP": "10.0.0.1",
+  "status": 200,
+  "userAgent": "test/1.0"
+ },
+ "token": {
+  "attemptedPatterns": [
+   {
+    "claim": "build_branch",
+    "pattern": "release-.*",
+    "value": "main"
+   }
+  ],
+  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiryRemaining": "<Any value>",
+  "matches": [
+   {
+    "claim": "pipeline_slug",
+    "value": "main-pipeline"
+   }
+  ],
+  "permissions": [
+   "contents:read"
+  ],
+  "repositories": [
+   "org/repo"
+  ],
+  "requestedProfile": "org/repo",
+  "requestedRepository": "https://github.com/org/repo",
+  "vendedRepository": "https://github.com/org/vended-repo"
+ }
+}
+---
+
+[TestAuditEndEventSnapshot - 1]
+{
+ "authorization": {
+  "audience": [
+   "https://buildkite.com"
+  ],
+  "authorized": true,
+  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiryRemaining": "<Any value>",
+  "issuer": "https://agent.buildkite.com",
+  "subject": "buildkite:org:acme"
+ },
+ "level": "audit",
+ "message": "audit_event",
+ "pipeline": {
+  "buildBranch": "main",
+  "buildNumber": 42,
+  "jobID": "job-123",
+  "organizationSlug": "acme",
+  "pipelineSlug": "main-pipeline"
+ },
+ "request": {
+  "method": "POST",
+  "path": "/token",
+  "sourceIP": "10.0.0.1",
+  "status": 200,
+  "userAgent": "buildkite-agent/3.0"
+ },
+ "token": {
+  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiryRemaining": "<Any value>",
+  "matches": [
+   {
+    "claim": "pipeline_slug",
+    "value": "main-pipeline"
+   }
+  ],
+  "permissions": [
+   "contents:read"
+  ],
+  "repositories": [
+   "org/repo"
+  ],
+  "requestedProfile": "org/repo",
+  "requestedRepository": "https://github.com/org/repo",
+  "vendedRepository": "https://github.com/org/vended-repo"
+ },
+ "type": "audit"
+}
+---
