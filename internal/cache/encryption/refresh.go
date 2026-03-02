@@ -3,10 +3,10 @@ package encryption
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/tink-crypto/tink-go/v2/tink"
 )
 
@@ -135,13 +135,11 @@ func (r *RefreshableAEAD) refreshLoop(ctx context.Context, interval time.Duratio
 // Failures are logged but non-fatal: the service continues with the existing
 // keyset.
 func (r *RefreshableAEAD) refresh(ctx context.Context) {
-	log.Info().Msg("refreshing encryption keyset")
+	slog.Info("refreshing encryption keyset")
 
 	newAEAD, err := r.loader(ctx)
 	if err != nil {
-		log.Warn().
-			Err(err).
-			Msg("failed to refresh encryption keyset, continuing with current keyset")
+		slog.Warn("failed to refresh encryption keyset, continuing with current keyset", "error", err)
 		return
 	}
 
@@ -149,5 +147,5 @@ func (r *RefreshableAEAD) refresh(ctx context.Context) {
 	r.aead = newAEAD
 	r.mu.Unlock()
 
-	log.Info().Msg("encryption keyset refreshed successfully")
+	slog.Info("encryption keyset refreshed successfully")
 }

@@ -3,13 +3,13 @@ package vendor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sync"
 
 	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
-	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -61,7 +61,7 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 				// retrieval errors are effectively cache misses, but we record them
 				// separately to identify cache issues in production
 				recordOutcome(ctx, "error")
-				log.Warn().Err(err).Str("key", key).Msg("cache get failed")
+				slog.Warn("cache get failed", "error", err, "key", key)
 			} else if !found {
 				// successfully found that the key is not in the cache
 				recordOutcome(ctx, "miss")
@@ -70,16 +70,16 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 				// we can't use the cached token -- treat as a cache miss and invalidate
 				// the cache
 				recordOutcome(ctx, "mismatch")
-				log.Debug().
-					Time("expiry", cachedToken.Expiry).
-					Str("key", key).
-					Str("requestedRepository", requestedRepository).
-					Msg("dropping cached token due to repository mismatch: will request new token")
+				slog.Debug("dropping cached token due to repository mismatch: will request new token",
+					"expiry", cachedToken.Expiry,
+					"key", key,
+					"requestedRepository", requestedRepository,
+				)
 
 				// forced invalidation is more effective than setting the value to be
 				// empty -- some caches don't guarantee writes.
 				if err := tokenCache.Invalidate(ctx, key); err != nil {
-					log.Warn().Err(err).Str("key", key).Msg("cache invalidate failed")
+					slog.Warn("cache invalidate failed", "error", err, "key", key)
 				}
 			} else {
 				// short circuit and return on a cache hit
@@ -93,7 +93,7 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 			// Only cache successful results
 			if token, tokenVended := result.Token(); tokenVended {
 				if err := tokenCache.Set(ctx, key, token); err != nil {
-					log.Warn().Err(err).Str("key", key).Msg("cache set failed")
+					slog.Warn("cache set failed", "error", err, "key", key)
 				}
 			}
 
