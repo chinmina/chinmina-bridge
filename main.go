@@ -197,9 +197,7 @@ func launchServer() error {
 
 func configureLogging() {
 	replaceAttr := loginfra.ReplaceLevel(map[slog.Level]string{
-		audit.SlogLevel:            audit.SlogLevelName,
-		observe.SlogOTelInfoLevel:  observe.SlogOTelInfoLevelName,
-		observe.SlogOTelDebugLevel: observe.SlogOTelDebugLevelName,
+		audit.SlogLevel: audit.SlogLevelName,
 	})
 
 	var handler slog.Handler
