@@ -14,7 +14,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 )
 
 // HTTPStatuser provides HTTP status information for errors
@@ -177,7 +177,7 @@ func writeJSONError(ctx context.Context, w http.ResponseWriter, err error) {
 	response := ErrorResponse{Error: message}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		// At this point the status code has been written, so we can only log
-		log.Info().Msgf("failed to write JSON error response: %v", err)
+		slog.Info("failed to write JSON error response", "error", err)
 	}
 }
 
@@ -238,5 +238,5 @@ func auditError(ctx context.Context, err error) {
 	}
 
 	// we don't override existing audit errors, so write it to the general log
-	log.Info().Err(err).Msgf("request failure")
+	slog.Info("request failure", "error", err)
 }
