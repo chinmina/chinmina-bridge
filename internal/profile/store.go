@@ -4,7 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -90,14 +91,12 @@ func (p *ProfileStore) Update(ctx context.Context, profiles Profiles) {
 
 	// by default, only log when the source has actually changed content
 	if oldDigest != newDigest {
-		log.Info().
-			Interface("stats", profiles.Stats()).
-			Interface("previousStats", p.profiles.Stats()).
-			Msg("profiles: updated")
+		slog.Info("profiles: updated",
+			"stats", profiles.Stats(),
+			"previousStats", p.profiles.Stats())
 	} else {
-		log.Debug().
-			Interface("stats", profiles.Stats()).
-			Msg("profiles: no changes detected")
+		slog.Debug("profiles: no changes detected",
+			"stats", profiles.Stats())
 	}
 
 	p.profiles = profiles

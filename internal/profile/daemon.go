@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -21,7 +22,7 @@ func PeriodicRefresh(ctx context.Context, profileStore *ProfileStore, gh GitHubC
 		case <-time.After(5 * time.Minute):
 			// continue
 		case <-ctx.Done():
-			log.Info().Msg("refresh goroutine shutting down gracefully")
+			slog.Info("refresh goroutine shutting down gracefully")
 			return
 		}
 	}
@@ -38,7 +39,7 @@ func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, o
 			err := fmt.Errorf("panic during profile refresh: %v", r)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "profile refresh panicked")
-			log.Warn().Interface("panic", r).Msg("profile refresh panicked, recovered")
+			slog.Warn("profile refresh panicked, recovered", "panic", r)
 		}
 	}()
 
@@ -46,7 +47,7 @@ func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, o
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "profile refresh failed")
-		log.Warn().Err(err).Msg("organization profile refresh failed, continuing")
+		slog.Warn("organization profile refresh failed, continuing", "error", err)
 		return
 	}
 

@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
+	"log/slog"
+
 	"github.com/chinmina/chinmina-bridge/internal/github"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 // compileOrganizationProfiles compiles organization profiles from config.
@@ -62,14 +62,12 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 
 	// Log warnings for invalid profiles
 	if len(invalidProfiles) > 0 {
-		d := zerolog.Dict()
+		attrs := make([]slog.Attr, 0, len(invalidProfiles))
 		for name, err := range invalidProfiles {
-			d.Str(name, err.Error())
+			attrs = append(attrs, slog.String(name, err.Error()))
 		}
-
-		log.Warn().
-			Dict("invalid_profiles", d).
-			Msg("organization profile: some profiles failed validation and were ignored")
+		slog.Warn("organization profile: some profiles failed validation and were ignored",
+			slog.Attr{Key: "invalid_profiles", Value: slog.GroupValue(attrs...)})
 	}
 
 	// Build maps for ProfileStoreOf
@@ -142,14 +140,12 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 
 	// Log warnings for invalid profiles
 	if len(invalidProfiles) > 0 {
-		d := zerolog.Dict()
+		attrs := make([]slog.Attr, 0, len(invalidProfiles))
 		for name, err := range invalidProfiles {
-			d.Str(name, err.Error())
+			attrs = append(attrs, slog.String(name, err.Error()))
 		}
-
-		log.Warn().
-			Dict("invalid_profiles", d).
-			Msg("pipeline profile: some profiles failed validation and were ignored")
+		slog.Warn("pipeline profile: some profiles failed validation and were ignored",
+			slog.Attr{Key: "invalid_profiles", Value: slog.GroupValue(attrs...)})
 	}
 
 	// Build maps for ProfileStoreOf
