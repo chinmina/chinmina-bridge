@@ -64,9 +64,9 @@ func (og *OptionalGroup) Attr(a slog.Attr) *OptionalGroup {
 // Group returns a named group attribute when at least one attribute was added,
 // otherwise it returns a zero slog.Attr (empty key). slog.JSONHandler omits
 // empty-key attributes, so the group is elided when unmodified.
-func (og *OptionalGroup) Group(key string) slog.Attr {
+func (og *OptionalGroup) Group(key string) (slog.Attr, bool) {
 	if !og.modified {
-		return slog.Attr{}
+		return slog.Attr{}, false
 	}
-	return slog.Attr{Key: key, Value: slog.GroupValue(og.attrs...)}
+	return slog.Attr{Key: key, Value: slog.GroupValue(og.attrs...)}, true
 }
