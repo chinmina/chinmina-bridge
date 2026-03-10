@@ -3,12 +3,12 @@ package vendor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/url"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
-	"github.com/rs/zerolog/log"
 )
 
 // NewOrgVendor creates a vendor for organization-scoped (org:*) profiles.
@@ -20,12 +20,6 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		if ref.Type != profile.ProfileTypeOrg {
 			return NewVendorFailed(fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeOrg.String(), ref.Type.String()))
 		}
-
-		logger := log.With().
-			Str("organization", ref.Organization).
-			Str("profile", ref.ShortString()).
-			Str("requestedRepo", requestedRepoURL).
-			Logger()
 
 		// Use the ProfileStore to get the requested profile and validate it
 		authProfile, err := profileStore.GetOrganizationProfile(ref.Name)
@@ -68,7 +62,11 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			// its credentials chain.
 			_, repository := github.RepoForURL(*repo)
 			if !authProfile.Attrs.HasRepository(repository) {
-				logger.Debug().Msg("profile doesn't support requested repository: no token vended.")
+				slog.Debug("profile doesn't support requested repository: no token vended.",
+					"organization", ref.Organization,
+					"profile", ref.ShortString(),
+					"requestedRepo", requestedRepoURL,
+				)
 				return NewVendorUnmatched()
 			}
 		}
@@ -80,7 +78,10 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			return NewVendorFailed(fmt.Errorf("could not issue token for profile %s: %w", ref, err))
 		}
 
-		logger.Info().Msg("profile token issued")
+		slog.Info("profile token issued",
+			"organization", ref.Organization,
+			"profile", ref.ShortString(),
+		)
 
 		return NewVendorSuccess(ProfileToken{
 			OrganizationSlug:    ref.Organization,

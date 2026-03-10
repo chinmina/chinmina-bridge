@@ -3,11 +3,11 @@ package vendor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
-	"github.com/rs/zerolog/log"
 )
 
 // NewRepoVendor creates a vendor for pipeline-scoped (repo:*) profiles.
@@ -27,12 +27,6 @@ func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLook
 			return NewVendorFailed(fmt.Errorf("could not find repository for pipeline %s: %w", ref.PipelineSlug, err))
 		}
 
-		logger := log.With().
-			Str("organization", ref.Organization).
-			Str("profile", ref.ShortString()).
-			Str("repo", pipelineRepoURL).
-			Logger()
-
 		// The pipeline itself may be configured for SSH, and changed by the agent.
 		// For comparison purposes here it has to be an HTTPS URL.
 		pipelineRepoURL = TranslateSSHToHTTPS(pipelineRepoURL)
@@ -40,9 +34,12 @@ func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLook
 		if requestedRepoURL != "" && pipelineRepoURL != requestedRepoURL {
 			// A repository mismatch means we should not return a token or an error:
 			// Git uses this to determine that it should try the next provider.
-			logger.Debug().
-				Str("requestedRepo", requestedRepoURL).
-				Msg("profile doesn't support requested repository: no token vended.")
+			slog.Debug("profile doesn't support requested repository: no token vended.",
+				"organization", ref.Organization,
+				"profile", ref.ShortString(),
+				"repo", pipelineRepoURL,
+				"requestedRepo", requestedRepoURL,
+			)
 
 			return NewVendorUnmatched()
 		}

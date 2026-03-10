@@ -2,10 +2,10 @@ package observe
 
 import (
 	"fmt"
+	"log/slog"
 	"runtime"
 
 	pyroscope "github.com/grafana/pyroscope-go"
-	"github.com/rs/zerolog/log"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 )
@@ -18,7 +18,7 @@ var experiment = ""
 // calling the stop function on shutdown.
 func ConfigurePyroscope(cfg config.ObserveConfig) (func() error, error) {
 	if !cfg.PyroscopeEnabled {
-		log.Info().Msg("pyroscope profiling disabled: enable with OBSERVE_PYROSCOPE_ENABLED")
+		slog.Info("pyroscope profiling disabled: enable with OBSERVE_PYROSCOPE_ENABLED")
 		return func() error { return nil }, nil
 	}
 
@@ -57,11 +57,11 @@ func ConfigurePyroscope(cfg config.ObserveConfig) (func() error, error) {
 		return nil, fmt.Errorf("pyroscope profiler startup failed: %w", err)
 	}
 
-	ev := log.Info().Str("address", cfg.PyroscopeServerAddress)
+	attrs := []any{"address", cfg.PyroscopeServerAddress}
 	if experimentTag != "" {
-		ev = ev.Str("experiment", experimentTag)
+		attrs = append(attrs, "experiment", experimentTag)
 	}
-	ev.Msg("pyroscope continuous profiling started")
+	slog.Info("pyroscope continuous profiling started", attrs...)
 
 	return profiler.Stop, nil
 }
