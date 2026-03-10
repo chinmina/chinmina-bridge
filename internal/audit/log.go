@@ -3,22 +3,12 @@ package audit
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
-	"time"
-
-	"github.com/rs/zerolog"
 )
-
-// marker for interface implementation
-var _ zerolog.LogObjectMarshaler = (*Entry)(nil)
 
 // marker for context key
 type key struct{}
-
-const (
-	// Level is the log level at which audit logs are written.
-	Level = zerolog.Level(20)
-)
 
 var (
 	// logKey is the key used to store the audit log entry in the context.
@@ -31,21 +21,11 @@ type ClaimMatch struct {
 	Value string
 }
 
-// MarshalZerologObject implements zerolog.LogObjectMarshaler for ClaimMatch.
-func (cm ClaimMatch) MarshalZerologObject(e *zerolog.Event) {
-	e.Str("claim", cm.Claim).Str("value", cm.Value)
-}
-
 // ClaimFailure represents a failed claim match attempt for audit logging.
 type ClaimFailure struct {
 	Claim   string
 	Pattern string
 	Value   string
-}
-
-// MarshalZerologObject implements zerolog.LogObjectMarshaler for ClaimFailure.
-func (cf ClaimFailure) MarshalZerologObject(e *zerolog.Event) {
-	e.Str("claim", cf.Claim).Str("pattern", cf.Pattern).Str("value", cf.Value)
 }
 
 // Entry is an audit log entry for the current request.
@@ -75,73 +55,6 @@ type Entry struct {
 	HashedToken         string
 	ClaimsMatched       []ClaimMatch
 	ClaimsFailed        []ClaimFailure
-}
-
-// MarshalZerologObject implements zerolog.LogObjectMarshaler. This avoids the
-// need for reflection when logging, at the cost of requiring maintenance when
-// the Entry struct changes.
-//
-//nolint:gocyclo // marshaling function with many conditional fields
-func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
-
-	// request fields
-	event.Dict("request", zerolog.Dict().
-		Str("method", e.Method).
-		Str("path", e.Path).
-		Int("status", e.Status).
-		Str("sourceIP", e.SourceIP).
-		Str("userAgent", e.UserAgent),
-	)
-
-	// pipeline/job details
-	NewOptionalEvent(zerolog.Dict()).
-		Str("pipelineSlug", e.PipelineSlug).
-		Str("organizationSlug", e.OrganizationSlug).
-		Str("jobID", e.JobID).
-		Int("buildNumber", e.BuildNumber).
-		Str("buildBranch", e.BuildBranch).
-		Set(event, "pipeline")
-
-	// JWT auth details
-	authDetails := NewOptionalEvent(zerolog.Dict()).
-		Bool("authorized", e.Authorized).
-		Str("subject", e.AuthSubject).
-		Str("issuer", e.AuthIssuer).
-		Strs("audience", e.AuthAudience)
-
-	now := time.Now()
-	if e.AuthExpirySecs > 0 {
-		exp := time.Unix(e.AuthExpirySecs, 0)
-		remaining := exp.Sub(now).Round(time.Millisecond)
-		authDetails.Event().Time("expiry", exp)
-		authDetails.Event().Dur("expiryRemaining", remaining)
-	}
-
-	authDetails.Set(event, "authorization")
-
-	// vended token details
-	tokenDetails := NewOptionalEvent(zerolog.Dict()).
-		Str("requestedProfile", e.RequestedProfile).
-		Str("requestedRepository", e.RequestedRepository).
-		Str("vendedRepository", e.VendedRepository).
-		Str("hashedToken", e.HashedToken).
-		Strs("repositories", e.Repositories).
-		Strs("permissions", e.Permissions).
-		Arr("matches", arr(e.ClaimsMatched)).
-		Arr("attemptedPatterns", arr(e.ClaimsFailed))
-
-	if e.ExpirySecs > 0 {
-		exp := time.Unix(e.ExpirySecs, 0)
-		remaining := exp.Sub(now).Round(time.Millisecond)
-		tokenDetails.Event().Time("expiry", exp)
-		tokenDetails.Event().Dur("expiryRemaining", remaining)
-	}
-
-	tokenDetails.Set(event, "token")
-
-	if e.Error != "" {
-		event.Str("error", e.Error)
-	}
 }
 
 // Begin sets up the audit log entry for the current request with details from the request.
@@ -175,7 +88,8 @@ func (e *Entry) End(ctx context.Context) func() {
 			e.Status = http.StatusOK
 		}
 
-		zerolog.Ctx(ctx).WithLevel(Level).EmbedObject(e).Str("type", "audit").Msg("audit_event")
+		attrs := append(e.SlogAttrs(), slog.String("type", "audit"))
+		slog.LogAttrs(ctx, SlogLevel, "audit_event", attrs...)
 
 		if r != nil {
 			// repanic the panic
@@ -192,8 +106,6 @@ func (e *Entry) End(ctx context.Context) func() {
 // audit entry. The HTTP status code of the response is also logged in the audit
 // entry; further details may be added by the application.
 func Middleware() func(next http.Handler) http.Handler {
-	zerologConfiguration()
-
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx, entry := Context(r.Context())
@@ -228,18 +140,4 @@ func Context(ctx context.Context) (context.Context, *Entry) {
 	}
 
 	return ctx, e
-}
-
-func zerologConfiguration() {
-	// configure the console writer
-	zerolog.FormattedLevels[Level] = "AUD"
-
-	// format the audit level as "audit", falling back to the default
-	marshal := zerolog.LevelFieldMarshalFunc
-	zerolog.LevelFieldMarshalFunc = func(l zerolog.Level) string {
-		if l == Level {
-			return "audit"
-		}
-		return marshal(l)
-	}
 }

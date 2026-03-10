@@ -16,6 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// fixedExpiry is a deterministic timestamp used in snapshot tests to avoid
+// non-deterministic output. The expiryRemaining field must be matched with
+// match.Any since it depends on time.Now().
+var fixedExpiry = time.Unix(1893456000, 0) // 2029-12-31
+
 // serializeSlogEntry writes the entry via slog.JSONHandler and returns the raw JSON bytes.
 // The time field is removed for deterministic snapshots; the level is formatted
 // via ReplaceLevel so audit entries appear as "audit" in the output.
@@ -167,6 +172,19 @@ func TestSlogEntryAttrs(t *testing.T) {
 			},
 		},
 		{
+			name: "hashed token present when set",
+			entry: audit.Entry{
+				RequestedRepository: "https://github.com/org/repo",
+				HashedToken:         "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+			},
+		},
+		{
+			name: "hashed token absent when empty",
+			entry: audit.Entry{
+				RequestedRepository: "https://github.com/org/repo",
+			},
+		},
+		{
 			name: "fully populated",
 			entry: audit.Entry{
 				Method:              "POST",
@@ -187,6 +205,7 @@ func TestSlogEntryAttrs(t *testing.T) {
 				RequestedProfile:    "org/repo",
 				RequestedRepository: "https://github.com/org/repo",
 				VendedRepository:    "https://github.com/org/vended-repo",
+				HashedToken:         "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
 				Repositories:        []string{"org/repo"},
 				Permissions:         []string{"contents:read"},
 				ExpirySecs:          fixedExpiry.Unix(),

@@ -4,7 +4,7 @@
  "authorization": {
   "authorized": false
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "",
@@ -22,7 +22,7 @@
   "authorized": false
  },
  "error": "access denied",
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "POST",
@@ -39,7 +39,7 @@
  "authorization": {
   "authorized": false
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "pipeline": {
   "buildBranch": "main",
@@ -63,7 +63,7 @@
  "authorization": {
   "authorized": false
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "GET",
@@ -79,11 +79,11 @@
 {
  "authorization": {
   "authorized": true,
-  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiry": "2030-01-01T00:00:00Z",
   "expiryRemaining": "<Any value>",
   "subject": "buildkite:org:acme"
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "",
@@ -100,7 +100,7 @@
  "authorization": {
   "authorized": false
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "",
@@ -128,7 +128,7 @@
  "authorization": {
   "authorized": false
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "",
@@ -138,7 +138,7 @@
   "userAgent": ""
  },
  "token": {
-  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiry": "2030-01-01T00:00:00Z",
   "expiryRemaining": "<Any value>",
   "requestedRepository": "https://github.com/org/repo"
  }
@@ -150,7 +150,7 @@
  "authorization": {
   "authorized": false
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "",
@@ -180,7 +180,7 @@
  "authorization": {
   "authorized": false
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "",
@@ -207,7 +207,7 @@
  "authorization": {
   "authorized": false
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "",
@@ -228,7 +228,7 @@
  "authorization": {
   "authorized": false
  },
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "request": {
   "method": "",
@@ -250,13 +250,13 @@
    "https://buildkite.com"
   ],
   "authorized": true,
-  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiry": "2030-01-01T00:00:00Z",
   "expiryRemaining": "<Any value>",
   "issuer": "https://agent.buildkite.com",
   "subject": "buildkite:org:acme"
  },
  "error": "partial failure",
- "level": "audit",
+ "level": "AUDIT",
  "msg": "audit_event",
  "pipeline": {
   "buildBranch": "main",
@@ -280,8 +280,9 @@
     "value": "main"
    }
   ],
-  "expiry": "2030-01-01T11:00:00+11:00",
+  "expiry": "2030-01-01T00:00:00Z",
   "expiryRemaining": "<Any value>",
+  "hashedToken": "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
   "matches": [
    {
     "claim": "pipeline_slug",
@@ -297,6 +298,47 @@
   "requestedProfile": "org/repo",
   "requestedRepository": "https://github.com/org/repo",
   "vendedRepository": "https://github.com/org/vended-repo"
+ }
+}
+---
+
+[TestSlogEntryAttrs/hashed_token_present_when_set - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "level": "AUDIT",
+ "msg": "audit_event",
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ },
+ "token": {
+  "hashedToken": "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+  "requestedRepository": "https://github.com/org/repo"
+ }
+}
+---
+
+[TestSlogEntryAttrs/hashed_token_absent_when_empty - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "level": "AUDIT",
+ "msg": "audit_event",
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ },
+ "token": {
+  "requestedRepository": "https://github.com/org/repo"
  }
 }
 ---

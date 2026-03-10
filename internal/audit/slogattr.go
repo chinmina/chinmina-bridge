@@ -12,7 +12,7 @@ const (
 	SlogLevel = slog.Level(20)
 
 	// SlogLevelName is the human-readable label for SlogLevel.
-	SlogLevelName = "audit"
+	SlogLevelName = "AUDIT"
 )
 
 // LogValue implements slog.LogValuer for ClaimMatch, emitting a flat group with
@@ -109,7 +109,7 @@ func (e *Entry) SlogAttrs() []slog.Attr {
 		Strs("audience", e.AuthAudience)
 
 	if e.AuthExpirySecs > 0 {
-		exp := time.Unix(e.AuthExpirySecs, 0)
+		exp := time.Unix(e.AuthExpirySecs, 0).UTC()
 		remaining := exp.Sub(now).Round(time.Millisecond)
 		authDetails.Attr(slog.Time("expiry", exp))
 		authDetails.Attr(slog.Duration("expiryRemaining", remaining))
@@ -124,6 +124,7 @@ func (e *Entry) SlogAttrs() []slog.Attr {
 		Str("requestedProfile", e.RequestedProfile).
 		Str("requestedRepository", e.RequestedRepository).
 		Str("vendedRepository", e.VendedRepository).
+		Str("hashedToken", e.HashedToken).
 		Strs("repositories", e.Repositories).
 		Strs("permissions", e.Permissions)
 
@@ -135,7 +136,7 @@ func (e *Entry) SlogAttrs() []slog.Attr {
 		tokenDetails.Attr(slog.Any("attemptedPatterns", slogFailureSlice(e.ClaimsFailed)))
 	}
 	if e.ExpirySecs > 0 {
-		exp := time.Unix(e.ExpirySecs, 0)
+		exp := time.Unix(e.ExpirySecs, 0).UTC()
 		remaining := exp.Sub(now).Round(time.Millisecond)
 		tokenDetails.Attr(slog.Time("expiry", exp))
 		tokenDetails.Attr(slog.Duration("expiryRemaining", remaining))
