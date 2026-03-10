@@ -10,6 +10,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zerologr"
+	otelpyroscope "github.com/grafana/otel-profiling-go"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
@@ -24,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+	traceapi "go.opentelemetry.io/otel/trace"
 )
 
 // Configure sets up OpenTelemetry according to the configuration. If it does
@@ -69,7 +71,12 @@ func Configure(ctx context.Context, cfg config.ObserveConfig) (shutdown func(con
 		return
 	}
 	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
-	otel.SetTracerProvider(tracerProvider)
+
+	var tp traceapi.TracerProvider = tracerProvider
+	if cfg.PyroscopeEnabled {
+		tp = otelpyroscope.NewTracerProvider(tp)
+	}
+	otel.SetTracerProvider(tp)
 
 	if cfg.MetricsEnabled {
 		meterProvider, err := newMeterProvider(ctx, cfg, exporters)
