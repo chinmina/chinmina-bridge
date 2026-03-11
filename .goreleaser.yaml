@@ -15,6 +15,7 @@ builds:
     ldflags: "-w" # don't include DWARF symbols
     env:
       - CGO_ENABLED=0
+      - GOEXPERIMENT=jsonv2
     goos:
       - linux
     goarch:
