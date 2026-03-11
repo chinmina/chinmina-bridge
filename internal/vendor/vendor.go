@@ -27,6 +27,7 @@ type ProfileToken struct {
 	Repositories        []string  `json:"repositories"`
 	Permissions         []string  `json:"permissions"`
 	Token               string    `json:"token"`
+	HashedToken         string    `json:"hashedToken"`
 	Expiry              time.Time `json:"expiry"`
 }
 
