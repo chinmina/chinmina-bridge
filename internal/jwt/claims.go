@@ -159,7 +159,10 @@ func (c BuildkiteClaims) SetOnToken(token jwt.Token) error {
 //
 // Custom unmarshaling is implemented because struct-tag based approaches don't
 // allow us to extract fields prefixed with "agent_tag:" into the AgentTags map.
-// This will be easier when JSONv2 is shipped.
+// Now that JSONv2 is active, this could be simplified: known fields would use
+// normal struct tags, and only the "agent_tag:" prefix handling would remain
+// dynamic. The v2 token-based decoder no longer carries the +28% performance
+// penalty measured against the v1 decoder; see the benchmarks below.
 //
 // This implementation uses a generic switch approach with setField[T] for type
 // conversion. It was chosen after benchmarking 5 different implementations for
