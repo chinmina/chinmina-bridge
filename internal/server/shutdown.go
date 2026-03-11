@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
 )
 
 type hookDefinition struct {
@@ -25,11 +25,11 @@ func (s *ShutdownHooks) AddContext(name string, hook func(context.Context) error
 		s.hooks = make([]hookDefinition, 0, 5)
 	}
 	if hook == nil {
-		log.Warn().Str("hook", name).Msg("attempted to add nil shutdown hook; ignoring")
+		slog.Warn("attempted to add nil shutdown hook; ignoring", "hook", name)
 		return
 	}
 
-	log.Debug().Str("hook", name).Msg("adding shutdown hook")
+	slog.Debug("adding shutdown hook", "hook", name)
 	s.hooks = append(s.hooks, hookDefinition{name: name, fn: hook})
 }
 
@@ -38,7 +38,7 @@ func (s *ShutdownHooks) AddContext(name string, hook func(context.Context) error
 // Nil hooks are ignored with a warning logged.
 func (s *ShutdownHooks) Add(name string, hook func() error) {
 	if hook == nil {
-		log.Warn().Str("hook", name).Msg("attempted to add nil shutdown hook; ignoring")
+		slog.Warn("attempted to add nil shutdown hook; ignoring", "hook", name)
 		return
 	}
 
@@ -52,7 +52,7 @@ func (s *ShutdownHooks) Add(name string, hook func() error) {
 // Nil closers are ignored with a warning logged.
 func (s *ShutdownHooks) AddClose(name string, closer interface{ Close() }) {
 	if closer == nil {
-		log.Warn().Str("hook", name).Msg("attempted to add nil shutdown hook; ignoring")
+		slog.Warn("attempted to add nil shutdown hook; ignoring", "hook", name)
 		return
 	}
 
@@ -63,15 +63,14 @@ func (s *ShutdownHooks) AddClose(name string, closer interface{ Close() }) {
 // Each hook is executed with the provided context, and execution continues even if a hook fails.
 // Success and failure of each hook is logged appropriately.
 func (s *ShutdownHooks) Execute(ctx context.Context) {
-	l := log.Ctx(ctx)
 	for _, hook := range s.hooks {
-		hookLog := l.With().Str("hook", hook.name).Logger()
+		hookLog := slog.With("hook", hook.name)
 
-		hookLog.Info().Msg("shutdown started")
+		hookLog.Info("shutdown started")
 		if err := hook.fn(ctx); err != nil {
-			hookLog.Warn().Err(err).Msg("shutdown failed")
+			hookLog.Warn("shutdown failed", "error", err)
 		} else {
-			hookLog.Info().Msg("shutdown complete")
+			hookLog.Info("shutdown complete")
 		}
 	}
 }

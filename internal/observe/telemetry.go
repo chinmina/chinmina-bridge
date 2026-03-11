@@ -3,16 +3,14 @@ package observe
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptrace"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/go-logr/logr"
-	"github.com/go-logr/zerologr"
 	otelpyroscope "github.com/grafana/otel-profiling-go"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -33,9 +31,7 @@ import (
 // properly stop the services and publish any unpublished batches of metrics.
 func Configure(ctx context.Context, cfg config.ObserveConfig) (shutdown func(context.Context) error, err error) {
 	if !cfg.Enabled {
-		zerolog.Ctx(ctx).Info().Msg(
-			"telemetry disabled: enable with OBSERVE_ENABLED to send telemetry data to an OpenTelemetry collector",
-		)
+		slog.Info("telemetry disabled: enable with OBSERVE_ENABLED to send telemetry data to an OpenTelemetry collector")
 		return func(context.Context) error { return nil }, nil
 	}
 
@@ -185,54 +181,59 @@ func newMeterProvider(ctx context.Context, cfg config.ObserveConfig, e exporters
 	return meterProvider, nil
 }
 
+// otelHandler wraps a slog.Handler, overriding its level filter to allow
+// sub-Info OTel events through while delegating output to the underlying handler.
+type otelHandler struct {
+	slog.Handler
+	minLevel slog.Level
+}
+
+func (h *otelHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= h.minLevel
+}
+
+func (h *otelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &otelHandler{Handler: h.Handler.WithAttrs(attrs), minLevel: h.minLevel}
+}
+
+func (h *otelHandler) WithGroup(name string) slog.Handler {
+	return &otelHandler{Handler: h.Handler.WithGroup(name), minLevel: h.minLevel}
+}
+
 func configureLogging(cfg config.ObserveConfig) {
-	// configure console logger to handle the otel tracing levels
-	otelInfLvl := zerolog.Level(-3)
-	otelDbgLvl := zerolog.Level(-7)
+	// Map configured level string to a slog.Level threshold.
+	// logr.FromSlogHandler maps V(1)→slog.Level(-1), V(4)→SlogOTelInfoLevel (-4), V(8)→SlogOTelDebugLevel (-8).
+	var minLevel slog.Level
+	var enabled bool
 
-	level := zerolog.Disabled
-
-	// convert the configured string value to one appropriate for zerolog
 	switch cfg.SDKLogLevel {
-	case "debug":
-		level = otelDbgLvl
-	case "info":
-		level = otelInfLvl
 	case "warn":
-		level = zerolog.DebugLevel
+		minLevel = slog.Level(-1)
+		enabled = true
+	case "info":
+		minLevel = SlogOTelInfoLevel
+		enabled = true
+	case "debug":
+		minLevel = SlogOTelDebugLevel
+		enabled = true
 	case "":
 		// disabled
 	default:
-		log.Warn().
-			Str("configured", cfg.SDKLogLevel).
-			Msg("invalid configuration for OBSERVE_OTEL_LOG_LEVEL, internal OTel logging disabled.")
+		slog.Warn("invalid configuration for OBSERVE_OTEL_LOG_LEVEL, internal OTel logging disabled", "configured", cfg.SDKLogLevel)
 	}
 
-	// don't bother to configure when disabled
-	if level == zerolog.Disabled {
+	if !enabled {
 		return
 	}
 
-	// The otel internal logger (logr) uses V levels of 1, 4 and 8 respectively,
-	// which corresponds to zerolog levels of 0 (Debug), -3 and -7. Since these
-	// levels are non-standard for zerolog, configuration for the ConsoleLogger is
-	// added.
-	zerolog.FormattedLevels[otelInfLvl] = "OINF"
-	zerolog.LevelColors[otelInfLvl] = 90 // grey
-	zerolog.FormattedLevels[otelDbgLvl] = "ODBG"
-	zerolog.LevelColors[otelDbgLvl] = 90 // grey
+	// Wrap the global handler so sub-Info OTel events pass through, and tag
+	// all OTel events with source=otel for identification in log output.
+	handler := &otelHandler{
+		Handler:  slog.Default().Handler().WithAttrs([]slog.Attr{slog.String("source", "otel")}),
+		minLevel: minLevel,
+	}
 
-	// The zerolog logger that otel will write to, using its own level, and
-	// marking all events with the "otel" source.
-	otelLogger := log.Logger.
-		Level(level).
-		With().
-		Str("source", "otel").
-		Logger()
-
-	// bridge the logger to the logr library used by otel
-	l := logr.New(zerologr.NewLogSink(&otelLogger))
-	otel.SetLogger(l)
+	otel.SetLogger(logr.FromSlogHandler(handler))
 }
 
 type exporters interface {

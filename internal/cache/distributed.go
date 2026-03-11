@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/valkey-io/valkey-go"
 )
 
@@ -109,7 +109,7 @@ func (d *Distributed[T]) Invalidate(ctx context.Context, key string) error {
 // Close releases resources associated with the cache client and encryption strategy.
 func (d *Distributed[T]) Close() error {
 	if err := d.strategy.Close(); err != nil {
-		log.Warn().Err(err).Msg("error closing encryption strategy")
+		slog.Warn("error closing encryption strategy", "error", err)
 	}
 	d.client.Close()
 	return nil

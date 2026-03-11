@@ -17,7 +17,8 @@ import (
 	appconfig "github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/google/go-github/v82/github"
 	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/rs/zerolog/log"
+	"log/slog"
+
 	"golang.org/x/oauth2"
 )
 
@@ -234,17 +235,13 @@ func GetRepoNames(repositoryURLs []string) ([]string, error) {
 	for _, repoURL := range repositoryURLs {
 		u, err := url.Parse(repoURL)
 		if err != nil {
-			log.Warn().
-				Str("repoURL", repoURL).
-				Msg("failed to parse repository URL, skipping this repository")
+			slog.Warn("failed to parse repository URL, skipping this repository", "repoURL", repoURL, "error", err)
 			continue
 		}
 
 		_, repoName := RepoForURL(*u)
 		if repoName == "" {
-			log.Warn().
-				Str("repoURL", repoURL).
-				Msg("failed to extract repo name from URL, skipping this repository")
+			slog.Warn("failed to extract repo name from URL, skipping this repository", "repoURL", repoURL)
 			continue
 		}
 

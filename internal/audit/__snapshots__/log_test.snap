@@ -1,0 +1,51 @@
+
+[TestAuditEndEventSnapshot - 1]
+{
+ "authorization": {
+  "audience": [
+   "https://buildkite.com"
+  ],
+  "authorized": true,
+  "expiry": "2030-01-01T00:00:00Z",
+  "expiryRemaining": "<Any value>",
+  "issuer": "https://agent.buildkite.com",
+  "subject": "buildkite:org:acme"
+ },
+ "level": "AUDIT",
+ "msg": "audit_event",
+ "pipeline": {
+  "buildBranch": "main",
+  "buildNumber": 42,
+  "jobID": "job-123",
+  "organizationSlug": "acme",
+  "pipelineSlug": "main-pipeline"
+ },
+ "request": {
+  "method": "POST",
+  "path": "/token",
+  "sourceIP": "10.0.0.1",
+  "status": 200,
+  "userAgent": "buildkite-agent/3.0"
+ },
+ "token": {
+  "expiry": "2030-01-01T00:00:00Z",
+  "expiryRemaining": "<Any value>",
+  "matches": [
+   {
+    "claim": "pipeline_slug",
+    "value": "main-pipeline"
+   }
+  ],
+  "permissions": [
+   "contents:read"
+  ],
+  "repositories": [
+   "org/repo"
+  ],
+  "requestedProfile": "org/repo",
+  "requestedRepository": "https://github.com/org/repo",
+  "vendedRepository": "https://github.com/org/vended-repo"
+ },
+ "type": "audit"
+}
+---

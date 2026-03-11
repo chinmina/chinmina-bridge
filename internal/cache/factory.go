@@ -4,12 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/chinmina/chinmina-bridge/internal/cache/encryption"
 	"github.com/chinmina/chinmina-bridge/internal/config"
-	"github.com/rs/zerolog/log"
 	"github.com/valkey-io/valkey-go"
 )
 
@@ -26,12 +26,12 @@ func NewFromConfig[T any](
 ) (TokenCache[T], error) {
 	switch cacheConfig.Type {
 	case "valkey":
-		log.Info().
-			Str("cache_type", "valkey").
-			Str("address", cacheConfig.Valkey.Address).
-			Bool("tls", cacheConfig.Valkey.TLS).
-			Bool("iam_enabled", cacheConfig.Valkey.IAMEnabled).
-			Msg("initializing distributed cache")
+		slog.Info("initializing distributed cache",
+			"cache_type", "valkey",
+			"address", cacheConfig.Valkey.Address,
+			"tls", cacheConfig.Valkey.TLS,
+			"iam_enabled", cacheConfig.Valkey.IAMEnabled,
+		)
 
 		if cacheConfig.Valkey.Address == "" {
 			return nil, fmt.Errorf("valkey address is required when cache type is valkey")
@@ -90,7 +90,7 @@ func NewFromConfig[T any](
 			}
 			strategy = NewInstrumentedStrategy(NewTinkEncryptionStrategy(aead))
 
-			log.Info().Msg("cache encryption enabled with automatic keyset refresh")
+			slog.Info("cache encryption enabled with automatic keyset refresh")
 		}
 
 		distributed, err := NewDistributed[T](valkeyClient, ttl, strategy)
@@ -106,9 +106,7 @@ func NewFromConfig[T any](
 		return instrumented, nil
 
 	case "memory":
-		log.Info().
-			Str("cache_type", "memory").
-			Msg("initializing in-memory cache")
+		slog.Info("initializing in-memory cache", "cache_type", "memory")
 
 		memory, err := NewMemory[T](ttl, maxMemorySize)
 		if err != nil {

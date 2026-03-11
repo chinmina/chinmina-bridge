@@ -1,27 +1,28 @@
 package testhelpers
 
 import (
+	"bytes"
+	"log/slog"
 	"testing"
-
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
+
+type testWriter struct {
+	t *testing.T
+}
+
+func (w *testWriter) Write(p []byte) (n int, err error) {
+	w.t.Log(string(bytes.TrimRight(p, "\n")))
+	return len(p), nil
+}
 
 func SetupLogger(t *testing.T) {
 	t.Helper()
 
-	// capture the current global logger so it can be restored on test completion.
-	globalLogger := log.Logger
+	original := slog.Default()
 	t.Cleanup(func() {
-		log.Logger = globalLogger
-		zerolog.DefaultContextLogger = nil
+		slog.SetDefault(original)
 	})
 
-	// set up a logger that writes to the test output
-	log.Logger = log.
-		Output(zerolog.NewTestWriter(t)).
-		Level(zerolog.DebugLevel)
-
-	// unless set, the context logger will not log anything
-	zerolog.DefaultContextLogger = &log.Logger
+	handler := slog.NewTextHandler(&testWriter{t: t}, &slog.HandlerOptions{Level: slog.LevelDebug})
+	slog.SetDefault(slog.New(handler))
 }
