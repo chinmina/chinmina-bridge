@@ -155,6 +155,7 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
+		HashedToken:         vendor.HashToken("vended-token-value"),
 		Repositories:        []string{"repo-url"},
 		Permissions:         []string{"contents:read", "metadata:read"},
 		Profile:             "repo:default",
@@ -191,6 +192,7 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
+		HashedToken:         vendor.HashToken("vended-token-value"),
 		Repositories:        []string{"pipeline-repo"},
 		Permissions:         []string{"contents:read", "metadata:read"},
 		Profile:             "repo:default",
@@ -225,6 +227,7 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
+		HashedToken:         vendor.HashToken("vended-token-value"),
 		Repositories:        []string{"repo-url"},
 		Permissions:         []string{"contents:read", "metadata:read"},
 		Profile:             "repo:default",
@@ -261,6 +264,7 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
+		HashedToken:         vendor.HashToken("vended-token-value"),
 		Repositories:        []string{"repo-url"},
 		Permissions:         configuredPermissions,
 		Profile:             "repo:default",
@@ -317,6 +321,7 @@ func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
 	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
+		HashedToken:         vendor.HashToken("vended-token-value"),
 		Repositories:        []string{"repo-url"},
 		Permissions:         multiplePermissions,
 		Profile:             "repo:default",
@@ -352,6 +357,7 @@ func TestRepoVendor_NamedProfileLookupSuccess(t *testing.T) {
 	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
+		HashedToken:         vendor.HashToken("vended-token-value"),
 		Repositories:        []string{"repo-url"},
 		Permissions:         []string{"contents:write", "pull_requests:write", "metadata:read"},
 		Profile:             "repo:high-access",
@@ -388,6 +394,7 @@ func TestRepoVendor_ProfileMatchSuccess(t *testing.T) {
 	result := v(createTestClaimsContextWithPipeline("security-scanner"), ref, "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
+		HashedToken:         vendor.HashToken("vended-token-value"),
 		Repositories:        []string{"repo-url"},
 		Permissions:         []string{"contents:read", "security_events:write", "metadata:read"},
 		Profile:             "repo:with-match-rules",

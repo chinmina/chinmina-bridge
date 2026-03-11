@@ -25,6 +25,7 @@ func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
 			entry.Repositories = token.Repositories
 			entry.Permissions = token.Permissions
 			entry.ExpirySecs = token.Expiry.Unix()
+			entry.HashedToken = token.HashedToken
 		} else {
 			// this is a successful no-result: it's not an error, but we don't have credentials for the request
 			// this happens on a repository mismatch, or on a profile request where the requested repo doesn't match.
