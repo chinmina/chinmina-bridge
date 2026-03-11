@@ -364,6 +364,36 @@ func TestCacheConfig_Validate_Failures(t *testing.T) {
 	}
 }
 
+func TestObserveConfig_Validate(t *testing.T) {
+	t.Run("pyroscope enabled requires address", func(t *testing.T) {
+		cfg := ObserveConfig{
+			PyroscopeEnabled:       true,
+			PyroscopeServerAddress: "",
+		}
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "OBSERVE_PYROSCOPE_SERVER_ADDRESS")
+	})
+
+	t.Run("pyroscope disabled skips address check", func(t *testing.T) {
+		cfg := ObserveConfig{
+			PyroscopeEnabled:       false,
+			PyroscopeServerAddress: "",
+		}
+		err := cfg.Validate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("pyroscope enabled with address is valid", func(t *testing.T) {
+		cfg := ObserveConfig{
+			PyroscopeEnabled:       true,
+			PyroscopeServerAddress: "http://pyroscope:4040",
+		}
+		err := cfg.Validate()
+		assert.NoError(t, err)
+	})
+}
+
 func TestLoad_Errors(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -393,6 +423,31 @@ func TestLoad_Errors(t *testing.T) {
 				"CACHE_TYPE": "valkey",
 			},
 			expectedErr: "invalid cache configuration",
+		},
+		{
+			name: "pyroscope enabled with empty server address",
+			configMap: map[string]string{
+				"JWT_BUILDKITE_ORGANIZATION_SLUG":  "test-org",
+				"BUILDKITE_API_TOKEN":              "test-token",
+				"GITHUB_APP_ID":                    "123",
+				"GITHUB_APP_INSTALLATION_ID":       "456",
+				"GITHUB_APP_PRIVATE_KEY":           "test-key",
+				"OBSERVE_PYROSCOPE_ENABLED":        "true",
+				"OBSERVE_PYROSCOPE_SERVER_ADDRESS": "",
+			},
+			expectedErr: "invalid observe configuration",
+		},
+		{
+			name: "pyroscope enabled with missing server address",
+			configMap: map[string]string{
+				"JWT_BUILDKITE_ORGANIZATION_SLUG": "test-org",
+				"BUILDKITE_API_TOKEN":             "test-token",
+				"GITHUB_APP_ID":                   "123",
+				"GITHUB_APP_INSTALLATION_ID":      "456",
+				"GITHUB_APP_PRIVATE_KEY":          "test-key",
+				"OBSERVE_PYROSCOPE_ENABLED":       "true",
+			},
+			expectedErr: "invalid observe configuration",
 		},
 	}
 

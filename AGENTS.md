@@ -2,6 +2,8 @@
 
 This file provides guidance to AI agents when working with code in this repository.
 
+Also load @~/.agents/local/chinmina-bridge.md when present to act as local instructions across worktrees.
+
 ## Project Purpose
 
 Chinmina Bridge is an HTTP service that generates short-lived GitHub access tokens for Buildkite CI/CD pipelines. It uses GitHub Apps for token generation and Buildkite OIDC tokens for authorization, replacing the need for SSH deploy keys or long-lived Personal Access Tokens.

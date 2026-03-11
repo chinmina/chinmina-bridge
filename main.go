@@ -125,6 +125,16 @@ func launchServer() error {
 	}
 	shutdownHooks.AddContext("telemetry", shutdownTelemetry)
 
+	// Pyroscope must start after OTel: otelpyroscope.NewTracerProvider (in
+	// Configure above) wraps the OTel tracer provider to correlate profiles with
+	// traces. Shutdown order is FIFO, so telemetry flushes spans first, then
+	// Pyroscope stops — which is also correct.
+	downPyroscope, err := observe.ConfigurePyroscope(cfg.Observe)
+	if err != nil {
+		return fmt.Errorf("pyroscope profiler configuration failed: %w", err)
+	}
+	shutdownHooks.Add("pyroscope", downPyroscope)
+
 	http.DefaultTransport = observe.HTTPTransport(
 		configureHTTPTransport(cfg.Server),
 		cfg.Observe,

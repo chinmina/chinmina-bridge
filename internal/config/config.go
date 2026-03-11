@@ -120,6 +120,11 @@ type ObserveConfig struct {
 	MetricReadIntervalSeconds  int    `env:"OBSERVE_METRIC_READ_INTERVAL_SECS, default=60"`
 	HTTPTransportEnabled       bool   `env:"OBSERVE_HTTP_TRANSPORT_ENABLED, default=true"`
 	HTTPConnectionTraceEnabled bool   `env:"OBSERVE_CONNECTION_TRACE_ENABLED, default=true"`
+	PyroscopeEnabled           bool   `env:"OBSERVE_PYROSCOPE_ENABLED, default=false"`
+	PyroscopeServerAddress     string `env:"OBSERVE_PYROSCOPE_SERVER_ADDRESS"`
+	// PyroscopeExperimentFlag allows tagging profiling data with an experiment label at
+	// runtime, overriding the compile-time experiment tag set via build flags.
+	PyroscopeExperimentFlag string `env:"OBSERVE_PYROSCOPE_EXPERIMENT"`
 }
 
 func Load(ctx context.Context) (Config, error) {
@@ -139,6 +144,11 @@ func load(ctx context.Context, lookup envconfig.Lookuper) (Config, error) {
 	err = cfg.Cache.Validate()
 	if err != nil {
 		return cfg, fmt.Errorf("invalid cache configuration: %w", err)
+	}
+
+	err = cfg.Observe.Validate()
+	if err != nil {
+		return cfg, fmt.Errorf("invalid observe configuration: %w", err)
 	}
 
 	return cfg, nil
@@ -193,6 +203,14 @@ func (c *CacheConfig) validateEncryption() error {
 		}
 	}
 
+	return nil
+}
+
+// Validate checks that the observe configuration is valid.
+func (c *ObserveConfig) Validate() error {
+	if c.PyroscopeEnabled && c.PyroscopeServerAddress == "" {
+		return fmt.Errorf("OBSERVE_PYROSCOPE_SERVER_ADDRESS required when OBSERVE_PYROSCOPE_ENABLED=true")
+	}
 	return nil
 }
 
