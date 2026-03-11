@@ -89,6 +89,7 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			Permissions:         authProfile.Attrs.Permissions,
 			Profile:             ref.ShortString(),
 			Token:               token,
+			HashedToken:         HashToken(token),
 			Expiry:              expiry,
 		})
 	}

@@ -91,6 +91,7 @@ func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLook
 			Permissions:         permissions,
 			Profile:             ref.ShortString(),
 			Token:               token,
+			HashedToken:         HashToken(token),
 			Expiry:              expiry,
 		})
 	}
