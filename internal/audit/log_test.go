@@ -253,6 +253,21 @@ func TestTokenFieldsSerialization(t *testing.T) {
 		assert.Equal(t, "https://github.com/org/requested-repo", token["requestedRepository"])
 		assert.Equal(t, "https://github.com/org/vended-repo", token["vendedRepository"])
 	})
+
+	t.Run("hashedToken present when set", func(t *testing.T) {
+		token := serializeToken(t, audit.Entry{
+			RequestedRepository: "https://github.com/org/repo",
+			HashedToken:         "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+		})
+		assert.Equal(t, "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=", token["hashedToken"])
+	})
+
+	t.Run("hashedToken absent when empty (cache backward compatibility)", func(t *testing.T) {
+		token := serializeToken(t, audit.Entry{
+			RequestedRepository: "https://github.com/org/repo",
+		})
+		assert.NotContains(t, token, "hashedToken")
+	})
 }
 
 func TestNestedDictSerialization(t *testing.T) {
@@ -431,6 +446,7 @@ func TestFullyPopulatedEntry(t *testing.T) {
 		Repositories:        []string{"org/repo"},
 		Permissions:         []string{"contents:read"},
 		ExpirySecs:          tokenExpiry.Unix(),
+		HashedToken:         "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
 		ClaimsMatched:       []audit.ClaimMatch{{Claim: "pipeline_slug", Value: "main-pipeline"}},
 		ClaimsFailed:        []audit.ClaimFailure{{Claim: "build_branch", Pattern: "release-.*", Value: "main"}},
 		Error:               "partial failure",
@@ -472,6 +488,7 @@ func TestFullyPopulatedEntry(t *testing.T) {
 		assert.Equal(t, "org/repo", token["requestedProfile"])
 		assert.Equal(t, "https://github.com/org/repo", token["requestedRepository"])
 		assert.Equal(t, "https://github.com/org/vended-repo", token["vendedRepository"])
+		assert.Equal(t, "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=", token["hashedToken"])
 
 		repos, ok := token["repositories"].([]any)
 		require.True(t, ok)

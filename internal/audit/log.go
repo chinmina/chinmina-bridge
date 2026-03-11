@@ -72,6 +72,7 @@ type Entry struct {
 	Repositories        []string
 	Permissions         []string
 	ExpirySecs          int64
+	HashedToken         string
 	ClaimsMatched       []ClaimMatch
 	ClaimsFailed        []ClaimFailure
 }
@@ -123,6 +124,7 @@ func (e *Entry) MarshalZerologObject(event *zerolog.Event) {
 		Str("requestedProfile", e.RequestedProfile).
 		Str("requestedRepository", e.RequestedRepository).
 		Str("vendedRepository", e.VendedRepository).
+		Str("hashedToken", e.HashedToken).
 		Strs("repositories", e.Repositories).
 		Strs("permissions", e.Permissions).
 		Arr("matches", arr(e.ClaimsMatched)).
