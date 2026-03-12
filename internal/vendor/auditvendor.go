@@ -22,7 +22,7 @@ func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
 			entry.Error = fmt.Sprintf("vendor failure: %v", err)
 		} else if token, tokenVended := result.Token(); tokenVended {
 			entry.VendedRepository = token.VendedRepositoryURL
-			entry.Repositories = token.Repositories
+			entry.Repositories = token.Repositories.NamesForDisplay()
 			entry.Permissions = token.Permissions
 			entry.ExpirySecs = token.Expiry.Unix()
 			entry.HashedToken = token.HashedToken

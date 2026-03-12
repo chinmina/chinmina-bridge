@@ -23,13 +23,14 @@ func (attr OrganizationProfileAttr) HasRepository(repo string) bool {
 		slices.Contains(attr.Repositories, repo)
 }
 
-// GetRepositories returns the list of repositories allowed by the profile.
-// If the profile allows all repositories, it returns nil to signify this.
-func (attr OrganizationProfileAttr) GetRepositories() []string {
+// RepositoryScope returns a RepositoryScope describing which repositories the
+// profile allows. A wildcard profile (single "*" entry) returns NewWildcardScope();
+// all other configurations return NewSpecificScope with the named repositories.
+func (attr OrganizationProfileAttr) RepositoryScope() RepositoryScope {
 	if attr.allowAllRepositories() {
-		return nil // nil means all repositories
+		return NewWildcardScope()
 	}
-	return attr.Repositories
+	return NewSpecificScope(attr.Repositories...)
 }
 
 // allowAllRepositories returns true if the profile allows access to all

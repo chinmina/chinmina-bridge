@@ -29,7 +29,7 @@ func TestCacheMissOnFirstRequest(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -51,7 +51,7 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -83,7 +83,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
 		Profile:             "org:read-plugins",
-		Repositories:        []string{"any-repo", "another-secret-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo", "another-secret-repo"),
 		Permissions:         []string{"contents:read", "packages:read", "metadata:read"},
 	})
 
@@ -93,7 +93,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
 		Profile:             "org:read-plugins",
-		Repositories:        []string{"any-repo", "another-secret-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo", "another-secret-repo"),
 		Permissions:         []string{"contents:read", "packages:read", "metadata:read"},
 	})
 }
@@ -115,7 +115,7 @@ func TestCacheHitOnSecondRequest(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -124,7 +124,7 @@ func TestCacheHitOnSecondRequest(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -148,7 +148,7 @@ func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -158,7 +158,7 @@ func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -180,7 +180,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -189,7 +189,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/different-repo.git",
-		Repositories:        []string{"different-repo"},
+		Repositories:        profile.NewSpecificScope("different-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -198,7 +198,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/different-repo.git",
-		Repositories:        []string{"different-repo"},
+		Repositories:        profile.NewSpecificScope("different-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -220,7 +220,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -235,7 +235,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -244,7 +244,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -266,7 +266,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -278,7 +278,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -300,7 +300,7 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
 		Profile:             "org:shared-profile",
-		Repositories:        []string{"any-repo", "different-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo", "different-repo"),
 		Permissions:         []string{"read", "write"},
 	})
 	// second call hits, but repo changes, so token content is the same but repo is different
@@ -309,7 +309,7 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/different-repo.git",
 		Profile:             "org:shared-profile",
-		Repositories:        []string{"any-repo", "different-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo", "different-repo"),
 		Permissions:         []string{"read", "write"},
 	})
 }
@@ -357,7 +357,7 @@ func TestCacheMissWithNilVendorResponse(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -395,7 +395,7 @@ func TestCacheGetError(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -421,7 +421,7 @@ func TestCacheSetError(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -433,7 +433,7 @@ func TestCacheInvalidateError(t *testing.T) {
 		storedToken: &vendor.ProfileToken{
 			Token:               "cached-token",
 			VendedRepositoryURL: "https://github.com/test-org/old-repo.git",
-			Repositories:        []string{"old-repo"},
+			Repositories:        profile.NewSpecificScope("old-repo"),
 			Profile:             "repo:default",
 		},
 	}
@@ -453,7 +453,7 @@ func TestCacheInvalidateError(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/different-repo.git",
-		Repositories:        []string{"different-repo"},
+		Repositories:        profile.NewSpecificScope("different-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -476,7 +476,7 @@ func TestCacheInvalidRepositoryURL(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -485,7 +485,7 @@ func TestCacheInvalidRepositoryURL(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "not-a-valid-url",
-		Repositories:        []string{"not-a-valid-url"},
+		Repositories:        profile.NewSpecificScope("not-a-valid-url"),
 		Profile:             "repo:default",
 	})
 }
@@ -512,7 +512,7 @@ func TestCacheDigestChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 
@@ -524,7 +524,7 @@ func TestCacheDigestChange(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        []string{"any-repo"},
+		Repositories:        profile.NewSpecificScope("any-repo"),
 		Profile:             "repo:default",
 	})
 }
@@ -580,15 +580,15 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 
 	// Profile data for test fixtures
 	profileData := map[string]struct {
-		repositories []string
+		repositories profile.RepositoryScope
 		permissions  []string
 	}{
 		"org:shared-profile": {
-			repositories: []string{"any-repo", "different-repo"},
+			repositories: profile.NewSpecificScope("any-repo", "different-repo"),
 			permissions:  []string{"read", "write"},
 		},
 		"org:read-plugins": {
-			repositories: []string{"any-repo", "another-secret-repo"},
+			repositories: profile.NewSpecificScope("any-repo", "another-secret-repo"),
 			permissions:  []string{"contents:read", "packages:read", "metadata:read"},
 		},
 	}
@@ -615,7 +615,7 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 				return vendor.NewVendorSuccess(vendor.ProfileToken{
 					Token:               v,
 					VendedRepositoryURL: repo,
-					Repositories:        []string{repoName},
+					Repositories:        profile.NewSpecificScope(repoName),
 					Profile:             ref.ShortString(),
 				})
 			} else {

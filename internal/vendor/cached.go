@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sync"
 
 	"github.com/chinmina/chinmina-bridge/internal/cache"
@@ -122,6 +121,12 @@ func checkTokenRepository(cachedToken ProfileToken, requestedRepository string) 
 		return cachedToken, true
 	}
 
+	// Wildcard scope covers all repositories
+	if cachedToken.Repositories.IsWildcard() {
+		cachedToken.VendedRepositoryURL = requestedRepository
+		return cachedToken, true
+	}
+
 	// Extract repo name from the full URL before comparing
 	repoNames, err := github.GetRepoNames([]string{requestedRepository})
 	if err != nil || len(repoNames) == 0 {
@@ -129,7 +134,7 @@ func checkTokenRepository(cachedToken ProfileToken, requestedRepository string) 
 	}
 	requestedRepoName := repoNames[0]
 
-	if slices.Contains(cachedToken.Repositories, requestedRepoName) {
+	if cachedToken.Repositories.Contains(requestedRepoName) {
 		cachedToken.VendedRepositoryURL = requestedRepository
 		return cachedToken, true
 	}

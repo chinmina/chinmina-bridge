@@ -156,7 +156,7 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
-		Repositories:        []string{"repo-url"},
+		Repositories:        profile.NewSpecificScope("repo-url"),
 		Permissions:         []string{"contents:read", "metadata:read"},
 		Profile:             "repo:default",
 		Expiry:              vendedDate,
@@ -193,7 +193,7 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
-		Repositories:        []string{"pipeline-repo"},
+		Repositories:        profile.NewSpecificScope("pipeline-repo"),
 		Permissions:         []string{"contents:read", "metadata:read"},
 		Profile:             "repo:default",
 		Expiry:              vendedDate,
@@ -228,7 +228,7 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
-		Repositories:        []string{"repo-url"},
+		Repositories:        profile.NewSpecificScope("repo-url"),
 		Permissions:         []string{"contents:read", "metadata:read"},
 		Profile:             "repo:default",
 		Expiry:              vendedDate,
@@ -265,7 +265,7 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
-		Repositories:        []string{"repo-url"},
+		Repositories:        profile.NewSpecificScope("repo-url"),
 		Permissions:         configuredPermissions,
 		Profile:             "repo:default",
 		Expiry:              vendedDate,
@@ -322,7 +322,7 @@ func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
-		Repositories:        []string{"repo-url"},
+		Repositories:        profile.NewSpecificScope("repo-url"),
 		Permissions:         multiplePermissions,
 		Profile:             "repo:default",
 		Expiry:              vendedDate,
@@ -358,7 +358,7 @@ func TestRepoVendor_NamedProfileLookupSuccess(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
-		Repositories:        []string{"repo-url"},
+		Repositories:        profile.NewSpecificScope("repo-url"),
 		Permissions:         []string{"contents:write", "pull_requests:write", "metadata:read"},
 		Profile:             "repo:high-access",
 		Expiry:              vendedDate,
@@ -395,7 +395,7 @@ func TestRepoVendor_ProfileMatchSuccess(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
-		Repositories:        []string{"repo-url"},
+		Repositories:        profile.NewSpecificScope("repo-url"),
 		Permissions:         []string{"contents:read", "security_events:write", "metadata:read"},
 		Profile:             "repo:with-match-rules",
 		Expiry:              vendedDate,

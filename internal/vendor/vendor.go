@@ -21,14 +21,14 @@ type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug s
 type TokenVendor func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error)
 
 type ProfileToken struct {
-	OrganizationSlug    string    `json:"organizationSlug"`
-	Profile             string    `json:"profile"`
-	VendedRepositoryURL string    `json:"repositoryUrl"`
-	Repositories        []string  `json:"repositories"`
-	Permissions         []string  `json:"permissions"`
-	Token               string    `json:"token"`
-	HashedToken         string    `json:"hashedToken"`
-	Expiry              time.Time `json:"expiry"`
+	OrganizationSlug    string                  `json:"organizationSlug"`
+	Profile             string                  `json:"profile"`
+	VendedRepositoryURL string                  `json:"repositoryUrl"`
+	Repositories        profile.RepositoryScope `json:"repositories"`
+	Permissions         []string                `json:"permissions"`
+	Token               string                  `json:"token"`
+	HashedToken         string                  `json:"hashedToken"`
+	Expiry              time.Time               `json:"expiry"`
 }
 
 func (t ProfileToken) URL() (*url.URL, error) {

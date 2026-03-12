@@ -3,6 +3,7 @@ package vendor
 import (
 	"testing"
 
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,7 +13,7 @@ func TestCheckTokenRepository_EmptyRequestedRepo(t *testing.T) {
 	cachedToken := ProfileToken{
 		Token:               "test-token",
 		VendedRepositoryURL: "https://github.com/test-org/some-repo.git",
-		Repositories:        []string{"some-repo"},
+		Repositories:        profile.NewSpecificScope("some-repo"),
 	}
 
 	// Empty requested repository (non-git credentials request) should return cached token
@@ -25,7 +26,7 @@ func TestCheckTokenRepository_MatchingRepository(t *testing.T) {
 	cachedToken := ProfileToken{
 		Token:               "test-token",
 		VendedRepositoryURL: "https://github.com/test-org/old-repo.git",
-		Repositories:        []string{"repo-a", "repo-b", "repo-c"},
+		Repositories:        profile.NewSpecificScope("repo-a", "repo-b", "repo-c"),
 		Profile:             "org:shared",
 	}
 
@@ -34,13 +35,13 @@ func TestCheckTokenRepository_MatchingRepository(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "test-token", token.Token)
 	require.Equal(t, "https://github.com/test-org/repo-b.git", token.VendedRepositoryURL)
-	require.Equal(t, []string{"repo-a", "repo-b", "repo-c"}, token.Repositories)
+	require.Equal(t, profile.NewSpecificScope("repo-a", "repo-b", "repo-c"), token.Repositories)
 }
 
 func TestCheckTokenRepository_NonMatchingRepository(t *testing.T) {
 	cachedToken := ProfileToken{
 		Token:        "test-token",
-		Repositories: []string{"repo-a", "repo-b"},
+		Repositories: profile.NewSpecificScope("repo-a", "repo-b"),
 	}
 
 	// Requested repository not in the list
@@ -52,7 +53,7 @@ func TestCheckTokenRepository_NonMatchingRepository(t *testing.T) {
 func TestCheckTokenRepository_InvalidURL(t *testing.T) {
 	cachedToken := ProfileToken{
 		Token:        "test-token",
-		Repositories: []string{"repo-a"},
+		Repositories: profile.NewSpecificScope("repo-a"),
 	}
 
 	// Invalid URL that can't be parsed
@@ -64,11 +65,26 @@ func TestCheckTokenRepository_InvalidURL(t *testing.T) {
 func TestCheckTokenRepository_EmptyRepositoriesList(t *testing.T) {
 	cachedToken := ProfileToken{
 		Token:        "test-token",
-		Repositories: []string{},
+		Repositories: profile.NewSpecificScope(),
 	}
 
 	// Token has empty repositories list
 	token, ok := checkTokenRepository(cachedToken, "https://github.com/test-org/any-repo.git")
 	require.False(t, ok)
 	require.Equal(t, ProfileToken{}, token)
+}
+
+func TestCheckTokenRepository_WildcardScope(t *testing.T) {
+	cachedToken := ProfileToken{
+		Token:        "test-token",
+		Repositories: profile.NewWildcardScope(),
+		Profile:      "org:wildcard",
+	}
+
+	// Wildcard scope should match any requested repository
+	token, ok := checkTokenRepository(cachedToken, "https://github.com/test-org/any-repo.git")
+	require.True(t, ok)
+	require.Equal(t, "https://github.com/test-org/any-repo.git", token.VendedRepositoryURL)
+	require.Equal(t, "test-token", token.Token)
+	require.Equal(t, "org:wildcard", token.Profile)
 }
