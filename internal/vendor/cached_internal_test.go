@@ -72,3 +72,18 @@ func TestCheckTokenRepository_EmptyRepositoriesList(t *testing.T) {
 	require.False(t, ok)
 	require.Equal(t, ProfileToken{}, token)
 }
+
+func TestCheckTokenRepository_NilRepositories_Wildcard(t *testing.T) {
+	cachedToken := ProfileToken{
+		Token:        "test-token",
+		Repositories: nil, // nil means wildcard (all repositories)
+		Profile:      "org:wildcard",
+	}
+
+	// Nil repositories should match any requested repository
+	token, ok := checkTokenRepository(cachedToken, "https://github.com/test-org/any-repo.git")
+	require.True(t, ok)
+	require.Equal(t, "https://github.com/test-org/any-repo.git", token.VendedRepositoryURL)
+	require.Equal(t, "test-token", token.Token)
+	require.Equal(t, "org:wildcard", token.Profile)
+}

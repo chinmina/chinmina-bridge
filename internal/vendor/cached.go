@@ -122,6 +122,12 @@ func checkTokenRepository(cachedToken ProfileToken, requestedRepository string) 
 		return cachedToken, true
 	}
 
+	// nil repositories means the token covers all repositories (wildcard profile)
+	if cachedToken.Repositories == nil {
+		cachedToken.VendedRepositoryURL = requestedRepository
+		return cachedToken, true
+	}
+
 	// Extract repo name from the full URL before comparing
 	repoNames, err := github.GetRepoNames([]string{requestedRepository})
 	if err != nil || len(repoNames) == 0 {
