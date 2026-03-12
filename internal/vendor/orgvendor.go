@@ -72,8 +72,8 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		}
 
 		// Use the GitHub API to vend a token for the repository
-		repositories := authProfile.Attrs.GetRepositories()
-		token, expiry, err := tokenVendor(ctx, repositories, authProfile.Attrs.Permissions)
+		repoScope := authProfile.Attrs.RepositoryScope()
+		token, expiry, err := tokenVendor(ctx, repoScope.Names, authProfile.Attrs.Permissions)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not issue token for profile %s: %w", ref, err))
 		}
@@ -86,7 +86,7 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		return NewVendorSuccess(ProfileToken{
 			OrganizationSlug:    ref.Organization,
 			VendedRepositoryURL: requestedRepoURL,
-			Repositories:        repositories,
+			Repositories:        repoScope,
 			Permissions:         authProfile.Attrs.Permissions,
 			Profile:             ref.ShortString(),
 			Token:               token,

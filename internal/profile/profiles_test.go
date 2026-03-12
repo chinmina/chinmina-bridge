@@ -73,27 +73,27 @@ func TestOrganizationProfileAttr_HasRepository_NoMatch(t *testing.T) {
 	}
 }
 
-// TestOrganizationProfileAttr_GetRepositories tests the GetRepositories method
-func TestOrganizationProfileAttr_GetRepositories_SpecificRepos(t *testing.T) {
+// TestOrganizationProfileAttr_RepositoryScope tests the RepositoryScope method
+func TestOrganizationProfileAttr_RepositoryScope_SpecificRepos(t *testing.T) {
 	tests := []struct {
 		name         string
 		repositories []string
-		expected     []string
+		expected     RepositoryScope
 	}{
 		{
 			name:         "single repository",
 			repositories: []string{"repo1"},
-			expected:     []string{"repo1"},
+			expected:     NewSpecificScope("repo1"),
 		},
 		{
 			name:         "multiple repositories",
 			repositories: []string{"repo1", "repo2", "repo3"},
-			expected:     []string{"repo1", "repo2", "repo3"},
+			expected:     NewSpecificScope("repo1", "repo2", "repo3"),
 		},
 		{
 			name:         "empty list",
 			repositories: []string{},
-			expected:     []string{},
+			expected:     NewSpecificScope(),
 		},
 	}
 
@@ -102,18 +102,17 @@ func TestOrganizationProfileAttr_GetRepositories_SpecificRepos(t *testing.T) {
 			attr := OrganizationProfileAttr{
 				Repositories: tt.repositories,
 			}
-			assert.Equal(t, tt.expected, attr.GetRepositories())
+			assert.Equal(t, tt.expected, attr.RepositoryScope())
 		})
 	}
 }
 
-func TestOrganizationProfileAttr_GetRepositories_Wildcard(t *testing.T) {
+func TestOrganizationProfileAttr_RepositoryScope_Wildcard(t *testing.T) {
 	attr := OrganizationProfileAttr{
 		Repositories: []string{"*"},
 	}
 
-	// nil indicates all repositories
-	assert.Nil(t, attr.GetRepositories())
+	assert.Equal(t, NewWildcardScope(), attr.RepositoryScope())
 }
 
 // TestAuthorizedProfile_Match tests the Match method behavior

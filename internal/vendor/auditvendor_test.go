@@ -17,7 +17,7 @@ func TestAuditor_Success(t *testing.T) {
 	vendedDate := time.Date(1970, 1, 1, 0, 0, 10, 0, time.UTC)
 	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{
-			Repositories:        []string{"https://example.com/repo"},
+			Repositories:        profile.NewSpecificScope("https://example.com/repo"),
 			Permissions:         []string{"contents:read", "metadata:read"},
 			VendedRepositoryURL: "https://example.com/repo",
 			Token:               "test-token",
@@ -40,7 +40,7 @@ func TestAuditor_Success(t *testing.T) {
 	result := auditedVendor(ctx, ref1, repo)
 
 	expectedToken := vendor.ProfileToken{
-		Repositories:        []string{"https://example.com/repo"},
+		Repositories:        profile.NewSpecificScope("https://example.com/repo"),
 		Permissions:         []string{"contents:read", "metadata:read"},
 		VendedRepositoryURL: "https://example.com/repo",
 		Token:               "test-token",
@@ -160,7 +160,7 @@ func TestAuditor_Failure(t *testing.T) {
 func TestAuditor_ProfileAuditing(t *testing.T) {
 	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{
-			Repositories:        []string{"https://example.com/repo"},
+			Repositories:        profile.NewSpecificScope("https://example.com/repo"),
 			Permissions:         []string{"contents:read", "metadata:read"},
 			VendedRepositoryURL: "https://example.com/repo",
 			Profile:             ref.ShortString(),

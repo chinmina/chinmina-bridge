@@ -84,7 +84,7 @@ func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLook
 		return NewVendorSuccess(ProfileToken{
 			OrganizationSlug:    ref.Organization,
 			VendedRepositoryURL: pipelineRepoURL,
-			Repositories:        allowedRepoNames,
+			Repositories:        profile.NewSpecificScope(allowedRepoNames...),
 			Permissions:         permissions,
 			Profile:             ref.ShortString(),
 			Token:               token,

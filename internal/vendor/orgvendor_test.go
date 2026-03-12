@@ -126,7 +126,7 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 			assertVendorSuccess(t, result, vendor.ProfileToken{
 				Token:               "non-default-token-value",
 				HashedToken:         vendor.HashToken("non-default-token-value"),
-				Repositories:        []string{"secret-repo", "another-secret-repo"},
+				Repositories:        profile.NewSpecificScope("secret-repo", "another-secret-repo"),
 				Permissions:         []string{"contents:read", "packages:read", "metadata:read"},
 				Profile:             "org:non-default-profile",
 				Expiry:              vendedDate,
@@ -189,7 +189,7 @@ organization:
 			assertVendorSuccess(t, result, vendor.ProfileToken{
 				Token:               "wildcard-token-value",
 				HashedToken:         vendor.HashToken("wildcard-token-value"),
-				Repositories:        nil, // nil indicates all repositories
+				Repositories:        profile.NewWildcardScope(),
 				Permissions:         []string{"contents:read", "packages:read", "metadata:read"},
 				Profile:             "org:wildcard-profile",
 				Expiry:              vendedDate,

@@ -228,7 +228,7 @@ func TestIntegrationOrganizationToken_Success(t *testing.T) {
 	assert.Equal(t, "ghs_orgtoken123", result.Token)
 	assert.Equal(t, "test-org", result.OrganizationSlug)
 	assert.Equal(t, "org:test-org-profile", result.Profile)
-	assert.Len(t, result.Repositories, 2, "expected 2 repositories")
+	assert.Len(t, result.Repositories.Names, 2, "expected 2 repositories")
 }
 
 // TestOrganizationToken_ProfileNotFound tests 404 when org profile doesn't exist
