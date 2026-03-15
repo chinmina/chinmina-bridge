@@ -16,13 +16,13 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
-	"github.com/chinmina/chinmina-bridge/internal/loginfra"
 	"github.com/chinmina/chinmina-bridge/internal/observe"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 
 	"github.com/justinas/alice"
+	phuslog "github.com/phuslu/log"
 )
 
 func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *profile.ProfileStore, hooks *server.ShutdownHooks) (http.Handler, error) {
@@ -196,20 +196,17 @@ func launchServer() error {
 }
 
 func configureLogging() {
-	replaceAttr := loginfra.ReplaceLevel(map[slog.Level]string{
-		audit.SlogLevel: audit.SlogLevelName,
-	})
-
 	var handler slog.Handler
 	if os.Getenv("ENV") == "development" {
 		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level:       slog.LevelDebug,
-			ReplaceAttr: replaceAttr,
+			Level: slog.LevelDebug,
 		})
 	} else {
-		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level:       slog.LevelInfo,
-			ReplaceAttr: replaceAttr,
+		// phuslu/log provides lower mutex contention and fewer allocations than the
+		// stdlib slog handler. This significantly reduces the wait times seen in
+		// higher throughput benchmarks.
+		handler = phuslog.SlogNewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
 		})
 	}
 
