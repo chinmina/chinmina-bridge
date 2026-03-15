@@ -11,7 +11,7 @@
   "issuer": "https://agent.buildkite.com",
   "subject": "buildkite:org:acme"
  },
- "level": "AUDIT",
+ "level": "INFO",
  "msg": "audit_event",
  "pipeline": {
   "buildBranch": "main",

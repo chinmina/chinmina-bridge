@@ -50,6 +50,9 @@ jobs:
           flags: ${{ matrix.type }}
 
   golangci:
+    env:
+      GOEXPERIMENT: "jsonv2"
+
     name: lint
     runs-on: ubuntu-latest
     steps:

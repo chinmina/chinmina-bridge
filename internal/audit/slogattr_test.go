@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
-	"github.com/chinmina/chinmina-bridge/internal/loginfra"
 	"github.com/gkampitakis/go-snaps/match"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
@@ -22,11 +21,9 @@ import (
 var fixedExpiry = time.Unix(1893456000, 0) // 2029-12-31
 
 // serializeSlogEntry writes the entry via slog.JSONHandler and returns the raw JSON bytes.
-// The time field is removed for deterministic snapshots; the level is formatted
-// via ReplaceLevel so audit entries appear as "audit" in the output.
+// The time field is removed for deterministic snapshots.
 func serializeSlogEntry(entry audit.Entry) []byte {
 	var buf bytes.Buffer
-	replaceLevel := loginfra.ReplaceLevel(map[slog.Level]string{audit.SlogLevel: audit.SlogLevelName})
 	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{
 		Level: slog.Level(-100),
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
@@ -34,11 +31,11 @@ func serializeSlogEntry(entry audit.Entry) []byte {
 			if len(groups) == 0 && a.Key == slog.TimeKey {
 				return slog.Attr{}
 			}
-			return replaceLevel(groups, a)
+			return a
 		},
 	})
 	logger := slog.New(handler)
-	logger.LogAttrs(context.Background(), audit.SlogLevel, "audit_event", entry.SlogAttrs()...)
+	logger.LogAttrs(context.Background(), slog.LevelInfo, "audit_event", entry.SlogAttrs()...)
 	return buf.Bytes()
 }
 

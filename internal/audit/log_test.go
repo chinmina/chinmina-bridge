@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
-	"github.com/chinmina/chinmina-bridge/internal/loginfra"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/gkampitakis/go-snaps/match"
 	"github.com/gkampitakis/go-snaps/snaps"
@@ -125,14 +124,13 @@ func TestAuditing(t *testing.T) {
 
 func TestAuditEndEventSnapshot(t *testing.T) {
 	var buf bytes.Buffer
-	replaceLevel := loginfra.ReplaceLevel(map[slog.Level]string{audit.SlogLevel: audit.SlogLevelName})
 	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{
 		Level: slog.Level(-100),
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if len(groups) == 0 && a.Key == slog.TimeKey {
 				return slog.Attr{}
 			}
-			return replaceLevel(groups, a)
+			return a
 		},
 	})
 	original := slog.Default()
@@ -187,7 +185,7 @@ type capturingHandler struct {
 
 func (h *capturingHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
 func (h *capturingHandler) Handle(_ context.Context, r slog.Record) error {
-	if r.Level == audit.SlogLevel {
+	if r.Level == slog.LevelInfo {
 		*h.auditWritten = true
 	}
 	return nil

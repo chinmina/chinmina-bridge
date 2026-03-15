@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 )
 
 // marker for context key
@@ -88,8 +89,12 @@ func (e *Entry) End(ctx context.Context) func() {
 			e.Status = http.StatusOK
 		}
 
-		attrs := append(e.SlogAttrs(), slog.String("type", "audit"))
-		slog.LogAttrs(ctx, SlogLevel, "audit_event", attrs...)
+		// create a record and log directly: this ensures the audit log cannot be disabled.
+		rec := slog.NewRecord(time.Now(), slog.LevelInfo, "audit_event", 0)
+		rec.AddAttrs(e.SlogAttrs()...)
+
+		// in the future this will need to use the context logger
+		_ = slog.Default().Handler().Handle(ctx, rec)
 
 		if r != nil {
 			// repanic the panic

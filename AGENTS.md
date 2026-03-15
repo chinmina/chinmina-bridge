@@ -93,7 +93,7 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 - Audit entries flow through context via `audit.Context`
 - Retrieve with `jwt.RequireBuildkiteClaimsFromContext(ctx)` (panics if missing)
 
-**Audit Logging**: Custom zerolog level (20) for audit events. Audit middleware wraps response writer to capture status codes. The `audit.Entry` struct implements `zerolog.LogObjectMarshaler` to avoid reflection overhead.
+**Audit Logging**: Audit middleware wraps response writer to capture status codes. The `audit.Entry` struct implements `slog.LogValuer` to control structured output.
 
 **Configuration**: All configuration via environment variables using `github.com/sethvargo/go-envconfig`. Config structs use `env` tags with defaults and required fields.
 
@@ -167,10 +167,10 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 
 ### Logging
 
-- Structured logging with `github.com/rs/zerolog`
-- Development mode (`ENV=development`) enables console output with debug level
-- Implement `zerolog.LogObjectMarshaler` for complex objects to avoid reflection
-- Audit logs use custom level 20, formatted as "audit" in output
+- Structured logging with `log/slog` (standard library)
+- Development mode (`ENV=development`) enables text handler output with debug level
+- Implement `slog.LogValuer` for complex objects to control structured output
+- Audit logs are written as structured slog records at info level
 
 ### Context Usage
 

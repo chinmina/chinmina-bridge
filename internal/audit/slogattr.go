@@ -1,18 +1,10 @@
 package audit
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"log/slog"
 	"time"
-)
-
-const (
-	// SlogLevel is the slog level at which audit logs are written.
-	// Level 20 is a custom level above Info, chosen to ensure audit events are always emitted.
-	SlogLevel = slog.Level(20)
-
-	// SlogLevelName is the human-readable label for SlogLevel.
-	SlogLevelName = "AUDIT"
 )
 
 // LogValue implements slog.LogValuer for ClaimMatch, emitting a flat group with
@@ -38,7 +30,7 @@ func (cf ClaimFailure) LogValue() slog.Value {
 // It produces an array of objects with "claim" and "value" keys.
 type slogMatchSlice []ClaimMatch
 
-func (s slogMatchSlice) MarshalJSON() ([]byte, error) {
+func (s slogMatchSlice) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type item struct {
 		Claim string `json:"claim"`
 		Value string `json:"value"`
@@ -47,14 +39,14 @@ func (s slogMatchSlice) MarshalJSON() ([]byte, error) {
 	for i, m := range s {
 		items[i] = item(m)
 	}
-	return json.Marshal(items)
+	return json.MarshalEncode(enc, items)
 }
 
 // slogFailureSlice wraps []ClaimFailure for JSON serialization via slog.Any.
 // It produces an array of objects with "claim", "pattern", and "value" keys.
 type slogFailureSlice []ClaimFailure
 
-func (s slogFailureSlice) MarshalJSON() ([]byte, error) {
+func (s slogFailureSlice) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type item struct {
 		Claim   string `json:"claim"`
 		Pattern string `json:"pattern"`
@@ -64,7 +56,7 @@ func (s slogFailureSlice) MarshalJSON() ([]byte, error) {
 	for i, f := range s {
 		items[i] = item(f)
 	}
-	return json.Marshal(items)
+	return json.MarshalEncode(enc, items)
 }
 
 // SlogAttrs returns the audit entry as a flat slice of slog.Attr for emission
@@ -76,16 +68,18 @@ func (s slogFailureSlice) MarshalJSON() ([]byte, error) {
 //
 //nolint:gocyclo // marshaling function with many conditional fields
 func (e *Entry) SlogAttrs() []slog.Attr {
-	attrs := make([]slog.Attr, 0, 5)
+	attrs := make([]slog.Attr, 0, 6)
 
 	// request group — always present, all fields included regardless of value
-	attrs = append(attrs, slog.Group("request",
-		slog.String("method", e.Method),
-		slog.String("path", e.Path),
-		slog.Int("status", e.Status),
-		slog.String("sourceIP", e.SourceIP),
-		slog.String("userAgent", e.UserAgent),
-	))
+	attrs = append(attrs,
+		slog.String("type", "audit"),
+		slog.Group("request",
+			slog.String("method", e.Method),
+			slog.String("path", e.Path),
+			slog.Int("status", e.Status),
+			slog.String("sourceIP", e.SourceIP),
+			slog.String("userAgent", e.UserAgent),
+		))
 
 	// pipeline group — elided when all fields are zero/empty
 	pipeline := NewOptionalGroup()

@@ -19,6 +19,7 @@ require (
 	github.com/justinas/alice v1.2.0
 	github.com/lestrrat-go/jwx/v3 v3.0.13
 	github.com/maypok86/otter/v2 v2.3.0
+	github.com/phuslu/log v1.0.122
 	github.com/sethvargo/go-envconfig v1.3.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.40.0
