@@ -25,7 +25,9 @@ require (
 	github.com/tink-crypto/tink-go-awskms/v3 v3.0.0-test
 	github.com/tink-crypto/tink-go/v2 v2.6.0
 	github.com/valkey-io/valkey-go v1.0.71
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.40.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.40.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.40.0
 	go.opentelemetry.io/otel/sdk v1.40.0
 	go.opentelemetry.io/otel/sdk/metric v1.40.0
 	golang.org/x/oauth2 v0.35.0
