@@ -119,7 +119,7 @@ services:
   # speeds buildkite agent start by caching apk packages,
   # particularly useful when scaling to many agents.
   apk-cache:
-    image: tursom/apk-cache:latest
+    image: ghcr.io/tursom/apk-cache:latest
     volumes:
       - apk-cache:/app/cache
     ports:
