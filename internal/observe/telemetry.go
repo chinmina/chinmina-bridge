@@ -15,7 +15,9 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
@@ -116,6 +118,9 @@ func configuredExporters(cfg config.ObserveConfig) exporters {
 	switch cfg.Type {
 	case "stdout":
 		return stdoutExporters{}
+
+	case "http":
+		return httpExporters{}
 
 	case "grpc":
 		fallthrough
@@ -248,6 +253,15 @@ func (e grpcExporters) Trace(ctx context.Context) (trace.SpanExporter, error) {
 }
 func (e grpcExporters) Metric(ctx context.Context) (metric.Exporter, error) {
 	return otlpmetricgrpc.New(ctx)
+}
+
+type httpExporters struct{}
+
+func (e httpExporters) Trace(ctx context.Context) (trace.SpanExporter, error) {
+	return otlptracehttp.New(ctx)
+}
+func (e httpExporters) Metric(ctx context.Context) (metric.Exporter, error) {
+	return otlpmetrichttp.New(ctx)
 }
 
 type stdoutExporters struct{}
