@@ -1,6 +1,7 @@
 package observe
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -37,9 +38,11 @@ func ConfigurePyroscope(cfg config.ObserveConfig) (func() error, error) {
 	}
 
 	profiler, err := pyroscope.Start(pyroscope.Config{
-		ApplicationName: cfg.ServiceName,
-		ServerAddress:   cfg.PyroscopeServerAddress,
-		Tags:            tags,
+		ApplicationName:   cfg.ServiceName,
+		ServerAddress:     cfg.PyroscopeServerAddress,
+		BasicAuthUser:     cfg.PyroscopeBasicAuthUser,
+		BasicAuthPassword: cfg.PyroscopeBasicAuthPassword,
+		Tags:              tags,
 		ProfileTypes: []pyroscope.ProfileType{
 			pyroscope.ProfileCPU,
 			pyroscope.ProfileAllocObjects,
@@ -57,11 +60,15 @@ func ConfigurePyroscope(cfg config.ObserveConfig) (func() error, error) {
 		return nil, fmt.Errorf("pyroscope profiler startup failed: %w", err)
 	}
 
-	attrs := []any{"address", cfg.PyroscopeServerAddress}
-	if experimentTag != "" {
-		attrs = append(attrs, "experiment", experimentTag)
+	attrs := []slog.Attr{
+		slog.String("address", cfg.PyroscopeServerAddress),
 	}
-	slog.Info("pyroscope continuous profiling started", attrs...)
+	if experimentTag != "" {
+		attrs = append(attrs, slog.String("experiment", experimentTag))
+	}
+	slog.LogAttrs(context.Background(), slog.LevelInfo, "pyroscope continuous profiling started",
+		attrs...,
+	)
 
 	return profiler.Stop, nil
 }

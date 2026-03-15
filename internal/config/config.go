@@ -122,6 +122,8 @@ type ObserveConfig struct {
 	HTTPConnectionTraceEnabled bool   `env:"OBSERVE_CONNECTION_TRACE_ENABLED, default=true"`
 	PyroscopeEnabled           bool   `env:"OBSERVE_PYROSCOPE_ENABLED, default=false"`
 	PyroscopeServerAddress     string `env:"OBSERVE_PYROSCOPE_SERVER_ADDRESS"`
+	PyroscopeBasicAuthUser     string `env:"OBSERVE_PYROSCOPE_BASIC_AUTH_USER"`
+	PyroscopeBasicAuthPassword string `env:"OBSERVE_PYROSCOPE_BASIC_AUTH_PASSWORD"`
 	// PyroscopeExperimentFlag allows tagging profiling data with an experiment label at
 	// runtime, overriding the compile-time experiment tag set via build flags.
 	PyroscopeExperimentFlag string `env:"OBSERVE_PYROSCOPE_EXPERIMENT"`
