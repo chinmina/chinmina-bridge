@@ -214,6 +214,67 @@ func TestBuildkiteClaims_NewFields(t *testing.T) {
 	}
 }
 
+func TestBuildkiteClaims_UnmarshalJSON_RegisteredClaims(t *testing.T) {
+	// minimalJSON is a base payload without the fields under test.
+	const minimalFields = `"organization_slug": "acme", "pipeline_slug": "pipeline", "pipeline_id": "pid", "build_number": 1, "build_branch": "main", "build_commit": "abc", "job_id": "j1", "agent_id": "a1"`
+
+	cases := []struct {
+		name           string
+		jsonData       string
+		wantNBFValued  bool
+		wantEXPValued  bool
+		wantSubMissing bool // true if Validate should return "subject claim not present"
+	}{
+		{
+			name:          "nbf and exp present",
+			jsonData:      `{` + minimalFields + `, "sub": "org:acme:pipeline:pipeline:ref:main:commit:abc", "nbf": 1700000000, "exp": 1700003600}`,
+			wantNBFValued: true,
+			wantEXPValued: true,
+		},
+		{
+			name:          "nbf null, exp present",
+			jsonData:      `{` + minimalFields + `, "sub": "s", "nbf": null, "exp": 1700003600}`,
+			wantNBFValued: false,
+			wantEXPValued: true,
+		},
+		{
+			name:          "nbf and exp absent",
+			jsonData:      `{` + minimalFields + `, "sub": "s"}`,
+			wantNBFValued: false,
+			wantEXPValued: false,
+		},
+		{
+			name:           "sub absent",
+			jsonData:       `{` + minimalFields + `, "nbf": 1700000000, "exp": 1700003600}`,
+			wantNBFValued:  true,
+			wantEXPValued:  true,
+			wantSubMissing: true,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var claims BuildkiteClaims
+			err := json.Unmarshal([]byte(tt.jsonData), &claims)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantNBFValued, claims.notBefore.Valued(), "notBefore.Valued()")
+			assert.Equal(t, tt.wantEXPValued, claims.expiry.Valued(), "expiry.Valued()")
+
+			validateErr := claims.Validate(context.Background())
+			if tt.wantSubMissing {
+				require.Error(t, validateErr)
+				assert.Contains(t, validateErr.Error(), "subject claim not present")
+			} else {
+				// subject is present; any other validate error is not our concern here
+				if validateErr != nil {
+					assert.NotContains(t, validateErr.Error(), "subject claim not present")
+				}
+			}
+		})
+	}
+}
+
 func TestBuildkiteClaims_UnmarshalJSON_AgentTags(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -272,6 +333,32 @@ func TestBuildkiteClaims_UnmarshalJSON_AgentTags(t *testing.T) {
 				BuildCommit:      "def456",
 				JobID:            "job2",
 				AgentID:          "agent2",
+				AgentTags:        map[string]string{},
+			},
+		},
+		{
+			name: "build_tag field is populated",
+			jsonData: `{
+				"organization_slug": "acme",
+				"pipeline_slug": "pipeline",
+				"pipeline_id": "pipeline_uuid",
+				"build_number": 123,
+				"build_branch": "main",
+				"build_commit": "abc123",
+				"job_id": "job1",
+				"agent_id": "agent1",
+				"build_tag": "v1.0.0"
+			}`,
+			expected: BuildkiteClaims{
+				OrganizationSlug: "acme",
+				PipelineSlug:     "pipeline",
+				PipelineID:       "pipeline_uuid",
+				BuildNumber:      123,
+				BuildBranch:      "main",
+				BuildCommit:      "abc123",
+				JobID:            "job1",
+				AgentID:          "agent1",
+				BuildTag:         "v1.0.0",
 				AgentTags:        map[string]string{},
 			},
 		},
@@ -419,6 +506,51 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"agent_tag:queue": 456
 			}`,
 			expectedField: "agent_tag:queue",
+		},
+		{
+			name: "sub with wrong type",
+			jsonData: `{
+				"sub": 123,
+				"organization_slug": "acme",
+				"pipeline_slug": "pipeline",
+				"pipeline_id": "pipeline_uuid",
+				"build_number": 123,
+				"build_branch": "main",
+				"build_commit": "abc123",
+				"job_id": "job1",
+				"agent_id": "agent1"
+			}`,
+			expectedField: "sub",
+		},
+		{
+			name: "step_key with wrong type",
+			jsonData: `{
+				"organization_slug": "acme",
+				"pipeline_slug": "pipeline",
+				"pipeline_id": "pipeline_uuid",
+				"build_number": 123,
+				"build_branch": "main",
+				"build_commit": "abc123",
+				"job_id": "job1",
+				"agent_id": "agent1",
+				"step_key": true
+			}`,
+			expectedField: "step_key",
+		},
+		{
+			name: "cluster_id with wrong type",
+			jsonData: `{
+				"organization_slug": "acme",
+				"pipeline_slug": "pipeline",
+				"pipeline_id": "pipeline_uuid",
+				"build_number": 123,
+				"build_branch": "main",
+				"build_commit": "abc123",
+				"job_id": "job1",
+				"agent_id": "agent1",
+				"cluster_id": []
+			}`,
+			expectedField: "cluster_id",
 		},
 	}
 

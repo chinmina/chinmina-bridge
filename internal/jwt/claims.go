@@ -44,7 +44,7 @@ func buildkiteCustomClaims(expectedOrganizationSlug string) func() *BuildkiteCla
 type BuildkiteClaims struct {
 	// Registered claims - validation only, no getters needed
 	// The JWT middleware validates the actual values; we just check presence
-	// These fields are populated via UnmarshalJSON's setClaimField method
+	// These fields are populated via decodeClaimField
 	subject   string
 	notBefore FieldPresent
 	expiry    FieldPresent
