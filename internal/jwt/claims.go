@@ -234,7 +234,7 @@ func (c *BuildkiteClaims) decodeClaimField(key string, dec *jsontext.Decoder) er
 	if tagName, found := strings.CutPrefix(key, "agent_tag:"); found {
 		var strVal string
 		if err := jsonv2.UnmarshalDecode(dec, &strVal); err != nil {
-			return fmt.Errorf("agent_tag:%s: %w", tagName, err)
+			return err
 		}
 		c.AgentTags[tagName] = strVal
 		return nil
@@ -242,7 +242,7 @@ func (c *BuildkiteClaims) decodeClaimField(key string, dec *jsontext.Decoder) er
 
 	switch key {
 	case "sub":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.subject))
+		return jsonv2.UnmarshalDecode(dec, &c.subject)
 	case "nbf":
 		// FieldPresent: any non-null value means the field was valued.
 		if dec.PeekKind() != jsontext.KindNull {
@@ -256,42 +256,35 @@ func (c *BuildkiteClaims) decodeClaimField(key string, dec *jsontext.Decoder) er
 		}
 		return dec.SkipValue()
 	case "organization_slug":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.OrganizationSlug))
+		return jsonv2.UnmarshalDecode(dec, &c.OrganizationSlug)
 	case "pipeline_slug":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.PipelineSlug))
+		return jsonv2.UnmarshalDecode(dec, &c.PipelineSlug)
 	case "pipeline_id":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.PipelineID))
+		return jsonv2.UnmarshalDecode(dec, &c.PipelineID)
 	case "build_number":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.BuildNumber))
+		return jsonv2.UnmarshalDecode(dec, &c.BuildNumber)
 	case "build_branch":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.BuildBranch))
+		return jsonv2.UnmarshalDecode(dec, &c.BuildBranch)
 	case "build_tag":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.BuildTag))
+		return jsonv2.UnmarshalDecode(dec, &c.BuildTag)
 	case "build_commit":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.BuildCommit))
+		return jsonv2.UnmarshalDecode(dec, &c.BuildCommit)
 	case "step_key":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.StepKey))
+		return jsonv2.UnmarshalDecode(dec, &c.StepKey)
 	case "job_id":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.JobID))
+		return jsonv2.UnmarshalDecode(dec, &c.JobID)
 	case "agent_id":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.AgentID))
+		return jsonv2.UnmarshalDecode(dec, &c.AgentID)
 	case "cluster_id":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.ClusterID))
+		return jsonv2.UnmarshalDecode(dec, &c.ClusterID)
 	case "cluster_name":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.ClusterName))
+		return jsonv2.UnmarshalDecode(dec, &c.ClusterName)
 	case "queue_id":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.QueueID))
+		return jsonv2.UnmarshalDecode(dec, &c.QueueID)
 	case "queue_key":
-		return wrapFieldError(key, jsonv2.UnmarshalDecode(dec, &c.QueueKey))
+		return jsonv2.UnmarshalDecode(dec, &c.QueueKey)
 	default:
 		// Unknown fields silently ignored.
 		return dec.SkipValue()
 	}
-}
-
-func wrapFieldError(key string, err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%s: %w", key, err)
 }

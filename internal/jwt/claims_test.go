@@ -373,9 +373,9 @@ func TestBuildkiteClaims_UnmarshalJSON_AgentTags(t *testing.T) {
 }
 func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 	cases := []struct {
-		name                string
-		jsonData            string
-		expectedFieldPrefix string // field name prefix present in errors from both v1 and v2 paths
+		name          string
+		jsonData      string
+		expectedField string // field name present in the SemanticError message
 	}{
 		{
 			name: "string field with wrong type",
@@ -389,7 +389,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedFieldPrefix: "organization_slug:",
+			expectedField: "organization_slug",
 		},
 		{
 			name: "build_number with wrong type",
@@ -403,7 +403,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedFieldPrefix: "build_number:",
+			expectedField: "build_number",
 		},
 		{
 			name: "agent_tag with wrong type",
@@ -418,7 +418,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"agent_id": "agent1",
 				"agent_tag:queue": 456
 			}`,
-			expectedFieldPrefix: "agent_tag:queue:",
+			expectedField: "agent_tag:queue",
 		},
 	}
 
@@ -427,7 +427,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 			var claims BuildkiteClaims
 			err := json.Unmarshal([]byte(tt.jsonData), &claims)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.expectedFieldPrefix)
+			assert.Contains(t, err.Error(), tt.expectedField)
 		})
 	}
 }
