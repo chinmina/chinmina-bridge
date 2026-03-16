@@ -826,6 +826,38 @@ func assertClaimMissing(t *testing.T, token jwxjwt.Token, key string) {
 	assert.Error(t, err, "expected claim %q to be absent", key)
 }
 
+func TestBuildkiteClaims_UnmarshalJSON_InvalidInput(t *testing.T) {
+	cases := []struct {
+		name     string
+		jsonData string
+	}{
+		{
+			name:     "array instead of object",
+			jsonData: `[]`,
+		},
+		{
+			name:     "string instead of object",
+			jsonData: `"not-an-object"`,
+		},
+		{
+			name:     "null instead of object",
+			jsonData: `null`,
+		},
+		{
+			name:     "truncated object",
+			jsonData: `{`,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var claims BuildkiteClaims
+			err := json.Unmarshal([]byte(tt.jsonData), &claims)
+			require.Error(t, err)
+		})
+	}
+}
+
 // BenchmarkBuildkiteClaims_UnmarshalJSON measures the cost of unmarshaling a realistic
 // Buildkite OIDC JWT payload, including registered claims, all exported fields,
 // and several agent_tag: prefixed entries.
