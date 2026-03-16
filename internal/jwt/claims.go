@@ -3,7 +3,7 @@ package jwt
 import (
 	"context"
 	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strconv"
@@ -233,7 +233,7 @@ func (c *BuildkiteClaims) decodeClaimField(key string, dec *jsontext.Decoder) er
 	// Handle agent_tag: prefix before the switch.
 	if tagName, found := strings.CutPrefix(key, "agent_tag:"); found {
 		var strVal string
-		if err := jsonv2.UnmarshalDecode(dec, &strVal); err != nil {
+		if err := json.UnmarshalDecode(dec, &strVal); err != nil {
 			return err
 		}
 		c.AgentTags[tagName] = strVal
@@ -242,7 +242,7 @@ func (c *BuildkiteClaims) decodeClaimField(key string, dec *jsontext.Decoder) er
 
 	switch key {
 	case "sub":
-		return jsonv2.UnmarshalDecode(dec, &c.subject)
+		return json.UnmarshalDecode(dec, &c.subject)
 	case "nbf":
 		// FieldPresent: any non-null value means the field was valued.
 		if dec.PeekKind() != jsontext.KindNull {
@@ -256,33 +256,33 @@ func (c *BuildkiteClaims) decodeClaimField(key string, dec *jsontext.Decoder) er
 		}
 		return dec.SkipValue()
 	case "organization_slug":
-		return jsonv2.UnmarshalDecode(dec, &c.OrganizationSlug)
+		return json.UnmarshalDecode(dec, &c.OrganizationSlug)
 	case "pipeline_slug":
-		return jsonv2.UnmarshalDecode(dec, &c.PipelineSlug)
+		return json.UnmarshalDecode(dec, &c.PipelineSlug)
 	case "pipeline_id":
-		return jsonv2.UnmarshalDecode(dec, &c.PipelineID)
+		return json.UnmarshalDecode(dec, &c.PipelineID)
 	case "build_number":
-		return jsonv2.UnmarshalDecode(dec, &c.BuildNumber)
+		return json.UnmarshalDecode(dec, &c.BuildNumber)
 	case "build_branch":
-		return jsonv2.UnmarshalDecode(dec, &c.BuildBranch)
+		return json.UnmarshalDecode(dec, &c.BuildBranch)
 	case "build_tag":
-		return jsonv2.UnmarshalDecode(dec, &c.BuildTag)
+		return json.UnmarshalDecode(dec, &c.BuildTag)
 	case "build_commit":
-		return jsonv2.UnmarshalDecode(dec, &c.BuildCommit)
+		return json.UnmarshalDecode(dec, &c.BuildCommit)
 	case "step_key":
-		return jsonv2.UnmarshalDecode(dec, &c.StepKey)
+		return json.UnmarshalDecode(dec, &c.StepKey)
 	case "job_id":
-		return jsonv2.UnmarshalDecode(dec, &c.JobID)
+		return json.UnmarshalDecode(dec, &c.JobID)
 	case "agent_id":
-		return jsonv2.UnmarshalDecode(dec, &c.AgentID)
+		return json.UnmarshalDecode(dec, &c.AgentID)
 	case "cluster_id":
-		return jsonv2.UnmarshalDecode(dec, &c.ClusterID)
+		return json.UnmarshalDecode(dec, &c.ClusterID)
 	case "cluster_name":
-		return jsonv2.UnmarshalDecode(dec, &c.ClusterName)
+		return json.UnmarshalDecode(dec, &c.ClusterName)
 	case "queue_id":
-		return jsonv2.UnmarshalDecode(dec, &c.QueueID)
+		return json.UnmarshalDecode(dec, &c.QueueID)
 	case "queue_key":
-		return jsonv2.UnmarshalDecode(dec, &c.QueueKey)
+		return json.UnmarshalDecode(dec, &c.QueueKey)
 	default:
 		// Unknown fields silently ignored.
 		return dec.SkipValue()
