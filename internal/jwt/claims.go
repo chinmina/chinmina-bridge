@@ -217,7 +217,11 @@ func (c *BuildkiteClaims) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return err
 	}
 
-	c.AgentTags = make(map[string]string)
+	// the UnmarshalJSONFrom contract directs us to support multiple calls to
+	// UnmarshalJSONFrom on the same object, merging results.
+	if c.AgentTags == nil {
+		c.AgentTags = make(map[string]string)
+	}
 
 	for {
 		tok, err := dec.ReadToken()
