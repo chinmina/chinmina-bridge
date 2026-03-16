@@ -693,3 +693,39 @@ func assertClaimMissing(t *testing.T, token jwxjwt.Token, key string) {
 	err := token.Get(key, &val)
 	assert.Error(t, err, "expected claim %q to be absent", key)
 }
+
+// BenchmarkBuildkiteClaims_UnmarshalJSON measures the cost of unmarshaling a realistic
+// Buildkite OIDC JWT payload, including registered claims, all exported fields,
+// and several agent_tag: prefixed entries.
+func BenchmarkBuildkiteClaims_UnmarshalJSON(b *testing.B) {
+	payload := []byte(`{
+		"sub": "organization:acme:pipeline:deploy:ref:main:commit:abc123def456:step:build",
+		"nbf": 1700000000,
+		"exp": 1700003600,
+		"organization_slug": "acme",
+		"pipeline_slug": "deploy",
+		"pipeline_id": "550e8400-e29b-41d4-a716-446655440000",
+		"build_number": 1234,
+		"build_branch": "main",
+		"build_tag": "",
+		"build_commit": "abc123def456abc123def456abc123def456abc123",
+		"step_key": "build",
+		"job_id": "11111111-1111-1111-1111-111111111111",
+		"agent_id": "22222222-2222-2222-2222-222222222222",
+		"cluster_id": "33333333-3333-3333-3333-333333333333",
+		"cluster_name": "production",
+		"queue_id": "44444444-4444-4444-4444-444444444444",
+		"queue_key": "default",
+		"agent_tag:queue": "runners",
+		"agent_tag:os": "linux",
+		"agent_tag:arch": "amd64"
+	}`)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		var claims BuildkiteClaims
+		if err := json.Unmarshal(payload, &claims); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
