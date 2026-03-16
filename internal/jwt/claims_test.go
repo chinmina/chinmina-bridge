@@ -3,6 +3,8 @@ package jwt
 import (
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
+	"errors"
 	"testing"
 
 	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
@@ -373,9 +375,9 @@ func TestBuildkiteClaims_UnmarshalJSON_AgentTags(t *testing.T) {
 }
 func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 	cases := []struct {
-		name          string
-		jsonData      string
-		expectedError string
+		name                string
+		jsonData            string
+		expectedFieldPrefix string // field name prefix present in errors from both v1 and v2 paths
 	}{
 		{
 			name: "string field with wrong type",
@@ -389,7 +391,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedError: "organization_slug: expected string, got float64",
+			expectedFieldPrefix: "organization_slug:",
 		},
 		{
 			name: "build_number with wrong type",
@@ -403,7 +405,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedError: "build_number: expected int, got string",
+			expectedFieldPrefix: "build_number:",
 		},
 		{
 			name: "agent_tag with wrong type",
@@ -418,7 +420,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"agent_id": "agent1",
 				"agent_tag:queue": 456
 			}`,
-			expectedError: "agent_tag:queue: expected string, got float64",
+			expectedFieldPrefix: "agent_tag:queue:",
 		},
 	}
 
@@ -427,7 +429,13 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 			var claims BuildkiteClaims
 			err := json.Unmarshal([]byte(tt.jsonData), &claims)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.expectedError)
+			// Both v1 and v2 paths wrap the error with the field name.
+			assert.Contains(t, err.Error(), tt.expectedFieldPrefix)
+			// v2 path produces a SemanticError for type mismatches; verify when present.
+			var semErr *jsonv2.SemanticError
+			if errors.As(err, &semErr) {
+				assert.NotNil(t, semErr.GoType, "v2 SemanticError should carry the Go type")
+			}
 		})
 	}
 }
