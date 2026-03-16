@@ -102,8 +102,8 @@ linters:
         linters:
           - misspell
 
-      # Exclude setClaimField from complexity check (justified by nature of mapping function)
-      - text: "setClaimField"
+      # Exclude decodeClaimField from complexity check (justified by nature of mapping function)
+      - text: "decodeClaimField"
         linters:
           - gocyclo
 

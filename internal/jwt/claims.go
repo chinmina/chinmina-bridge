@@ -2,7 +2,6 @@ package jwt
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -155,113 +154,6 @@ func (c BuildkiteClaims) SetOnToken(token jwt.Token) error {
 	return nil
 }
 
-// JSON JWT claims unmarshaling with agent_tag: prefix handling
-//
-// Custom unmarshaling is implemented because struct-tag based approaches don't
-// allow us to extract fields prefixed with "agent_tag:" into the AgentTags map.
-// Now that JSONv2 is active, this could be simplified: known fields would use
-// normal struct tags, and only the "agent_tag:" prefix handling would remain
-// dynamic. The v2 token-based decoder no longer carries the +28% performance
-// penalty measured against the v1 decoder; see the benchmarks below.
-//
-// This implementation uses a generic switch approach with setField[T] for type
-// conversion. It was chosen after benchmarking 5 different implementations for
-// optimal balance of performance and maintainability:
-//
-//   - Current approach (switch + generic setField): 14.0µs/op, baseline performance, ~50 lines of code
-//   - Setter map with constant: 14.2µs/op (+2% slower), slightly more flexible but minimal difference
-//   - Manual type assertions (original): 14.0µs/op, identical performance but ~200 lines of repetitive code
-//   - Double unmarshal (with a "shadow" type): 20.0µs/op (+43% slower), eliminated as too slow
-//   - Token-based decoder: 17.9µs/op (+28% slower, +88% memory), eliminated as too slow and complex
-//
-// The generic approach eliminates repetitive type checking while maintaining
-// identical performance characteristics.
-
-// UnmarshalJSON implements custom JSON unmarshaling to handle agent_tag: prefixed fields.
-func (c *BuildkiteClaims) UnmarshalJSON(data []byte) error {
-	// Parse into map to access all fields
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-
-	// Process each field
-	c.AgentTags = make(map[string]string)
-	for key, value := range raw {
-		if err := c.setClaimField(key, value); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// setClaimField maps a JWT field name to the appropriate struct field.
-// Returns an error if a known field has the wrong type.
-// Unknown fields are silently ignored.
-func (c *BuildkiteClaims) setClaimField(key string, value any) error {
-	var err error
-	switch key {
-	case "sub":
-		err = setField(&c.subject, value)
-	case "nbf":
-		// FieldPresent: any non-nil value means the field was valued
-		if value != nil {
-			c.notBefore.valued = true
-		}
-	case "exp":
-		// FieldPresent: any non-nil value means the field was valued
-		if value != nil {
-			c.expiry.valued = true
-		}
-	case "organization_slug":
-		err = setField(&c.OrganizationSlug, value)
-	case "pipeline_slug":
-		err = setField(&c.PipelineSlug, value)
-	case "pipeline_id":
-		err = setField(&c.PipelineID, value)
-	case "build_number":
-		err = setField(&c.BuildNumber, value)
-	case "build_branch":
-		err = setField(&c.BuildBranch, value)
-	case "build_tag":
-		err = setField(&c.BuildTag, value)
-	case "build_commit":
-		err = setField(&c.BuildCommit, value)
-	case "step_key":
-		err = setField(&c.StepKey, value)
-	case "job_id":
-		err = setField(&c.JobID, value)
-	case "agent_id":
-		err = setField(&c.AgentID, value)
-	case "cluster_id":
-		err = setField(&c.ClusterID, value)
-	case "cluster_name":
-		err = setField(&c.ClusterName, value)
-	case "queue_id":
-		err = setField(&c.QueueID, value)
-	case "queue_key":
-		err = setField(&c.QueueKey, value)
-	default:
-		// Handle agent_tag: prefix
-		if tagName, found := strings.CutPrefix(key, "agent_tag:"); found {
-			strVal, convErr := convertValue[string](value)
-			if convErr != nil {
-				return fmt.Errorf("agent_tag:%s: %w", tagName, convErr)
-			}
-			c.AgentTags[tagName] = strVal
-		}
-
-		// Unknown fields silently ignored
-		return nil
-	}
-
-	if err != nil {
-		return fmt.Errorf("%s: %w", key, err)
-	}
-	return nil
-}
-
 // Lookup implements ClaimValueLookup interface for BuildkiteClaims.
 // Returns (value, nil) when claim is present and populated.
 // Returns ("", error) for optional claims when not present or for unknown claims.
@@ -298,44 +190,6 @@ func (c BuildkiteClaims) Lookup(claim string) (string, error) {
 		}
 		return "", ErrClaimNotFound
 	}
-}
-
-// convertValue converts any to target type T, handling JSON number conversion.
-// This function is inlined by the compiler for each concrete type T.
-func convertValue[T comparable](value any) (T, error) {
-	var zero T
-
-	// return zero value for an expclicit nil
-	if value == nil {
-		return zero, nil
-	}
-
-	// Handle JSON number (float64) to int conversion
-	switch any(zero).(type) {
-	case int:
-		if f, ok := value.(float64); ok {
-			return any(int(f)).(T), nil
-		}
-	}
-
-	// Default: direct type assertion
-	v, ok := value.(T)
-	if !ok {
-		return zero, fmt.Errorf("expected %T, got %T", zero, value)
-	}
-
-	return v, nil
-}
-
-// setField is a generic setter that converts and assigns value to target.
-// This function is inlined by the compiler for each concrete type T.
-func setField[T comparable](target *T, value any) error {
-	v, err := convertValue[T](value)
-	if err != nil {
-		return err
-	}
-	*target = v
-	return nil
 }
 
 // lookupOptional returns (value, nil) if the value is non-empty, otherwise ("", ErrClaimNotFound).

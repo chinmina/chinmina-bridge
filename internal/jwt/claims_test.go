@@ -3,8 +3,6 @@ package jwt
 import (
 	"context"
 	"encoding/json"
-	jsonv2 "encoding/json/v2"
-	"errors"
 	"testing"
 
 	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
@@ -429,13 +427,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 			var claims BuildkiteClaims
 			err := json.Unmarshal([]byte(tt.jsonData), &claims)
 			require.Error(t, err)
-			// Both v1 and v2 paths wrap the error with the field name.
 			assert.Contains(t, err.Error(), tt.expectedFieldPrefix)
-			// v2 path produces a SemanticError for type mismatches; verify when present.
-			var semErr *jsonv2.SemanticError
-			if errors.As(err, &semErr) {
-				assert.NotNil(t, semErr.GoType, "v2 SemanticError should carry the Go type")
-			}
 		})
 	}
 }

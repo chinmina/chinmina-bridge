@@ -1,5 +1,3 @@
-//go:build fastunmarshal
-
 package jwt
 
 import (
