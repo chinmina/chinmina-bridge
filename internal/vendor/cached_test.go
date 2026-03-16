@@ -314,6 +314,49 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 	})
 }
 
+// TestOrgProfileMismatchDoesNotInvalidateCache verifies that a mismatch request
+// against an org profile does not evict the cached token. A subsequent request
+// for a repo that IS in the profile must still be served from cache.
+func TestOrgProfileMismatchDoesNotInvalidateCache(t *testing.T) {
+	// sequenceVendor returns "first-call" on call 1, Unmatched on call 2.
+	// If a third vendor call occurs it returns an error, which would fail the test.
+	wrapped := sequenceVendor("first-call", nil)
+
+	c := newTestCached(t, defaultTTL, "test-digest")
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "two-repos",
+		Type:         profile.ProfileTypeOrg,
+	}
+
+	// Call 1: cache miss → vend token covering [any-repo, other-repo]
+	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "first-call",
+		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
+		Profile:             "org:two-repos",
+		Repositories:        profile.NewSpecificScope("any-repo", "other-repo"),
+		Permissions:         []string{"contents:read"},
+	})
+
+	// Call 2: request for unconfigured-repo → mismatch → vendor called → Unmatched
+	// The cache entry for [any-repo, other-repo] must NOT be invalidated.
+	result = v(context.Background(), ref, "https://github.com/test-org/unconfigured-repo.git")
+	assertVendorUnmatched(t, result)
+
+	// Call 3: request for any-repo again → must be a cache HIT (no vendor call)
+	result = v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "first-call",
+		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
+		Profile:             "org:two-repos",
+		Repositories:        profile.NewSpecificScope("any-repo", "other-repo"),
+		Permissions:         []string{"contents:read"},
+	})
+}
+
 // calls wrapped when value expires
 // returns error from wrapped on miss
 func TestReturnsErrorForWrapperError(t *testing.T) {
@@ -590,6 +633,10 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		"org:read-plugins": {
 			repositories: profile.NewSpecificScope("any-repo", "another-secret-repo"),
 			permissions:  []string{"contents:read", "packages:read", "metadata:read"},
+		},
+		"org:two-repos": {
+			repositories: profile.NewSpecificScope("any-repo", "other-repo"),
+			permissions:  []string{"contents:read"},
 		},
 	}
 

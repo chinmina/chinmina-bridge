@@ -65,20 +65,33 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 				// successfully found that the key is not in the cache
 				recordOutcome(ctx, "miss")
 			} else if token, ok := checkTokenRepository(cachedToken, requestedRepository); !ok {
-				// the pipeline's repository has changed since the token was cached, so
-				// we can't use the cached token -- treat as a cache miss and invalidate
-				// the cache
 				recordOutcome(ctx, "mismatch")
-				slog.Debug("dropping cached token due to repository mismatch: will request new token",
-					"expiry", cachedToken.Expiry,
-					"key", key,
-					"requestedRepository", requestedRepository,
-				)
 
-				// forced invalidation is more effective than setting the value to be
-				// empty -- some caches don't guarantee writes.
-				if err := tokenCache.Invalidate(ctx, key); err != nil {
-					slog.Warn("cache invalidate failed", "error", err, "key", key)
+				if ref.Type == profile.ProfileTypeOrg {
+					// For org profiles, a mismatch means the request is for a repo not
+					// in the profile's configured list. The cached token is still valid
+					// for other repos — don't invalidate it. The vendor will return
+					// Unmatched for this request.
+					slog.Debug("repository mismatch (organization profile): fall back to requesting a new token. Cache entry preserved.",
+						"key", key,
+						"requestedRepository", requestedRepository,
+						"cachedRepositories", cachedToken.Repositories,
+					)
+				} else {
+					// For repo profiles, a mismatch may indicate the pipeline's
+					// repository has changed. Invalidate the stale entry.
+					slog.Debug("repository mismatch (pipeline profile): fall back to requesting a new token. Cache entry invalidated.",
+						"expiry", cachedToken.Expiry,
+						"key", key,
+						"requestedRepository", requestedRepository,
+						"cachedRepositories", cachedToken.Repositories,
+					)
+
+					// forced invalidation is more effective than setting the value to be
+					// empty -- some caches don't guarantee writes.
+					if err := tokenCache.Invalidate(ctx, key); err != nil {
+						slog.Warn("cache invalidate failed", "error", err, "key", key)
+					}
 				}
 			} else {
 				// short circuit and return on a cache hit
