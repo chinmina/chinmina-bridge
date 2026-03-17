@@ -205,16 +205,13 @@ func lookupOptional(value string) (string, error) {
 // UnmarshalJSONFrom implements the json/v2 UnmarshalerFrom interface,
 // providing a token-based streaming decoder for BuildkiteClaims.
 func (c *BuildkiteClaims) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
-	// Reject non-object JSON before advancing the decoder. Without this check,
-	// invalid input like arrays or scalars would advance decoder state before
-	// confirming the input is an object, breaking the structured error handling
-	// that json/v2 expects.
-	if kind := dec.PeekKind(); kind != '{' {
-		return &json.SemanticError{JSONKind: kind}
-	}
+
 	// Consume opening '{'.
-	if _, err := dec.ReadToken(); err != nil {
+	if tok, err := dec.ReadToken(); err != nil {
 		return err
+	} else if tok.Kind() != jsontext.KindBeginObject {
+		// Reject non-object JSON
+		return &json.SemanticError{JSONKind: tok.Kind()}
 	}
 
 	// the UnmarshalJSONFrom contract directs us to support multiple calls to

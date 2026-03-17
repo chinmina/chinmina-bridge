@@ -830,30 +830,19 @@ func TestBuildkiteClaims_UnmarshalJSON_InvalidInput(t *testing.T) {
 	cases := []struct {
 		name     string
 		jsonData string
+		target   any
 	}{
-		{
-			name:     "array instead of object",
-			jsonData: `[]`,
-		},
-		{
-			name:     "string instead of object",
-			jsonData: `"not-an-object"`,
-		},
-		{
-			name:     "null instead of object",
-			jsonData: `null`,
-		},
-		{
-			name:     "truncated object",
-			jsonData: `{`,
-		},
+		{name: "array instead of object", jsonData: `[]`, target: new(*json.UnmarshalTypeError)},
+		{name: "string instead of object", jsonData: `"not-an-object"`, target: new(*json.UnmarshalTypeError)},
+		{name: "null instead of object", jsonData: `null`, target: new(*json.UnmarshalTypeError)},
+		{name: "truncated object", jsonData: `{`, target: new(*json.SyntaxError)},
 	}
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			var claims BuildkiteClaims
 			err := json.Unmarshal([]byte(tt.jsonData), &claims)
-			require.Error(t, err)
+			require.ErrorAs(t, err, tt.target)
 		})
 	}
 }

@@ -4,7 +4,6 @@ package jwt
 
 import (
 	"encoding/json"
-	"math"
 	"testing"
 )
 
@@ -84,18 +83,7 @@ func FuzzBuildkiteClaimsUnmarshalJSON(f *testing.F) {
 				_ = v
 			}
 
-			// Verify build_number conversion didn't overflow in unexpected ways
-			// If it's absurdly large, it's from overflow, but shouldn't panic
-			if claims.BuildNumber > math.MaxInt32 || claims.BuildNumber < math.MinInt32 {
-				// This is expected for very large float64 values
-				// The conversion is int(f) which truncates
-			}
 		}
 
-		// Property 3: Type errors should be descriptive
-		if err != nil && err.Error() != "" {
-			// Errors should mention field names or be about JSON syntax
-			// We don't fail here, just verify error exists and is non-empty
-		}
 	})
 }
