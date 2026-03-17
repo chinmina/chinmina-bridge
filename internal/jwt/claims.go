@@ -63,7 +63,7 @@ type BuildkiteClaims struct {
 	ClusterName      string            `json:"cluster_name"`
 	QueueID          string            `json:"queue_id"`
 	QueueKey         string            `json:"queue_key"`
-	AgentTags        map[string]string `json:"-"` // handled in UnmarshalJSON
+	AgentTags        map[string]string `json:"-"` // handled in UnmarshalJSONFrom
 
 	expectedOrganizationSlug string `json:"-"` // not part of JWT
 }
