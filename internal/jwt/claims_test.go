@@ -214,6 +214,67 @@ func TestBuildkiteClaims_NewFields(t *testing.T) {
 	}
 }
 
+func TestBuildkiteClaims_UnmarshalJSON_RegisteredClaims(t *testing.T) {
+	// minimalJSON is a base payload without the fields under test.
+	const minimalFields = `"organization_slug": "acme", "pipeline_slug": "pipeline", "pipeline_id": "pid", "build_number": 1, "build_branch": "main", "build_commit": "abc", "job_id": "j1", "agent_id": "a1"`
+
+	cases := []struct {
+		name           string
+		jsonData       string
+		wantNBFValued  bool
+		wantEXPValued  bool
+		wantSubMissing bool // true if Validate should return "subject claim not present"
+	}{
+		{
+			name:          "nbf and exp present",
+			jsonData:      `{` + minimalFields + `, "sub": "org:acme:pipeline:pipeline:ref:main:commit:abc", "nbf": 1700000000, "exp": 1700003600}`,
+			wantNBFValued: true,
+			wantEXPValued: true,
+		},
+		{
+			name:          "nbf null, exp present",
+			jsonData:      `{` + minimalFields + `, "sub": "s", "nbf": null, "exp": 1700003600}`,
+			wantNBFValued: false,
+			wantEXPValued: true,
+		},
+		{
+			name:          "nbf and exp absent",
+			jsonData:      `{` + minimalFields + `, "sub": "s"}`,
+			wantNBFValued: false,
+			wantEXPValued: false,
+		},
+		{
+			name:           "sub absent",
+			jsonData:       `{` + minimalFields + `, "nbf": 1700000000, "exp": 1700003600}`,
+			wantNBFValued:  true,
+			wantEXPValued:  true,
+			wantSubMissing: true,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var claims BuildkiteClaims
+			err := json.Unmarshal([]byte(tt.jsonData), &claims)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantNBFValued, claims.notBefore.Valued(), "notBefore.Valued()")
+			assert.Equal(t, tt.wantEXPValued, claims.expiry.Valued(), "expiry.Valued()")
+
+			validateErr := claims.Validate(context.Background())
+			if tt.wantSubMissing {
+				require.Error(t, validateErr)
+				assert.Contains(t, validateErr.Error(), "subject claim not present")
+			} else {
+				// subject is present; any other validate error is not our concern here
+				if validateErr != nil {
+					assert.NotContains(t, validateErr.Error(), "subject claim not present")
+				}
+			}
+		})
+	}
+}
+
 func TestBuildkiteClaims_UnmarshalJSON_AgentTags(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -272,6 +333,32 @@ func TestBuildkiteClaims_UnmarshalJSON_AgentTags(t *testing.T) {
 				BuildCommit:      "def456",
 				JobID:            "job2",
 				AgentID:          "agent2",
+				AgentTags:        map[string]string{},
+			},
+		},
+		{
+			name: "build_tag field is populated",
+			jsonData: `{
+				"organization_slug": "acme",
+				"pipeline_slug": "pipeline",
+				"pipeline_id": "pipeline_uuid",
+				"build_number": 123,
+				"build_branch": "main",
+				"build_commit": "abc123",
+				"job_id": "job1",
+				"agent_id": "agent1",
+				"build_tag": "v1.0.0"
+			}`,
+			expected: BuildkiteClaims{
+				OrganizationSlug: "acme",
+				PipelineSlug:     "pipeline",
+				PipelineID:       "pipeline_uuid",
+				BuildNumber:      123,
+				BuildBranch:      "main",
+				BuildCommit:      "abc123",
+				JobID:            "job1",
+				AgentID:          "agent1",
+				BuildTag:         "v1.0.0",
 				AgentTags:        map[string]string{},
 			},
 		},
@@ -375,7 +462,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 	cases := []struct {
 		name          string
 		jsonData      string
-		expectedError string
+		expectedField string // field name present in the SemanticError message
 	}{
 		{
 			name: "string field with wrong type",
@@ -389,7 +476,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedError: "organization_slug: expected string, got float64",
+			expectedField: "organization_slug",
 		},
 		{
 			name: "build_number with wrong type",
@@ -403,7 +490,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedError: "build_number: expected int, got string",
+			expectedField: "build_number",
 		},
 		{
 			name: "agent_tag with wrong type",
@@ -418,7 +505,52 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"agent_id": "agent1",
 				"agent_tag:queue": 456
 			}`,
-			expectedError: "agent_tag:queue: expected string, got float64",
+			expectedField: "agent_tag:queue",
+		},
+		{
+			name: "sub with wrong type",
+			jsonData: `{
+				"sub": 123,
+				"organization_slug": "acme",
+				"pipeline_slug": "pipeline",
+				"pipeline_id": "pipeline_uuid",
+				"build_number": 123,
+				"build_branch": "main",
+				"build_commit": "abc123",
+				"job_id": "job1",
+				"agent_id": "agent1"
+			}`,
+			expectedField: "sub",
+		},
+		{
+			name: "step_key with wrong type",
+			jsonData: `{
+				"organization_slug": "acme",
+				"pipeline_slug": "pipeline",
+				"pipeline_id": "pipeline_uuid",
+				"build_number": 123,
+				"build_branch": "main",
+				"build_commit": "abc123",
+				"job_id": "job1",
+				"agent_id": "agent1",
+				"step_key": true
+			}`,
+			expectedField: "step_key",
+		},
+		{
+			name: "cluster_id with wrong type",
+			jsonData: `{
+				"organization_slug": "acme",
+				"pipeline_slug": "pipeline",
+				"pipeline_id": "pipeline_uuid",
+				"build_number": 123,
+				"build_branch": "main",
+				"build_commit": "abc123",
+				"job_id": "job1",
+				"agent_id": "agent1",
+				"cluster_id": []
+			}`,
+			expectedField: "cluster_id",
 		},
 	}
 
@@ -427,7 +559,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 			var claims BuildkiteClaims
 			err := json.Unmarshal([]byte(tt.jsonData), &claims)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.expectedError)
+			assert.Contains(t, err.Error(), tt.expectedField)
 		})
 	}
 }
@@ -692,4 +824,61 @@ func assertClaimMissing(t *testing.T, token jwxjwt.Token, key string) {
 	var val any
 	err := token.Get(key, &val)
 	assert.Error(t, err, "expected claim %q to be absent", key)
+}
+
+func TestBuildkiteClaims_UnmarshalJSON_InvalidInput(t *testing.T) {
+	cases := []struct {
+		name     string
+		jsonData string
+		target   any
+	}{
+		{name: "array instead of object", jsonData: `[]`, target: new(*json.UnmarshalTypeError)},
+		{name: "string instead of object", jsonData: `"not-an-object"`, target: new(*json.UnmarshalTypeError)},
+		{name: "null instead of object", jsonData: `null`, target: new(*json.UnmarshalTypeError)},
+		{name: "truncated object", jsonData: `{`, target: new(*json.SyntaxError)},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var claims BuildkiteClaims
+			err := json.Unmarshal([]byte(tt.jsonData), &claims)
+			require.ErrorAs(t, err, tt.target)
+		})
+	}
+}
+
+// BenchmarkBuildkiteClaims_UnmarshalJSON measures the cost of unmarshaling a realistic
+// Buildkite OIDC JWT payload, including registered claims, all exported fields,
+// and several agent_tag: prefixed entries.
+func BenchmarkBuildkiteClaims_UnmarshalJSON(b *testing.B) {
+	payload := []byte(`{
+		"sub": "organization:acme:pipeline:deploy:ref:main:commit:abc123def456:step:build",
+		"nbf": 1700000000,
+		"exp": 1700003600,
+		"organization_slug": "acme",
+		"pipeline_slug": "deploy",
+		"pipeline_id": "550e8400-e29b-41d4-a716-446655440000",
+		"build_number": 1234,
+		"build_branch": "main",
+		"build_tag": "",
+		"build_commit": "abc123def456abc123def456abc123def456abc123",
+		"step_key": "build",
+		"job_id": "11111111-1111-1111-1111-111111111111",
+		"agent_id": "22222222-2222-2222-2222-222222222222",
+		"cluster_id": "33333333-3333-3333-3333-333333333333",
+		"cluster_name": "production",
+		"queue_id": "44444444-4444-4444-4444-444444444444",
+		"queue_key": "default",
+		"agent_tag:queue": "runners",
+		"agent_tag:os": "linux",
+		"agent_tag:arch": "amd64"
+	}`)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		var claims BuildkiteClaims
+		if err := json.Unmarshal(payload, &claims); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
