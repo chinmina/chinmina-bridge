@@ -64,5 +64,18 @@
       matchDepNames: ["github.com/jferrl/go-githubauth"],
       allowedVersions: "<2.0.0",
     },
+    {
+      // OpenTelemetry modules must be updated together: they have inter-module
+      // version constraints and mixing versions causes build failures.
+      groupName: "opentelemetry",
+      matchDepPatterns: [
+        "^go\\.opentelemetry\\.io/",
+      ],
+    },
+    {
+      groupName: "github-actions",
+      groupSlug: "github-actions",
+      matchManagers: ["github-actions"],
+    },
   ],
 }
