@@ -604,3 +604,41 @@ func TestIntegrationValkey_DecryptionFailureAsCacheMiss(t *testing.T) {
 	assert.Equal(t, "ghs_secondtoken", result2.Token, "expected new token after decryption failure")
 	assert.Equal(t, 2, harness.GitHubMock.RequestCount, "expected GitHub to be called twice (decryption failure = cache miss)")
 }
+
+// TestIntegrationBasePath verifies that a configured base path prefix is
+// stripped before routing, allowing the service to be deployed under a
+// sub-path (e.g. behind an ALB).
+func TestIntegrationBasePath(t *testing.T) {
+	const basePath = "/api/v1"
+
+	harness := NewAPITestHarness(t, WithBasePath(basePath))
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_basepath_token"
+
+	client := harness.Client()
+
+	t.Run("healthcheck at base path", func(t *testing.T) {
+		resp, err := client.Request("GET", basePath+"/healthcheck", "", nil)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("token endpoint at base path", func(t *testing.T) {
+		token := harness.PipelineToken()
+		resp, err := client.Request("POST", basePath+"/token", token, nil)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("healthcheck without base path returns 404", func(t *testing.T) {
+		resp, err := client.Request("GET", "/healthcheck", "", nil)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("partial segment match returns 404", func(t *testing.T) {
+		resp, err := client.Request("GET", "/api/v1extra/healthcheck", "", nil)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+}

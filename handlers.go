@@ -161,6 +161,41 @@ func maxRequestSize(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
+// stripPrefix wraps a handler to strip a path prefix at segment boundaries.
+// Unlike http.StripPrefix, "/api" matches "/api", "/api/", and "/api/foo" but
+// not "/apifoo". Requests that don't match return 404.
+func stripPrefix(prefix string, handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rest, ok := cutPathSegment(r.URL.Path, prefix)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = rest
+		if r.URL.RawPath != "" {
+			// On failure cutPathSegment returns "", which clears RawPath
+			// and causes net/http to fall back to Path.
+			r2.URL.RawPath, _ = cutPathSegment(r.URL.RawPath, prefix)
+		}
+		handler.ServeHTTP(w, r2)
+	})
+}
+
+// cutPathSegment strips prefix from path at a segment boundary. The remainder
+// must be empty or start with '/'. An empty remainder is normalised to "/".
+func cutPathSegment(path, prefix string) (string, bool) {
+	rest, found := strings.CutPrefix(path, prefix)
+	if !found || (rest != "" && rest[0] != '/') {
+		return "", false
+	}
+	if rest == "" {
+		rest = "/"
+	}
+	return rest, true
+}
+
 // ErrorResponse represents a JSON error response.
 type ErrorResponse struct {
 	Error string `json:"error"`

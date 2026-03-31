@@ -51,6 +51,14 @@ func WithValkeyCache() APITestHarnessOption {
 	}
 }
 
+// WithBasePath configures the test harness with a base path prefix for
+// sub-path deployment testing.
+func WithBasePath(basePath string) APITestHarnessOption {
+	return func(cfg *config.Config) {
+		cfg.Server.BasePath = basePath
+	}
+}
+
 // NewAPITestHarness creates a complete test harness with all mock servers and the API server.
 // Use options to customize the configuration (e.g., WithValkeyCache).
 // Cleanup is handled automatically via t.Cleanup().

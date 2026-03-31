@@ -23,6 +23,7 @@ type ServerConfig struct {
 	OutgoingHTTPMaxIdleConns    int    `env:"SERVER_OUTGOING_MAX_IDLE_CONNS, default=100"`
 	OutgoingHTTPMaxConnsPerHost int    `env:"SERVER_OUTGOING_MAX_CONNS_PER_HOST, default=20"`
 	OrgProfile                  string `env:"GITHUB_ORG_PROFILE"`
+	BasePath                    string `env:"SERVER_BASE_PATH"`
 }
 
 // CacheConfig specifies cache configuration.
