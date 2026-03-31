@@ -690,3 +690,109 @@ func TestAuditError(t *testing.T) {
 		})
 	}
 }
+
+func TestStripPrefix(t *testing.T) {
+	echoPath := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(r.URL.Path))
+	})
+
+	t.Run("strips matching prefix", func(t *testing.T) {
+		cases := []struct {
+			name         string
+			prefix       string
+			requestPath  string
+			expectedPath string
+		}{
+			{
+				name:         "simple prefix",
+				prefix:       "/test",
+				requestPath:  "/test/token",
+				expectedPath: "/token",
+			},
+			{
+				name:         "nested prefix",
+				prefix:       "/api/v1",
+				requestPath:  "/api/v1/users/123",
+				expectedPath: "/users/123",
+			},
+			{
+				name:         "exact match becomes root",
+				prefix:       "/test",
+				requestPath:  "/test",
+				expectedPath: "/",
+			},
+			{
+				name:         "prefix with trailing slash on request",
+				prefix:       "/test",
+				requestPath:  "/test/",
+				expectedPath: "/",
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				handler := stripPrefix(tc.prefix, echoPath)
+				req := httptest.NewRequest(http.MethodGet, tc.requestPath, nil)
+				rr := httptest.NewRecorder()
+
+				handler.ServeHTTP(rr, req)
+
+				assert.Equal(t, http.StatusOK, rr.Code)
+				assert.Equal(t, tc.expectedPath, rr.Body.String())
+			})
+		}
+	})
+
+	t.Run("rejects non-matching requests", func(t *testing.T) {
+		cases := []struct {
+			name        string
+			prefix      string
+			requestPath string
+		}{
+			{
+				name:        "partial segment match",
+				prefix:      "/test",
+				requestPath: "/testing",
+			},
+			{
+				name:        "completely different path",
+				prefix:      "/api",
+				requestPath: "/other/path",
+			},
+			{
+				name:        "prefix not present",
+				prefix:      "/api/v1",
+				requestPath: "/api/v2/users",
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				handler := stripPrefix(tc.prefix, echoPath)
+				req := httptest.NewRequest(http.MethodGet, tc.requestPath, nil)
+				rr := httptest.NewRecorder()
+
+				handler.ServeHTTP(rr, req)
+
+				assert.Equal(t, http.StatusNotFound, rr.Code)
+			})
+		}
+	})
+
+	t.Run("handles RawPath", func(t *testing.T) {
+		echoRawPath := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(r.URL.RawPath))
+		})
+
+		handler := stripPrefix("/test", echoRawPath)
+		req := httptest.NewRequest(http.MethodGet, "/test/path%2Fwith%2Fencoding", nil)
+		rr := httptest.NewRecorder()
+
+		handler.ServeHTTP(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+		assert.Equal(t, "/path%2Fwith%2Fencoding", rr.Body.String())
+	})
+}

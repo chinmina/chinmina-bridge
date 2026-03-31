@@ -43,6 +43,17 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	requestLimitBytes := int64(20 << 10) // 20 KB
 	requestLimiter := maxRequestSize(requestLimitBytes)
 
+	// When a base path is configured, strip it before routing so the
+	// application can be served under a sub-path (e.g. behind an ALB).
+	normalizedBasePath, err := config.NormalizeBasePath(cfg.Server.BasePath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base path: %w", err)
+	}
+
+	if normalizedBasePath != "" {
+		slog.Info("serving under base path", "path", normalizedBasePath)
+	}
+
 	authorizedRouteMiddleware := alice.New(requestLimiter, auditor, authorizer)
 	standardRouteMiddleware := alice.New(requestLimiter)
 
@@ -92,7 +103,13 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	// healthchecks are not included in telemetry or authorization
 	muxWithoutTelemetry.Handle("GET /healthcheck", standardRouteMiddleware.Then(handleHealthCheck()))
 
-	return mux, nil
+	// StripPrefix wraps the entire mux so it runs before pattern matching.
+	var handler http.Handler = mux
+	if normalizedBasePath != "" {
+		handler = stripPrefix(normalizedBasePath, mux)
+	}
+
+	return handler, nil
 }
 
 func main() {
