@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/chinmina/chinmina-bridge/internal/config"
@@ -38,15 +39,53 @@ func IAMCredentialsFn(cfg config.ValkeyConfig, awsCfg aws.Config) (func(valkey.A
 	}
 
 	username := cfg.Username
+
+	slog.Debug("IAM token generator created",
+		"username", username,
+		"cache_name", cfg.IAMCacheName,
+		"serverless", cfg.IAMServerless,
+		"region", awsCfg.Region,
+	)
+
 	return func(valkey.AuthCredentialsContext) (valkey.AuthCredentials, error) {
 		// AuthCredentialsFn doesn't accept a context.Context. The iamcacheauth
 		// README notes context only controls credential retrieval timeout
 		// (signing is a local CPU op). context.Background() avoids capturing
 		// a startup context that could be cancelled.
-		token, err := gen.Token(context.Background())
+
+		// Retrieve credentials separately for debug logging before token generation.
+		ctx := context.Background()
+		awsCreds, credErr := awsCfg.Credentials.Retrieve(ctx)
+		if credErr != nil {
+			slog.Debug("IAM credential retrieval failed",
+				"error", credErr,
+			)
+		} else {
+			slog.Debug("IAM auth token: pre-sign state",
+				"username", username,
+				"cache_name", cfg.IAMCacheName,
+				"serverless", cfg.IAMServerless,
+				"region", awsCfg.Region,
+				"access_key_id", awsCreds.AccessKeyID,
+				"has_secret_key", awsCreds.SecretAccessKey != "",
+				"has_session_token", awsCreds.SessionToken != "",
+				"credential_source", awsCreds.Source,
+			)
+		}
+
+		token, err := gen.Token(ctx)
 		if err != nil {
+			slog.Debug("IAM auth token generation failed",
+				"error", err,
+			)
 			return valkey.AuthCredentials{}, fmt.Errorf("generating IAM auth token: %w", err)
 		}
+
+		slog.Debug("IAM auth token generated",
+			"token_length", len(token),
+			"token_prefix", token[:min(80, len(token))],
+		)
+
 		return valkey.AuthCredentials{
 			Username: username,
 			Password: token,
