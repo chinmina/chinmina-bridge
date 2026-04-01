@@ -14,7 +14,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/google/go-github/v82 v82.0.0
 	github.com/grafana/otel-profiling-go v0.5.1
-	github.com/grafana/pyroscope-go v1.2.7
+	github.com/grafana/pyroscope-go v1.2.8
 	github.com/jferrl/go-githubauth v1.5.1
 	github.com/justinas/alice v1.2.0
 	github.com/lestrrat-go/jwx/v3 v3.0.13
