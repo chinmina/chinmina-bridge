@@ -114,6 +114,24 @@ linters:
           - govet
         path: internal/github/fieldmapper_test\.go
 
+      # SA5008: unexported struct fields with json tags are intentional test fixtures
+      - text: "SA5008"
+        linters:
+          - staticcheck
+        path: internal/github/fieldmapper_test\.go
+
+      # G101: hardcoded token values in test helpers are not real credentials
+      - text: "G101"
+        linters:
+          - gosec
+        path: internal/testhelpers/
+
+      # G118: loopCancel is stored in the struct and called via Close(); not leaked
+      - text: "G118"
+        linters:
+          - gosec
+        path: internal/cache/encryption/refresh\.go
+
       # Exclude QF1003 in ref.go (switch would prevent variable redeclaration across branches)
       - text: "QF1003"
         linters:
