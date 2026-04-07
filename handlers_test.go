@@ -733,7 +733,7 @@ func TestStripPrefix(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				handler := stripPrefix(tc.prefix, echoPath)
-				req := httptest.NewRequest(http.MethodGet, tc.requestPath, nil)
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tc.requestPath, nil)
 				rr := httptest.NewRecorder()
 
 				handler.ServeHTTP(rr, req)
@@ -770,7 +770,7 @@ func TestStripPrefix(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				handler := stripPrefix(tc.prefix, echoPath)
-				req := httptest.NewRequest(http.MethodGet, tc.requestPath, nil)
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tc.requestPath, nil)
 				rr := httptest.NewRecorder()
 
 				handler.ServeHTTP(rr, req)
@@ -787,7 +787,7 @@ func TestStripPrefix(t *testing.T) {
 		})
 
 		handler := stripPrefix("/test", echoRawPath)
-		req := httptest.NewRequest(http.MethodGet, "/test/path%2Fwith%2Fencoding", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/test/path%2Fwith%2Fencoding", nil)
 		rr := httptest.NewRecorder()
 
 		handler.ServeHTTP(rr, req)
