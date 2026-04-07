@@ -201,8 +201,7 @@ func TestAuditClaimsMiddleware_SpanAttributes(t *testing.T) {
 	ctx, _ = audit.Context(ctx)
 
 	// Create test request and response
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req = req.WithContext(ctx)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 
 	// Call middleware

@@ -32,7 +32,7 @@ func TestMiddleware(t *testing.T) {
 
 		middleware := audit.Middleware()(handler)
 
-		req, w := requestSetup()
+		req, w := requestSetup(t)
 		req.Header.Set("User-Agent", testAgent)
 
 		middleware.ServeHTTP(w, req)
@@ -49,7 +49,7 @@ func TestMiddleware(t *testing.T) {
 			w.WriteHeader(http.StatusTeapot)
 		})
 
-		req, w := requestSetup()
+		req, w := requestSetup(t)
 
 		middleware := audit.Middleware()(handler)
 
@@ -72,7 +72,7 @@ func TestMiddleware(t *testing.T) {
 
 		middleware := audit.Middleware()(handler)
 
-		req, w := requestSetup()
+		req, w := requestSetup(t)
 
 		middleware.ServeHTTP(w, req)
 
@@ -94,7 +94,7 @@ func TestMiddleware(t *testing.T) {
 
 		middleware := audit.Middleware()(handler)
 
-		req, w := requestSetup()
+		req, w := requestSetup(t)
 
 		assert.PanicsWithValue(t, "not a teapot", func() {
 			middleware.ServeHTTP(w, req)
@@ -110,7 +110,7 @@ func TestAuditing(t *testing.T) {
 	testhelpers.SetupLogger(t)
 
 	ctx := context.Background()
-	r, _ := requestSetup()
+	r, _ := requestSetup(t)
 
 	_, e := audit.Context(ctx)
 	e.Begin(r)
@@ -170,8 +170,9 @@ func TestAuditEndEventSnapshot(t *testing.T) {
 	)
 }
 
-func requestSetup() (*http.Request, *httptest.ResponseRecorder) {
-	req := httptest.NewRequest(http.MethodGet, "http://example.com/foo", nil)
+func requestSetup(t *testing.T) (*http.Request, *httptest.ResponseRecorder) {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://example.com/foo", nil)
 	req.Header.Set("User-Agent", "kettle/1.0")
 
 	w := httptest.NewRecorder()
