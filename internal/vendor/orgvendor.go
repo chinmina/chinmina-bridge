@@ -47,21 +47,35 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			return NewVendorFailed(profile.ProfileMatchFailedError{Name: ref.Name})
 		}
 
+		// --- Bidirectional scoping validation ---
+		profileScope := authProfile.Attrs.RepositoryScope()
+
+		var repoScope profile.RepositoryScope
+
+		if profileScope.IsCallerScoped() {
+			if repositoryScope == "" {
+				return NewVendorFailed(profile.RepositoryScopeRequiredError{ProfileName: ref.Name})
+			}
+			repoScope = profile.NewSpecificScope(repositoryScope)
+		} else if repositoryScope != "" {
+			return NewVendorFailed(profile.RepositoryScopeUnexpectedError{ProfileName: ref.Name})
+		} else {
+			repoScope = profileScope
+		}
+
 		// The repository is only supplied for the git-credentials endpoint:
 		// checking it allows Git to respond properly: it's not a security measure.
 		if requestedRepoURL != "" {
-			// Otherwise validate it against the profile.
 			repo, err := url.Parse(requestedRepoURL)
 			if err != nil {
 				return NewVendorFailed(fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err))
 			}
 
-			// If the requested repository isn't in the profile, return unmatched. This
-			// indicates that the handler should return a successful (but empty)
-			// response. This allows Git (for example) to try a different provider in
-			// its credentials chain.
+			// Profiles that claim coverage of all repositories (wildcard or caller-scoped)
+			// treat failure as a hard error — no credential helper fallback.
+			// Static-list profiles return unmatched for repos outside their list.
 			_, repository := github.RepoForURL(*repo)
-			if !authProfile.Attrs.HasRepository(repository) {
+			if !profileScope.IsWildcard() && !profileScope.IsCallerScoped() && !repoScope.Contains(repository) {
 				slog.Debug("profile doesn't support requested repository: no token vended.",
 					"organization", ref.Organization,
 					"profile", ref.ShortString(),
@@ -72,7 +86,6 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		}
 
 		// Use the GitHub API to vend a token for the repository
-		repoScope := authProfile.Attrs.RepositoryScope()
 		token, expiry, err := tokenVendor(ctx, repoScope.Names, authProfile.Attrs.Permissions)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not issue token for profile %s: %w", ref, err))

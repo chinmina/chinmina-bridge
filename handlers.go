@@ -65,7 +65,16 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile
 			return
 		}
 
-		result := tokenVendor(r.Context(), ref, "", "")
+		var repositoryScope string
+		if expectedType == profile.ProfileTypeOrg {
+			repositoryScope, err = extractRepositoryScope(r)
+			if err != nil {
+				requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid repository-scope: %w", err))
+				return
+			}
+		}
+
+		result := tokenVendor(r.Context(), ref, "", repositoryScope)
 		if err, failed := result.Failed(); failed {
 			writeJSONError(r.Context(), w, fmt.Errorf("token creation failed: %w", err))
 			return
