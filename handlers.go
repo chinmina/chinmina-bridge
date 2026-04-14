@@ -22,6 +22,24 @@ type HTTPStatuser interface {
 	Status() (int, string)
 }
 
+// extractRepositoryScope extracts and validates the repository-scope query parameter.
+// Returns empty string if the parameter is absent.
+// Returns an error if the parameter is present but invalid (empty, whitespace-only, or contains '/').
+func extractRepositoryScope(r *http.Request) (string, error) {
+	if !r.URL.Query().Has("repository-scope") {
+		return "", nil
+	}
+
+	scope := r.URL.Query().Get("repository-scope")
+	if strings.TrimSpace(scope) == "" {
+		return "", fmt.Errorf("repository-scope must not be empty")
+	}
+	if strings.Contains(scope, "/") {
+		return "", fmt.Errorf("repository-scope must not contain '/'")
+	}
+	return scope, nil
+}
+
 // buildProfileRef constructs a ProfileRef from the request context and path.
 // Returns an error if the profile parameter is invalid. Panics if Buildkite
 // claims are missing (via jwt.RequireBuildkiteClaimsFromContext), which should
