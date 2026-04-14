@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -25,19 +24,6 @@ var multiplePermissionsExtendedYAML string
 
 //go:embed testdata/pipeline-profiles.yaml
 var pipelineProfilesYAML string
-
-// createTestClaimsContextWithPipeline creates a context with JWT claims for testing,
-// allowing specification of the pipeline slug.
-func createTestClaimsContextWithPipeline(pipelineSlug string) context.Context {
-	claims := &jwt.BuildkiteClaims{
-		OrganizationSlug: "organization-slug",
-		PipelineSlug:     pipelineSlug,
-		PipelineID:       "pipeline-id",
-		BuildBranch:      "main",
-	}
-
-	return jwt.ContextWithBuildkiteClaims(context.Background(), claims)
-}
 
 func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
 	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, defaultPermissionsYAML), nil, nil)

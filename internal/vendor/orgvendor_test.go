@@ -399,3 +399,101 @@ organization:
 	result := v(ctx, ref, "", "unwanted-scope")
 	assertVendorFailure(t, result, "does not accept repository scoping")
 }
+
+func TestOrgVendor_GitCredentials_CallerScoped_DerivesRepoFromURL(t *testing.T) {
+	vendedDate := time.Date(1970, 1, 1, 0, 0, 10, 0, time.UTC)
+
+	var capturedRepoNames []string
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
+		capturedRepoNames = repoNames
+		return "scoped-token", vendedDate, nil
+	})
+
+	profileYAML := `
+organization:
+  profiles:
+    - name: caller-scoped-profile
+      repositories: ["{{caller-scoped-repository}}"]
+      permissions: [contents:write]
+      match:
+        - claim: pipeline_slug
+          valuePattern: "agent-workflows.*"
+`
+
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Name:         "caller-scoped-profile",
+		Type:         profile.ProfileTypeOrg,
+	}
+
+	// Git-credentials passes requestedRepoURL, not repositoryScope
+	ctx := createTestClaimsContextWithPipeline("agent-workflows")
+	result := v(ctx, ref, "https://github.com/org/target-repo", "")
+
+	assertVendorSuccess(t, result, vendor.ProfileToken{
+		Token:               "scoped-token",
+		HashedToken:         vendor.HashToken("scoped-token"),
+		Repositories:        profile.NewSpecificScope("target-repo"),
+		Permissions:         []string{"contents:write", "metadata:read"},
+		Profile:             "org:caller-scoped-profile",
+		Expiry:              vendedDate,
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/org/target-repo",
+	})
+	assert.Equal(t, []string{"target-repo"}, capturedRepoNames)
+}
+
+func TestOrgVendor_GitCredentials_CallerScoped_NoRepoURL_Fails(t *testing.T) {
+	profileYAML := `
+organization:
+  profiles:
+    - name: caller-scoped-profile
+      repositories: ["{{caller-scoped-repository}}"]
+      permissions: [contents:write]
+      match:
+        - claim: pipeline_slug
+          valuePattern: "agent-workflows.*"
+`
+
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), nil)
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Name:         "caller-scoped-profile",
+		Type:         profile.ProfileTypeOrg,
+	}
+
+	ctx := createTestClaimsContextWithPipeline("agent-workflows")
+	result := v(ctx, ref, "", "")
+	assertVendorFailure(t, result, "requires a repository scope")
+}
+
+func TestOrgVendor_GitCredentials_AllRepos_NoUnmatched(t *testing.T) {
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
+		return "", time.Time{}, errors.New("GitHub API rejected request")
+	})
+
+	profileYAML := `
+organization:
+  profiles:
+    - name: all-repos-profile
+      repositories: ["{{all-repositories}}"]
+      permissions: [contents:read]
+`
+
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Name:         "all-repos-profile",
+		Type:         profile.ProfileTypeOrg,
+	}
+
+	ctx := createTestClaimsContext()
+	result := v(ctx, ref, "https://github.com/org/any-repo", "")
+
+	// Must be a failure, not an unmatched (empty-success)
+	assertVendorFailure(t, result, "GitHub API rejected request")
+}
