@@ -48,7 +48,7 @@ func TestRepoVendor_FailsWithWrongProfileType(t *testing.T) {
 		Type:         profile.ProfileTypeOrg, // Wrong type!
 		PipelineSlug: "",
 	}
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "repo-url")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "repo-url", "")
 	assertVendorFailure(t, result, "profile type mismatch")
 }
 
@@ -66,7 +66,7 @@ func TestRepoVendor_FailsWhenPipelineLookupFails(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "repo-url")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "repo-url", "")
 	assertVendorFailure(t, result, "could not find repository for pipeline")
 }
 
@@ -85,7 +85,7 @@ func TestRepoVendor_FailsWhenNoValidRepoNames(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "", "")
 	assertVendorFailure(t, result, "error getting repo names")
 }
 
@@ -106,7 +106,7 @@ func TestRepoVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/other-repo")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/other-repo", "")
 	assertVendorUnmatched(t, result)
 }
 
@@ -128,7 +128,7 @@ func TestRepoVendor_FailsWhenTokenVendorFails(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url", "")
 	assertVendorFailure(t, result, "token vendor failed")
 }
 
@@ -152,7 +152,7 @@ func TestRepoVendor_SucceedsWithTokenWhenPossible(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url", "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
@@ -189,7 +189,7 @@ func TestRepoVendor_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 	}
 
 	// Empty requestedRepoURL should succeed by using pipeline repo
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "", "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
@@ -224,7 +224,7 @@ func TestRepoVendor_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 	// Request with HTTPS URL should match after translation
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url.git")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "https://github.com/org/repo-url.git", "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
@@ -261,7 +261,7 @@ func TestRepoVendor_UsesConfiguredPermissionsFromProfileStore(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "", "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
@@ -292,7 +292,7 @@ func TestRepoVendor_FailsWhenProfileStoreNotLoaded(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "", "")
 	assertVendorFailure(t, result, "could not find pipeline profile")
 }
 
@@ -318,7 +318,7 @@ func TestRepoVendor_MultiplePermissionsAreIncludedInResponse(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "", "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
@@ -354,7 +354,7 @@ func TestRepoVendor_NamedProfileLookupSuccess(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "", "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
@@ -391,7 +391,7 @@ func TestRepoVendor_ProfileMatchSuccess(t *testing.T) {
 	}
 
 	// Pipeline slug matches the pattern "^security-.*"
-	result := v(createTestClaimsContextWithPipeline("security-scanner"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("security-scanner"), ref, "", "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "vended-token-value",
 		HashedToken:         vendor.HashToken("vended-token-value"),
@@ -420,7 +420,7 @@ func TestRepoVendor_ProfileMatchFailure(t *testing.T) {
 	}
 
 	// Pipeline slug does not match the pattern
-	result := v(createTestClaimsContextWithPipeline("normal-pipeline"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("normal-pipeline"), ref, "", "")
 	assertVendorFailure(t, result, "match conditions not met")
 }
 
@@ -439,6 +439,6 @@ func TestRepoVendor_ProfileNotFound(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 
-	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("my-pipeline"), ref, "", "")
 	assertVendorFailure(t, result, "could not find pipeline profile")
 }

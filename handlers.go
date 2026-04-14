@@ -65,7 +65,7 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile
 			return
 		}
 
-		result := tokenVendor(r.Context(), ref, "")
+		result := tokenVendor(r.Context(), ref, "", "")
 		if err, failed := result.Failed(); failed {
 			writeJSONError(r.Context(), w, fmt.Errorf("token creation failed: %w", err))
 			return
@@ -120,7 +120,7 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, expectedTyp
 			return
 		}
 
-		result := tokenVendor(r.Context(), ref, requestedRepoURL)
+		result := tokenVendor(r.Context(), ref, requestedRepoURL, "")
 		if err, failed := result.Failed(); failed {
 			writeTextError(r.Context(), w, fmt.Errorf("token creation failed: %w", err))
 			return
