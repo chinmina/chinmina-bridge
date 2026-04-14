@@ -8,119 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestOrganizationProfileAttr_HasRepository tests the HasRepository method
-func TestOrganizationProfileAttr_HasRepository_Match(t *testing.T) {
-	tests := []struct {
-		name         string
-		repositories []string
-		repo         string
-		expected     bool
-	}{
-		{
-			name:         "exact match in list",
-			repositories: []string{"repo1", "repo2"},
-			repo:         "repo1",
-			expected:     true,
-		},
-		{
-			name:         "wildcard matches any",
-			repositories: []string{"*"},
-			repo:         "any/repository",
-			expected:     true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			attr := OrganizationProfileAttr{
-				Repositories: tt.repositories,
-			}
-			assert.Equal(t, tt.expected, attr.HasRepository(tt.repo))
-		})
-	}
-}
-
-func TestOrganizationProfileAttr_HasRepository_NoMatch(t *testing.T) {
-	tests := []struct {
-		name         string
-		repositories []string
-		repo         string
-	}{
-		{
-			name:         "partial match fails",
-			repositories: []string{"repo"},
-			repo:         "acme",
-		},
-		{
-			name:         "over-match fails",
-			repositories: []string{"repo"},
-			repo:         "repo-extra",
-		},
-		{
-			name:         "empty list fails",
-			repositories: []string{},
-			repo:         "repo",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			attr := OrganizationProfileAttr{
-				Repositories: tt.repositories,
-			}
-			assert.False(t, attr.HasRepository(tt.repo))
-		})
-	}
-}
-
-// TestOrganizationProfileAttr_RepositoryScope tests the RepositoryScope method
-func TestOrganizationProfileAttr_RepositoryScope_SpecificRepos(t *testing.T) {
-	tests := []struct {
-		name         string
-		repositories []string
-		expected     RepositoryScope
-	}{
-		{
-			name:         "single repository",
-			repositories: []string{"repo1"},
-			expected:     NewSpecificScope("repo1"),
-		},
-		{
-			name:         "multiple repositories",
-			repositories: []string{"repo1", "repo2", "repo3"},
-			expected:     NewSpecificScope("repo1", "repo2", "repo3"),
-		},
-		{
-			name:         "empty list",
-			repositories: []string{},
-			expected:     NewSpecificScope(),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			attr := OrganizationProfileAttr{
-				Repositories: tt.repositories,
-			}
-			assert.Equal(t, tt.expected, attr.RepositoryScope())
-		})
-	}
-}
-
-func TestOrganizationProfileAttr_RepositoryScope_Wildcard(t *testing.T) {
-	attr := OrganizationProfileAttr{
-		Repositories: []string{"*"},
-	}
-
-	assert.Equal(t, NewWildcardScope(), attr.RepositoryScope())
-}
-
 // TestAuthorizedProfile_Match tests the Match method behavior
 func TestAuthorizedProfile_Match_Success(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"silk"},
-		Permissions:  []string{"contents:read"},
+		Scope:       NewSpecificScope("silk"),
+		Permissions: []string{"contents:read"},
 	}
 	profile := NewAuthorizedProfile(matcher, attrs)
 
@@ -138,7 +31,7 @@ func TestAuthorizedProfile_Match_Success(t *testing.T) {
 func TestAuthorizedProfile_Match_ClaimValueMismatch(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"silk"},
+		Scope: NewSpecificScope("silk"),
 	}
 	profile := NewAuthorizedProfile(matcher, attrs)
 
@@ -159,7 +52,7 @@ func TestAuthorizedProfile_Match_ClaimValueMismatch(t *testing.T) {
 func TestAuthorizedProfile_Match_ClaimNotFound(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"silk"},
+		Scope: NewSpecificScope("silk"),
 	}
 	profile := NewAuthorizedProfile(matcher, attrs)
 
@@ -180,7 +73,7 @@ func TestAuthorizedProfile_Match_ClaimNotFound(t *testing.T) {
 func TestAuthorizedProfile_Match_ValidationError(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"silk"},
+		Scope: NewSpecificScope("silk"),
 	}
 	profile := NewAuthorizedProfile(matcher, attrs)
 
@@ -204,8 +97,8 @@ func TestProfileStoreOf_NewAndGet_OrganizationProfile(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	profiles := map[string]AuthorizedProfile[OrganizationProfileAttr]{
 		"test-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-			Repositories: []string{"silk"},
-			Permissions:  []string{"contents:read"},
+			Scope:       NewSpecificScope("silk"),
+			Permissions: []string{"contents:read"},
 		}),
 	}
 
@@ -213,7 +106,7 @@ func TestProfileStoreOf_NewAndGet_OrganizationProfile(t *testing.T) {
 
 	profile, err := store.Get("test-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	assert.Equal(t, []string{"contents:read"}, profile.Attrs.Permissions)
 }
 
@@ -261,8 +154,8 @@ func TestProfileStoreOf_Immutability(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	sourceProfiles := map[string]AuthorizedProfile[OrganizationProfileAttr]{
 		"test-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-			Repositories: []string{"silk"},
-			Permissions:  []string{"contents:read"},
+			Scope:       NewSpecificScope("silk"),
+			Permissions: []string{"contents:read"},
 		}),
 	}
 
@@ -278,7 +171,7 @@ func TestProfileStoreOf_Immutability(t *testing.T) {
 	// Profile should still be accessible from store
 	profileAfter, err := store.Get("test-profile")
 	require.NoError(t, err)
-	assert.Equal(t, profileBefore.Attrs.Repositories, profileAfter.Attrs.Repositories)
+	assert.Equal(t, profileBefore.Attrs.Scope, profileAfter.Attrs.Scope)
 }
 
 // TestProfiles tests the Profiles type
@@ -287,7 +180,7 @@ func TestProfiles_NewProfiles(t *testing.T) {
 	orgProfiles := NewProfileStoreOf(
 		map[string]AuthorizedProfile[OrganizationProfileAttr]{
 			"test-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"silk"},
+				Scope: NewSpecificScope("silk"),
 			}),
 		},
 		nil,
@@ -306,8 +199,8 @@ func TestProfiles_GetOrgProfile_Success(t *testing.T) {
 	orgProfiles := NewProfileStoreOf(
 		map[string]AuthorizedProfile[OrganizationProfileAttr]{
 			"test-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"silk"},
-				Permissions:  []string{"contents:read"},
+				Scope:       NewSpecificScope("silk"),
+				Permissions: []string{"contents:read"},
 			}),
 		},
 		nil,
@@ -318,7 +211,7 @@ func TestProfiles_GetOrgProfile_Success(t *testing.T) {
 
 	profile, err := profiles.GetOrgProfile("test-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	assert.Equal(t, []string{"contents:read"}, profile.Attrs.Permissions)
 }
 
@@ -360,8 +253,8 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 	orgProfiles := NewProfileStoreOf(
 		map[string]AuthorizedProfile[OrganizationProfileAttr]{
 			"valid-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"test"},
-				Permissions:  []string{"contents:read"},
+				Scope:       NewSpecificScope("test"),
+				Permissions: []string{"contents:read"},
 			}),
 		},
 		map[string]error{
@@ -385,7 +278,7 @@ func TestProfiles_Methods_Consistency(t *testing.T) {
 	// GetOrgProfile should work for valid profile
 	validProfile, err := profiles.GetOrgProfile("valid-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"test"}, validProfile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("test"), validProfile.Attrs.Scope)
 
 	// GetOrgProfile should return error for invalid profile
 	_, err = profiles.GetOrgProfile("invalid-profile")
@@ -410,12 +303,12 @@ func TestProfiles_Stats(t *testing.T) {
 	orgProfiles := NewProfileStoreOf[OrganizationProfileAttr](
 		map[string]AuthorizedProfile[OrganizationProfileAttr]{
 			"profile-one": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"repo1"},
-				Permissions:  []string{"contents:read"},
+				Scope:       NewSpecificScope("repo1"),
+				Permissions: []string{"contents:read"},
 			}),
 			"profile-two": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-				Repositories: []string{"repo2"},
-				Permissions:  []string{"contents:write"},
+				Scope:       NewSpecificScope("repo2"),
+				Permissions: []string{"contents:write"},
 			}),
 		},
 		map[string]error{
@@ -459,14 +352,14 @@ func TestProfiles_Stats(t *testing.T) {
 func TestNewAuthorizedProfile(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	attrs := OrganizationProfileAttr{
-		Repositories: []string{"silk"},
-		Permissions:  []string{"contents:read"},
+		Scope:       NewSpecificScope("silk"),
+		Permissions: []string{"contents:read"},
 	}
 
 	profile := NewAuthorizedProfile(matcher, attrs)
 
 	// Verify attributes are stored
-	assert.Equal(t, attrs.Repositories, profile.Attrs.Repositories)
+	assert.Equal(t, attrs.Scope, profile.Attrs.Scope)
 	assert.Equal(t, attrs.Permissions, profile.Attrs.Permissions)
 
 	// Verify matcher works
@@ -480,7 +373,7 @@ func TestProfileStoreOf_Mixed(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")
 	validProfiles := map[string]AuthorizedProfile[OrganizationProfileAttr]{
 		"valid-profile": NewAuthorizedProfile(matcher, OrganizationProfileAttr{
-			Repositories: []string{"silk"},
+			Scope: NewSpecificScope("silk"),
 		}),
 	}
 	invalidProfiles := map[string]error{
@@ -492,7 +385,7 @@ func TestProfileStoreOf_Mixed(t *testing.T) {
 	// Valid profile should be accessible
 	profile, err := store.Get("valid-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 
 	// Invalid profile should return ProfileUnavailableError
 	_, err = store.Get("invalid-profile")
@@ -507,4 +400,74 @@ func TestProfileStoreOf_Mixed(t *testing.T) {
 	var notFoundErr ProfileNotFoundError
 	require.ErrorAs(t, err, &notFoundErr)
 	assert.Equal(t, "nonexistent", notFoundErr.Name)
+}
+
+// TestOrganizationProfileAttr_RepositoryScope_UsesCompiledScope tests that RepositoryScope() returns the stored compiled scope
+func TestOrganizationProfileAttr_RepositoryScope_UsesCompiledScope(t *testing.T) {
+	tests := []struct {
+		name     string
+		attr     OrganizationProfileAttr
+		expected RepositoryScope
+	}{
+		{
+			name:     "wildcard scope",
+			attr:     OrganizationProfileAttr{Scope: NewWildcardScope()},
+			expected: NewWildcardScope(),
+		},
+		{
+			name:     "specific scope",
+			attr:     OrganizationProfileAttr{Scope: NewSpecificScope("repo-a", "repo-b")},
+			expected: NewSpecificScope("repo-a", "repo-b"),
+		},
+		{
+			name:     "caller-scoped",
+			attr:     OrganizationProfileAttr{Scope: NewCallerScopedScope()},
+			expected: NewCallerScopedScope(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.attr.RepositoryScope())
+		})
+	}
+}
+
+// TestOrganizationProfileAttr_HasRepository_WithCompiledScope tests HasRepository with compiled scope
+func TestOrganizationProfileAttr_HasRepository_WithCompiledScope(t *testing.T) {
+	tests := []struct {
+		name     string
+		attr     OrganizationProfileAttr
+		repo     string
+		expected bool
+	}{
+		{
+			name:     "wildcard matches any repo",
+			attr:     OrganizationProfileAttr{Scope: NewWildcardScope()},
+			repo:     "any-repo",
+			expected: true,
+		},
+		{
+			name:     "specific scope matches member",
+			attr:     OrganizationProfileAttr{Scope: NewSpecificScope("repo-a")},
+			repo:     "repo-a",
+			expected: true,
+		},
+		{
+			name:     "specific scope rejects non-member",
+			attr:     OrganizationProfileAttr{Scope: NewSpecificScope("repo-a")},
+			repo:     "repo-b",
+			expected: false,
+		},
+		{
+			name:     "caller-scoped matches nothing directly",
+			attr:     OrganizationProfileAttr{Scope: NewCallerScopedScope()},
+			repo:     "any-repo",
+			expected: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.attr.HasRepository(tt.repo))
+		})
+	}
 }
