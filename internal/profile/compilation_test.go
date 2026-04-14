@@ -250,15 +250,15 @@ func TestCompile_GracefulDegradation(t *testing.T) {
 
 	validProfile, err := orgProfiles.Get("valid-production")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"silk"}, validProfile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk"), validProfile.Attrs.Scope)
 
 	validStaging, err := orgProfiles.Get("valid-staging")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"silk", "cotton"}, validStaging.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk", "cotton"), validStaging.Attrs.Scope)
 
 	validNoMatch, err := orgProfiles.Get("valid-no-match")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"shared"}, validNoMatch.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("shared"), validNoMatch.Attrs.Scope)
 
 	// Invalid profiles should return ProfileUnavailableError
 	_, err = orgProfiles.Get("invalid-both-match-types")
@@ -293,7 +293,7 @@ func TestCompile_DuplicateNameHandling(t *testing.T) {
 	// (first is validated, but second's attributes overwrite in the profile map)
 	profile, err := orgProfiles.Get("production")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"cotton"}, profile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("cotton"), profile.Attrs.Scope)
 
 	// "staging" should also be accessible
 	_, err = orgProfiles.Get("staging")
@@ -949,11 +949,11 @@ pipeline:
 	// Valid profiles should be accessible
 	validWildcard, err := result.Get("valid-wildcard-only")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"*"}, validWildcard.Attrs.Repositories)
+	assert.Equal(t, NewWildcardScope(), validWildcard.Attrs.Scope)
 
 	validMultiple, err := result.Get("valid-multiple-repos")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"repo1", "repo2"}, validMultiple.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("repo1", "repo2"), validMultiple.Attrs.Scope)
 
 	// Invalid profiles should not be accessible
 	_, err = result.Get("invalid-owner-prefix")

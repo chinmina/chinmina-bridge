@@ -77,7 +77,7 @@ pipeline:
 	// Verify store has the profile
 	profile, err := store.GetOrganizationProfile("test-profile")
 	require.NoError(t, err, "profile should be in store")
-	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 }
 
 func TestRefresh_Error(t *testing.T) {
@@ -169,7 +169,7 @@ pipeline:
 
 		profile, err := store.GetOrganizationProfile("immediate")
 		require.NoError(t, err)
-		assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
+		assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	})
 }
 
@@ -325,7 +325,7 @@ pipeline:
 		// Verify profile was loaded on second attempt
 		profile, err := store.GetOrganizationProfile("panic-recovery")
 		require.NoError(t, err)
-		assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
+		assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	})
 }
 
@@ -368,6 +368,6 @@ pipeline:
 		// Verify the profile was eventually loaded
 		profile, err := store.GetOrganizationProfile("error-recovery")
 		require.NoError(t, err)
-		assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
+		assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	})
 }

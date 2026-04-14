@@ -60,6 +60,15 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 		validMatchers[prof.Name] = matcher
 	}
 
+	// resolveRepositoryScope converts a raw repositories list into a typed RepositoryScope.
+	// This is called after validation, so the input is known to be well-formed.
+	resolveRepositoryScope := func(repos []string) RepositoryScope {
+		if len(repos) == 1 && repos[0] == "*" {
+			return NewWildcardScope()
+		}
+		return NewSpecificScope(repos...)
+	}
+
 	// Log warnings for invalid profiles
 	if len(invalidProfiles) > 0 {
 		attrs := make([]slog.Attr, 0, len(invalidProfiles))
@@ -81,9 +90,10 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 			continue
 		}
 
+		scope := resolveRepositoryScope(p.Repositories)
 		attrs := OrganizationProfileAttr{
-			Repositories: p.Repositories,
-			Permissions:  ensureMetadataRead(p.Permissions),
+			Scope:       scope,
+			Permissions: ensureMetadataRead(p.Permissions),
 		}
 
 		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
