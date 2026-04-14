@@ -691,6 +691,54 @@ func TestAuditError(t *testing.T) {
 	}
 }
 
+func TestExtractRepositoryScope_Valid(t *testing.T) {
+	tests := []struct {
+		name     string
+		query    string
+		expected string
+	}{
+		{"simple name", "repository-scope=my-repo", "my-repo"},
+		{"hyphenated name", "repository-scope=my-cool-repo", "my-cool-repo"},
+		{"mixed case preserved", "repository-scope=MyRepo", "MyRepo"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest("POST", "/organization/token/test?"+tt.query, nil)
+			require.NoError(t, err)
+			scope, err := extractRepositoryScope(req)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, scope)
+		})
+	}
+}
+
+func TestExtractRepositoryScope_Absent(t *testing.T) {
+	req, err := http.NewRequest("POST", "/organization/token/test", nil)
+	require.NoError(t, err)
+	scope, err := extractRepositoryScope(req)
+	require.NoError(t, err)
+	assert.Equal(t, "", scope)
+}
+
+func TestExtractRepositoryScope_Invalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{"contains slash", "repository-scope=owner/repo"},
+		{"empty value", "repository-scope="},
+		{"whitespace only", "repository-scope=%20%20"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest("POST", "/organization/token/test?"+tt.query, nil)
+			require.NoError(t, err)
+			_, err = extractRepositoryScope(req)
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestStripPrefix(t *testing.T) {
 	echoPath := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
