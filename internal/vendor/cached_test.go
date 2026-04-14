@@ -10,6 +10,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -617,6 +618,66 @@ func (m *mutableDigester) Digest() string {
 	return m.digest
 }
 
+// TestCacheCallerScoped_DifferentReposAreSeparateEntries verifies that different
+// repositories under the same caller-scoped profile get separate cache entries.
+func TestCacheCallerScoped_DifferentReposAreSeparateEntries(t *testing.T) {
+	wrapped := sequenceVendor("token-for-repo-a", "token-for-repo-b", "token-for-repo-a")
+
+	c := newTestCached(t, defaultTTL, "test-digest")
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "scoped-profile",
+		Type:         profile.ProfileTypeOrg,
+	}
+
+	// First call for repo-a: cache miss
+	result := v(context.Background(), ref, "", "repo-a")
+	token, ok := result.Token()
+	require.True(t, ok)
+	assert.Equal(t, "token-for-repo-a", token.Token)
+
+	// Second call for repo-b: must also miss (different cache key)
+	result = v(context.Background(), ref, "", "repo-b")
+	token, ok = result.Token()
+	require.True(t, ok)
+	assert.Equal(t, "token-for-repo-b", token.Token)
+
+	// Third call for repo-a: cache hit (returns first token)
+	result = v(context.Background(), ref, "", "repo-a")
+	token, ok = result.Token()
+	require.True(t, ok)
+	assert.Equal(t, "token-for-repo-a", token.Token)
+}
+
+// TestCacheAllRepositories_SameKeyAsWildcard verifies that an all-repositories
+// profile uses the same cache key regardless of repository scope (no repository component).
+func TestCacheAllRepositories_SameKeyAsWildcard(t *testing.T) {
+	wrapped := sequenceVendor("first-call", "should-not-be-called")
+
+	c := newTestCached(t, defaultTTL, "test-digest")
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "all-repos-profile",
+		Type:         profile.ProfileTypeOrg,
+	}
+
+	// First call: cache miss
+	result := v(context.Background(), ref, "", "")
+	token, ok := result.Token()
+	require.True(t, ok)
+	assert.Equal(t, "first-call", token.Token)
+
+	// Second call: cache hit (same key, no repository scope component)
+	result = v(context.Background(), ref, "", "")
+	token, ok = result.Token()
+	require.True(t, ok)
+	assert.Equal(t, "first-call", token.Token)
+}
+
 // sequenceVendor returns each of the calls in sequence, either a token or an error
 func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 	callIndex := 0
@@ -636,6 +697,14 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		},
 		"org:two-repos": {
 			repositories: profile.NewSpecificScope("any-repo", "other-repo"),
+			permissions:  []string{"contents:read"},
+		},
+		"org:scoped-profile": {
+			repositories: profile.NewWildcardScope(),
+			permissions:  []string{"contents:read"},
+		},
+		"org:all-repos-profile": {
+			repositories: profile.NewWildcardScope(),
 			permissions:  []string{"contents:read"},
 		},
 	}
