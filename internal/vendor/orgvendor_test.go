@@ -35,7 +35,7 @@ func TestOrgVendor_FailsWithWrongProfileType(t *testing.T) {
 		Type:         profile.ProfileTypeRepo, // Wrong type!
 		PipelineID:   "pipeline-id",
 	}
-	result := v(context.Background(), ref, "repo-url")
+	result := v(context.Background(), ref, "repo-url", "")
 	assertVendorFailure(t, result, "profile type mismatch")
 }
 
@@ -47,7 +47,7 @@ func TestOrgVendor_FailWhenProfileNotFound(t *testing.T) {
 		Name:         "non-existent-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	result := v(context.Background(), ref, "repo-url")
+	result := v(context.Background(), ref, "repo-url", "")
 	assertVendorFailure(t, result, "could not find profile")
 }
 
@@ -59,7 +59,7 @@ func TestOrgVendor_FailWhenURLInvalid(t *testing.T) {
 		Name:         "non-default-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	result := v(createTestClaimsContext(), ref, ":/invalid_")
+	result := v(createTestClaimsContext(), ref, ":/invalid_", "")
 
 	assertVendorFailure(t, result, "could not parse requested repo URL")
 }
@@ -72,7 +72,7 @@ func TestOrgVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
 		Name:         "non-default-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	result := v(createTestClaimsContext(), ref, "https://github.com/org/i-dont-exist")
+	result := v(createTestClaimsContext(), ref, "https://github.com/org/i-dont-exist", "")
 
 	assertVendorUnmatched(t, result)
 }
@@ -89,7 +89,7 @@ func TestOrgVendor_FailWhenTokenVendorFails(t *testing.T) {
 		Name:         "non-default-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	result := v(createTestClaimsContext(), ref, "https://github.com/org/secret-repo")
+	result := v(createTestClaimsContext(), ref, "https://github.com/org/secret-repo", "")
 
 	assertVendorFailure(t, result, "token vendor failed")
 }
@@ -122,7 +122,7 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 				Name:         "non-default-profile",
 				Type:         profile.ProfileTypeOrg,
 			}
-			result := v(createTestClaimsContext(), ref, tt.requestedURL)
+			result := v(createTestClaimsContext(), ref, tt.requestedURL, "")
 			assertVendorSuccess(t, result, vendor.ProfileToken{
 				Token:               "non-default-token-value",
 				HashedToken:         vendor.HashToken("non-default-token-value"),
@@ -181,7 +181,7 @@ organization:
 				Name:         "wildcard-profile",
 				Type:         profile.ProfileTypeOrg,
 			}
-			result := v(createTestClaimsContext(), ref, tt.requestedURL)
+			result := v(createTestClaimsContext(), ref, tt.requestedURL, "")
 
 			// Verify nil was passed to token vendor (indicates all repositories)
 			assert.Nil(t, capturedRepositories)
@@ -248,7 +248,7 @@ organization:
 			Type:         profile.ProfileTypeOrg,
 		}
 
-		result := v(ctx, ref, "")
+		result := v(ctx, ref, "", "")
 		assertVendorTokenValue(t, result, "test-token")
 	})
 
@@ -262,7 +262,7 @@ organization:
 			Type:         profile.ProfileTypeOrg,
 		}
 
-		result := v(ctx, ref, "")
+		result := v(ctx, ref, "", "")
 		assertVendorFailure(t, result, "prod-deploy")
 	})
 
@@ -276,7 +276,7 @@ organization:
 			Type:         profile.ProfileTypeOrg,
 		}
 
-		result := v(ctx, ref, "")
+		result := v(ctx, ref, "", "")
 		assertVendorTokenValue(t, result, "test-token")
 	})
 
@@ -290,7 +290,7 @@ organization:
 			Type:         profile.ProfileTypeOrg,
 		}
 
-		result := v(ctx, ref, "")
+		result := v(ctx, ref, "", "")
 		assertVendorFailure(t, result, "staging-deploy")
 	})
 }

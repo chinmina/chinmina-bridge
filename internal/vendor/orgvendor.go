@@ -15,7 +15,7 @@ import (
 // Used by /organization/token/{profile} and /organization/git-credentials/{profile} routes.
 // It vends tokens for a set of repositories defined in the profile configuration.
 func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) ProfileTokenVendor {
-	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) VendorResult {
+	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string, repositoryScope string) VendorResult {
 		// Validate that this is an org-scoped profile
 		if ref.Type != profile.ProfileTypeOrg {
 			return NewVendorFailed(fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeOrg.String(), ref.Type.String()))

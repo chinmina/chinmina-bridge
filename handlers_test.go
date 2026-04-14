@@ -184,7 +184,7 @@ func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 }
 
 func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
-	tokenVendor := vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string) vendor.VendorResult {
+	tokenVendor := vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string, repositoryScope string) vendor.VendorResult {
 		return vendor.NewVendorUnmatched()
 	})
 
@@ -363,7 +363,7 @@ func TestHandleHealthCheck_Success(t *testing.T) {
 }
 
 func tv(token string) vendor.ProfileTokenVendor {
-	return vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string) vendor.VendorResult {
+	return vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string, repositoryScope string) vendor.VendorResult {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{
 			Token:               token,
 			Expiry:              defaultExpiry,
@@ -405,7 +405,7 @@ func TestHandlePostGitCredentialsWithProfile_ReturnsTokenOnSuccess(t *testing.T)
 }
 
 func tvFails(err error) vendor.ProfileTokenVendor {
-	return vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string) vendor.VendorResult {
+	return vendor.ProfileTokenVendor(func(_ context.Context, ref profile.ProfileRef, repoUrl string, repositoryScope string) vendor.VendorResult {
 		return vendor.NewVendorFailed(err)
 	})
 }

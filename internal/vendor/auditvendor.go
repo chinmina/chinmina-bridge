@@ -11,12 +11,12 @@ import (
 // Auditor is a function that wraps a PipelineTokenVendor and records the result
 // of vending a token to the audit log.
 func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
-	return func(ctx context.Context, ref profile.ProfileRef, repo string) VendorResult {
+	return func(ctx context.Context, ref profile.ProfileRef, repo string, repositoryScope string) VendorResult {
 		entry := audit.Log(ctx)
 		entry.RequestedProfile = ref.String()
 		entry.RequestedRepository = repo
 
-		result := vendor(ctx, ref, repo)
+		result := vendor(ctx, ref, repo, repositoryScope)
 
 		if err, failed := result.Failed(); failed {
 			entry.Error = fmt.Sprintf("vendor failure: %v", err)
