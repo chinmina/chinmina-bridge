@@ -1,10 +1,12 @@
 package vendor_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/cache"
+	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,4 +64,17 @@ func assertVendorFailure(t *testing.T, result vendor.VendorResult, expectedError
 	err, failed := result.Failed()
 	require.True(t, failed, "expected vendor to fail")
 	require.ErrorContains(t, err, expectedErrorSubstring)
+}
+
+// createTestClaimsContextWithPipeline creates a context with JWT claims for testing,
+// allowing specification of the pipeline slug.
+func createTestClaimsContextWithPipeline(pipelineSlug string) context.Context {
+	claims := &jwt.BuildkiteClaims{
+		OrganizationSlug: "organization-slug",
+		PipelineSlug:     pipelineSlug,
+		PipelineID:       "pipeline-id",
+		BuildBranch:      "main",
+	}
+
+	return jwt.ContextWithBuildkiteClaims(context.Background(), claims)
 }

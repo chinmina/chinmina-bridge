@@ -53,10 +53,19 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		var repoScope profile.RepositoryScope
 
 		if profileScope.IsCallerScoped() {
-			if repositoryScope == "" {
+			if repositoryScope != "" {
+				repoScope = profile.NewSpecificScope(repositoryScope)
+			} else if requestedRepoURL != "" {
+				// Git-credentials path: derive scope from the Git-supplied repository
+				repo, err := url.Parse(requestedRepoURL)
+				if err != nil {
+					return NewVendorFailed(fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err))
+				}
+				_, repository := github.RepoForURL(*repo)
+				repoScope = profile.NewSpecificScope(repository)
+			} else {
 				return NewVendorFailed(profile.RepositoryScopeRequiredError{ProfileName: ref.Name})
 			}
-			repoScope = profile.NewSpecificScope(repositoryScope)
 		} else if repositoryScope != "" {
 			return NewVendorFailed(profile.RepositoryScopeUnexpectedError{ProfileName: ref.Name})
 		} else {
@@ -65,7 +74,7 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 
 		// The repository is only supplied for the git-credentials endpoint:
 		// checking it allows Git to respond properly: it's not a security measure.
-		if requestedRepoURL != "" {
+		if requestedRepoURL != "" && !profileScope.IsCallerScoped() {
 			repo, err := url.Parse(requestedRepoURL)
 			if err != nil {
 				return NewVendorFailed(fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err))
