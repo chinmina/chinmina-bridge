@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -1226,4 +1227,141 @@ func TestCompileOrganizationProfiles_MetadataReadAutoAdded(t *testing.T) {
 			assert.Equal(t, tt.expectedPermissions, profile.Attrs.Permissions)
 		})
 	}
+}
+
+func TestCompile_OrganizationProfile_CallerScopedRepository(t *testing.T) {
+	yamlContent := `
+organization:
+  profiles:
+    - name: scoped-profile
+      repositories:
+        - "{{caller-scoped-repository}}"
+      permissions:
+        - "contents:write"
+      match:
+        - claim: pipeline_slug
+          value: agent-workflows
+
+pipeline:
+  defaults:
+    permissions:
+      - "contents:read"
+`
+	config, digest, err := parse(yamlContent)
+	require.NoError(t, err)
+
+	profiles, err := compile(config, digest, "local")
+	require.NoError(t, err)
+
+	p, err := profiles.GetOrgProfile("scoped-profile")
+	require.NoError(t, err)
+	assert.Equal(t, NewCallerScopedScope(), p.Attrs.Scope)
+}
+
+func TestCompile_OrganizationProfile_AllRepositories(t *testing.T) {
+	yamlContent := `
+organization:
+  profiles:
+    - name: all-repos-profile
+      repositories:
+        - "{{all-repositories}}"
+      permissions:
+        - "contents:read"
+
+pipeline:
+  defaults:
+    permissions:
+      - "contents:read"
+`
+	config, digest, err := parse(yamlContent)
+	require.NoError(t, err)
+
+	profiles, err := compile(config, digest, "local")
+	require.NoError(t, err)
+
+	p, err := profiles.GetOrgProfile("all-repos-profile")
+	require.NoError(t, err)
+	assert.Equal(t, NewWildcardScope(), p.Attrs.Scope)
+}
+
+func TestCompile_OrganizationProfile_LiteralsMustBeAlone(t *testing.T) {
+	tests := []struct {
+		name         string
+		repositories string
+		profileName  string
+	}{
+		{
+			name:         "caller-scoped mixed with static",
+			repositories: `["{{caller-scoped-repository}}", "repo-a"]`,
+			profileName:  "mixed-caller-scoped",
+		},
+		{
+			name:         "all-repositories mixed with static",
+			repositories: `["{{all-repositories}}", "repo-a"]`,
+			profileName:  "mixed-all-repos",
+		},
+		{
+			name:         "caller-scoped mixed with all-repositories",
+			repositories: `["{{caller-scoped-repository}}", "{{all-repositories}}"]`,
+			profileName:  "mixed-both-literals",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yamlContent := fmt.Sprintf(`
+organization:
+  profiles:
+    - name: %s
+      repositories: %s
+      permissions:
+        - "contents:read"
+      match:
+        - claim: pipeline_slug
+          value: test
+
+pipeline:
+  defaults:
+    permissions:
+      - "contents:read"
+`, tt.profileName, tt.repositories)
+
+			config, digest, err := parse(yamlContent)
+			require.NoError(t, err)
+
+			profiles, err := compile(config, digest, "local")
+			require.NoError(t, err)
+
+			_, err = profiles.GetOrgProfile(tt.profileName)
+			require.Error(t, err)
+			var unavailErr ProfileUnavailableError
+			require.ErrorAs(t, err, &unavailErr)
+		})
+	}
+}
+
+func TestCompile_OrganizationProfile_WildcardDeprecationAlias(t *testing.T) {
+	yamlContent := `
+organization:
+  profiles:
+    - name: old-wildcard
+      repositories:
+        - "*"
+      permissions:
+        - "contents:read"
+
+pipeline:
+  defaults:
+    permissions:
+      - "contents:read"
+`
+	config, digest, err := parse(yamlContent)
+	require.NoError(t, err)
+
+	profiles, err := compile(config, digest, "local")
+	require.NoError(t, err)
+
+	p, err := profiles.GetOrgProfile("old-wildcard")
+	require.NoError(t, err)
+	assert.Equal(t, NewWildcardScope(), p.Attrs.Scope)
 }
