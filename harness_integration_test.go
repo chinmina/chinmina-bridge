@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
@@ -371,6 +372,31 @@ func (c *TestClient) GitCredentials(token, profile string, req GitCredentialRequ
 // Returns the token result or an error if the request fails or returns non-2xx.
 func (c *TestClient) OrganizationToken(token, profile string) (*vendor.ProfileToken, error) {
 	path := "/organization/token/" + profile
+
+	resp, err := c.Request("POST", path, token, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.parseError(resp)
+	}
+
+	var result vendor.ProfileToken
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal token response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// OrganizationTokenScoped requests an organization token with an optional repository scope.
+// If repositoryScope is non-empty, it's passed as a ?repository-scope=<value> query parameter.
+func (c *TestClient) OrganizationTokenScoped(token, profile, repositoryScope string) (*vendor.ProfileToken, error) {
+	path := "/organization/token/" + profile
+	if repositoryScope != "" {
+		path += "?repository-scope=" + url.QueryEscape(repositoryScope)
+	}
 
 	resp, err := c.Request("POST", path, token, nil)
 	if err != nil {
