@@ -49,42 +49,23 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 
 		// --- Bidirectional scoping validation ---
 		profileScope := authProfile.Attrs.RepositoryScope()
-
-		var repoScope profile.RepositoryScope
-
-		if profileScope.IsCallerScoped() {
-			if repositoryScope != "" {
-				repoScope = profile.NewSpecificScope(repositoryScope)
-			} else if requestedRepoURL != "" {
-				// Git-credentials path: derive scope from the Git-supplied repository
-				repo, err := url.Parse(requestedRepoURL)
-				if err != nil {
-					return NewVendorFailed(fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err))
-				}
-				_, repository := github.RepoForURL(*repo)
-				repoScope = profile.NewSpecificScope(repository)
-			} else {
-				return NewVendorFailed(profile.RepositoryScopeRequiredError{ProfileName: ref.Name})
-			}
-		} else if repositoryScope != "" {
-			return NewVendorFailed(profile.RepositoryScopeUnexpectedError{ProfileName: ref.Name})
-		} else {
-			repoScope = profileScope
+		repoScope, err := resolveRequestScope(profileScope, repositoryScope, requestedRepoURL, ref.Name)
+		if err != nil {
+			return NewVendorFailed(err)
 		}
 
-		// The repository is only supplied for the git-credentials endpoint:
-		// checking it allows Git to respond properly: it's not a security measure.
-		if requestedRepoURL != "" && !profileScope.IsCallerScoped() {
+		// For non-caller-scoped profiles at the git-credentials endpoint,
+		// check the requested repo against the profile's scope. Static-list
+		// profiles return unmatched for repos outside their list; wildcard
+		// profiles skip this check (they claim all repos).
+		if requestedRepoURL != "" && !profileScope.IsCallerScoped() && !profileScope.IsWildcard() {
 			repo, err := url.Parse(requestedRepoURL)
 			if err != nil {
 				return NewVendorFailed(fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err))
 			}
 
-			// Profiles that claim coverage of all repositories (wildcard or caller-scoped)
-			// treat failure as a hard error — no credential helper fallback.
-			// Static-list profiles return unmatched for repos outside their list.
 			_, repository := github.RepoForURL(*repo)
-			if !profileScope.IsWildcard() && !profileScope.IsCallerScoped() && !repoScope.Contains(repository) {
+			if !repoScope.Contains(repository) {
 				slog.Debug("profile doesn't support requested repository: no token vended.",
 					"organization", ref.Organization,
 					"profile", ref.ShortString(),
@@ -116,4 +97,31 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			Expiry:              expiry,
 		})
 	}
+}
+
+// resolveRequestScope determines the effective repository scope for a request
+// based on the profile's declared scope, the caller-supplied scope parameter,
+// and the requested repository URL (from git-credentials).
+func resolveRequestScope(profileScope profile.RepositoryScope, repositoryScope string, requestedRepoURL string, profileName string) (profile.RepositoryScope, error) {
+	if profileScope.IsCallerScoped() {
+		if repositoryScope != "" {
+			return profile.NewSpecificScope(repositoryScope), nil
+		}
+		if requestedRepoURL != "" {
+			// Git-credentials path: derive scope from the Git-supplied repository
+			repo, err := url.Parse(requestedRepoURL)
+			if err != nil {
+				return profile.RepositoryScope{}, fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err)
+			}
+			_, repository := github.RepoForURL(*repo)
+			return profile.NewSpecificScope(repository), nil
+		}
+		return profile.RepositoryScope{}, profile.RepositoryScopeRequiredError{ProfileName: profileName}
+	}
+
+	if repositoryScope != "" {
+		return profile.RepositoryScope{}, profile.RepositoryScopeUnexpectedError{ProfileName: profileName}
+	}
+
+	return profileScope, nil
 }

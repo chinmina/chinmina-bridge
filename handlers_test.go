@@ -703,7 +703,7 @@ func TestExtractRepositoryScope_Valid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest("POST", "/organization/token/test?"+tt.query, nil)
+			req, err := http.NewRequestWithContext(t.Context(), "POST", "/organization/token/test?"+tt.query, nil)
 			require.NoError(t, err)
 			scope, err := extractRepositoryScope(req)
 			require.NoError(t, err)
@@ -713,7 +713,7 @@ func TestExtractRepositoryScope_Valid(t *testing.T) {
 }
 
 func TestExtractRepositoryScope_Absent(t *testing.T) {
-	req, err := http.NewRequest("POST", "/organization/token/test", nil)
+	req, err := http.NewRequestWithContext(t.Context(), "POST", "/organization/token/test", nil)
 	require.NoError(t, err)
 	scope, err := extractRepositoryScope(req)
 	require.NoError(t, err)
@@ -731,7 +731,7 @@ func TestExtractRepositoryScope_Invalid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest("POST", "/organization/token/test?"+tt.query, nil)
+			req, err := http.NewRequestWithContext(t.Context(), "POST", "/organization/token/test?"+tt.query, nil)
 			require.NoError(t, err)
 			_, err = extractRepositoryScope(req)
 			require.Error(t, err)
