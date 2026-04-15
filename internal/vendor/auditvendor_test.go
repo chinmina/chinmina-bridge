@@ -360,3 +360,39 @@ func TestAuditingMatcher_ValidationError(t *testing.T) {
 	assert.Equal(t, expected, entry.ClaimsFailed)
 	assert.Nil(t, entry.ClaimsMatched)
 }
+
+func TestAuditor_RecordsScopingMismatchError(t *testing.T) {
+	tests := []struct {
+		name          string
+		vendorError   error
+		expectedAudit string
+	}{
+		{
+			name:          "scope provided to non-scoped profile",
+			vendorError:   profile.RepositoryScopeUnexpectedError{ProfileName: "static-profile"},
+			expectedAudit: "does not accept repository scoping",
+		},
+		{
+			name:          "scope missing for caller-scoped profile",
+			vendorError:   profile.RepositoryScopeRequiredError{ProfileName: "scoped-profile"},
+			expectedAudit: "requires a repository scope",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inner := func(ctx context.Context, ref profile.ProfileRef, repo string, repositoryScope string) vendor.VendorResult {
+				return vendor.NewVendorFailed(tt.vendorError)
+			}
+
+			auditor := vendor.Auditor(inner)
+
+			ctx, _ := audit.Context(context.Background())
+			ref := profile.ProfileRef{Organization: "org", Name: "test", Type: profile.ProfileTypeOrg}
+			auditor(ctx, ref, "", "")
+
+			entry := audit.Log(ctx)
+			assert.Contains(t, entry.Error, tt.expectedAudit)
+		})
+	}
+}
