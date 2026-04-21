@@ -53,7 +53,7 @@ func TestNewProfileRef_WithTypePrefix_Success(t *testing.T) {
 				PipelineSlug:     "pipeline-slug",
 			}
 
-			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr)
+			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr, "")
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, ref)
 		})
@@ -96,7 +96,7 @@ func TestNewProfileRef_WithoutTypePrefix_Success(t *testing.T) {
 				PipelineSlug:     "pipeline-slug",
 			}
 
-			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr)
+			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr, "")
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, ref)
 		})
@@ -110,7 +110,7 @@ func TestNewProfileRef_EmptyString_DefaultBehavior(t *testing.T) {
 		PipelineSlug:     "pipeline-slug",
 	}
 
-	ref, err := NewProfileRef(claims, ProfileTypeRepo, "")
+	ref, err := NewProfileRef(claims, ProfileTypeRepo, "", "")
 	require.NoError(t, err)
 	assert.Equal(t, ProfileTypeRepo, ref.Type)
 	assert.Equal(t, "default", ref.Name)
@@ -123,7 +123,7 @@ func TestNewProfileRef_EmptyOrgSlug_Accepted(t *testing.T) {
 		PipelineSlug:     "pipeline-slug",
 	}
 
-	ref, err := NewProfileRef(claims, ProfileTypeRepo, "default")
+	ref, err := NewProfileRef(claims, ProfileTypeRepo, "default", "")
 	require.NoError(t, err)
 	assert.Equal(t, "", ref.Organization)
 }
@@ -181,7 +181,7 @@ func TestNewProfileRef_Failure(t *testing.T) {
 				PipelineSlug:     "pipeline-slug",
 			}
 
-			_, err := NewProfileRef(claims, tt.expectedType, tt.profileStr)
+			_, err := NewProfileRef(claims, tt.expectedType, tt.profileStr, "")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errorMsg)
 		})
@@ -214,6 +214,16 @@ func TestProfileRef_String_CanonicalFormat(t *testing.T) {
 			},
 			expected: "profile://organization/acme/profile/write-packages",
 		},
+		{
+			name: "org profile with scoped repository",
+			ref: ProfileRef{
+				Organization:     "acme",
+				Type:             ProfileTypeOrg,
+				Name:             "write-packages",
+				ScopedRepository: "repo-a",
+			},
+			expected: "profile://organization/acme/profile/write-packages/repository/repo-a",
+		},
 	}
 
 	for _, tt := range tests {
@@ -245,6 +255,15 @@ func TestProfileRef_ShortString(t *testing.T) {
 			},
 			expected: "org:write-packages",
 		},
+		{
+			name: "org profile with scoped repository",
+			ref: ProfileRef{
+				Type:             ProfileTypeOrg,
+				Name:             "write-packages",
+				ScopedRepository: "repo-a",
+			},
+			expected: "org:write-packages/repo-a",
+		},
 	}
 
 	for _, tt := range tests {
@@ -275,6 +294,15 @@ func TestParseProfileRef_Roundtrip(t *testing.T) {
 				Organization: "acme",
 				Type:         ProfileTypeOrg,
 				Name:         "write-packages",
+			},
+		},
+		{
+			name: "org profile with scoped repository",
+			ref: ProfileRef{
+				Organization:     "acme",
+				Type:             ProfileTypeOrg,
+				Name:             "write-packages",
+				ScopedRepository: "repo-a",
 			},
 		},
 	}
@@ -375,6 +403,21 @@ func TestParseProfileRef_Failure(t *testing.T) {
 			urn:      "profile://organization/acme/unknown/value/name",
 			errorMsg: "could not determine profile type",
 		},
+		{
+			name:     "org scope trailing empty",
+			urn:      "profile://organization/acme/profile/write-packages/repository/",
+			errorMsg: "malformed org profile suffix",
+		},
+		{
+			name:     "org scope extra segments",
+			urn:      "profile://organization/acme/profile/write-packages/repository/repo-a/extra",
+			errorMsg: "malformed org profile suffix",
+		},
+		{
+			name:     "org malformed suffix not repository",
+			urn:      "profile://organization/acme/profile/write-packages/other/value",
+			errorMsg: "malformed org profile suffix",
+		},
 	}
 
 	for _, tt := range tests {
@@ -384,6 +427,17 @@ func TestParseProfileRef_Failure(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.errorMsg)
 		})
 	}
+}
+
+func TestParseProfileRef_RejectsScopeOnPipelineRef(t *testing.T) {
+	// Pipeline/repo refs never carry repository scope.
+	// Old format has 4 parts after org; new format has 6. A 5-part form between
+	// them is ambiguous, but any attempt to bolt /repository/ onto a repo ref
+	// must not round-trip as a scoped repo profile.
+	urn := "profile://organization/acme/pipeline/pipeline-id/pipeline-slug/profile/default/repository/repo-a"
+	parsed, err := ParseProfileRef(urn)
+	require.NoError(t, err) // parser currently stops at "default" via TestParseProfileRef_ExtraSlashesIgnored semantics
+	assert.Empty(t, parsed.ScopedRepository, "repo profiles must never carry ScopedRepository")
 }
 
 func TestProfileType_String(t *testing.T) {
@@ -411,6 +465,26 @@ func TestProfileType_String(t *testing.T) {
 	}
 }
 
+func TestNewProfileRef_ScopedRepository(t *testing.T) {
+	claims := jwt.BuildkiteClaims{
+		OrganizationSlug: "acme",
+		PipelineID:       "pipeline-id",
+		PipelineSlug:     "pipeline-slug",
+	}
+
+	t.Run("empty scope leaves ScopedRepository unset", func(t *testing.T) {
+		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages", "")
+		require.NoError(t, err)
+		assert.Empty(t, ref.ScopedRepository)
+	})
+
+	t.Run("non-empty scope populates ScopedRepository on org ref", func(t *testing.T) {
+		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages", "repo-a")
+		require.NoError(t, err)
+		assert.Equal(t, "repo-a", ref.ScopedRepository)
+	})
+}
+
 func TestNewProfileRef_PipelineFieldsOnlySetForRepo(t *testing.T) {
 	claims := jwt.BuildkiteClaims{
 		OrganizationSlug: "acme",
@@ -419,13 +493,13 @@ func TestNewProfileRef_PipelineFieldsOnlySetForRepo(t *testing.T) {
 	}
 
 	// Repo profile should have pipeline fields set
-	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "default")
+	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "default", "")
 	require.NoError(t, err)
 	assert.Equal(t, "pipeline-id", repoRef.PipelineID)
 	assert.Equal(t, "pipeline-slug", repoRef.PipelineSlug)
 
 	// Org profile should NOT have pipeline fields set
-	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages")
+	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages", "")
 	require.NoError(t, err)
 	assert.Empty(t, orgRef.PipelineID)
 	assert.Empty(t, orgRef.PipelineSlug)
@@ -440,7 +514,7 @@ func TestProfileRef_Consistency(t *testing.T) {
 	}
 
 	// Create a repo profile ref
-	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "custom-profile")
+	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "custom-profile", "")
 	require.NoError(t, err)
 
 	// Verify complete struct matches expected
@@ -468,7 +542,7 @@ func TestProfileRef_Consistency(t *testing.T) {
 	assert.Equal(t, repoRef, parsed)
 
 	// Create an org profile ref
-	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "org-profile")
+	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "org-profile", "")
 	require.NoError(t, err)
 
 	// Verify complete struct matches expected
