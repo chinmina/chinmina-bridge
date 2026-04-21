@@ -173,6 +173,87 @@ func TestCreateAccessToken_Fails_On_Failed_Request(t *testing.T) {
 	assert.ErrorContains(t, err, ": 418")
 }
 
+func TestCreateAccessToken_Wraps_GitHub_Failure_In_TokenIssuanceError(t *testing.T) {
+	router := http.NewServeMux()
+
+	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	key := generateKey(t)
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{
+			APIURL:         svr.URL,
+			PrivateKey:     key,
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+	)
+	require.NoError(t, err)
+
+	tok, _, err := gh.CreateAccessToken(
+		context.Background(),
+		[]string{"https://github.com/org/repo"},
+		[]string{"contents:read"},
+	)
+
+	assert.Equal(t, "", tok)
+	require.Error(t, err)
+
+	var issuanceErr github.TokenIssuanceError
+	require.ErrorAs(t, err, &issuanceErr)
+	assert.NotNil(t, issuanceErr.Unwrap(), "error should have underlying cause")
+	assert.ErrorContains(t, err, "GitHub token issuance failed")
+
+	status, message := issuanceErr.Status()
+	assert.Equal(t, http.StatusForbidden, status)
+	assert.Equal(t, http.StatusText(http.StatusForbidden), message)
+}
+
+func TestCreateAccessToken_Does_Not_Wrap_Config_Error(t *testing.T) {
+	router := http.NewServeMux()
+
+	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+		JSON(w, &api.InstallationToken{
+			Token:     new("expected-token"),
+			ExpiresAt: &api.Timestamp{Time: time.Now().Add(1 * time.Hour)},
+		})
+	})
+
+	svr := httptest.NewServer(router)
+	defer svr.Close()
+
+	key := generateKey(t)
+
+	gh, err := github.New(
+		context.Background(),
+		config.GithubConfig{
+			APIURL:         svr.URL,
+			PrivateKey:     key,
+			ApplicationID:  10,
+			InstallationID: 20,
+		},
+	)
+	require.NoError(t, err)
+
+	tok, _, err := gh.CreateAccessToken(
+		context.Background(),
+		[]string{"https://github.com/org/repo"},
+		[]string{"bogus"},
+	)
+
+	assert.Equal(t, "", tok)
+	require.Error(t, err)
+
+	var issuanceErr github.TokenIssuanceError
+	assert.NotErrorAs(t, err, &issuanceErr)
+}
+
 func TestTransportOptions(t *testing.T) {
 
 	router := http.NewServeMux()

@@ -22,6 +22,22 @@ import (
 	"golang.org/x/oauth2"
 )
 
+type TokenIssuanceError struct {
+	Cause error
+}
+
+func (e TokenIssuanceError) Error() string {
+	return fmt.Sprintf("GitHub token issuance failed: %v", e.Cause)
+}
+
+func (e TokenIssuanceError) Unwrap() error {
+	return e.Cause
+}
+
+func (e TokenIssuanceError) Status() (int, string) {
+	return http.StatusForbidden, http.StatusText(http.StatusForbidden)
+}
+
 type Client struct {
 	client         *github.Client
 	installationID int64
@@ -97,7 +113,7 @@ func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scope
 		},
 	)
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, TokenIssuanceError{Cause: err}
 	}
 
 	return tok.GetToken(), tok.GetExpiresAt().Time, nil
