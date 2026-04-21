@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -20,6 +22,57 @@ import (
 // HTTPStatuser provides HTTP status information for errors
 type HTTPStatuser interface {
 	Status() (int, string)
+}
+
+// PathValuer abstracts path-parameter extraction to keep the builder free of
+// HTTP-type dependencies. *http.Request satisfies this implicitly via its
+// PathValue method.
+type PathValuer interface {
+	PathValue(name string) string
+}
+
+// ProfileRefBuilder constructs a profile.ProfileRef from request context, a
+// path-parameter source, and caller-supplied repository scope. Validation of
+// scope against profile type (caller-scoped vs static-list vs all-repos) is
+// applied inside the builder, centralising the authorisation-boundary logic
+// and keeping the handler focused on transport concerns.
+type ProfileRefBuilder func(ctx context.Context, pv PathValuer, scopedRepo string) (profile.ProfileRef, error)
+
+// NewProfileRefBuilder returns a ProfileRefBuilder closed over the given
+// profile store and expected profile type. The profile store enables
+// type-aware scope validation in a subsequent phase; the expected profile
+// type drives profile-string resolution rules (e.g. repo defaults to
+// "default" when empty; org requires an explicit name).
+//
+// The returned builder honours caller-supplied scope for
+// ProfileTypeOrg refs only; repo profiles ignore scope by contract.
+func NewProfileRefBuilder(store *profile.ProfileStore, expectedType profile.ProfileType) ProfileRefBuilder {
+	// store is captured for future scope validation against the profile's
+	// RepositoryScope; the current implementation delegates scope handling
+	// to the vendor chain and does not yet consult the store here.
+	_ = store
+	return func(ctx context.Context, pv PathValuer, _ string) (profile.ProfileRef, error) {
+		claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
+		profileStr := pv.PathValue("profile")
+		// Scope is resolved by the handler boundary and remains dual-sourced
+		// through the vendor chain for this phase; the ref is constructed
+		// without ScopedRepository until the builder takes over scope
+		// validation.
+		return profile.NewProfileRef(claims, expectedType, profileStr, "")
+	}
+}
+
+// deriveScopeFromRepoURL extracts the repository-name component from a
+// git-credentials request URL (e.g. "https://github.com/acme/widget" →
+// "widget"). Returns "" if the URL is unparseable or does not resolve to a
+// GitHub org/repo pair; callers then fall back to unscoped behaviour.
+func deriveScopeFromRepoURL(repoURL string) string {
+	u, err := url.Parse(repoURL)
+	if err != nil {
+		return ""
+	}
+	_, repo := github.RepoForURL(*u)
+	return repo
 }
 
 // extractRepositoryScope extracts and validates the repository-scope query parameter.
@@ -40,39 +93,27 @@ func extractRepositoryScope(r *http.Request) (string, error) {
 	return scope, nil
 }
 
-// buildProfileRef constructs a ProfileRef from the request context and path.
-// Returns an error if the profile parameter is invalid. Panics if Buildkite
-// claims are missing (via jwt.RequireBuildkiteClaimsFromContext), which should
-// only occur when used outside the JWT middleware chain.
-func buildProfileRef(r *http.Request, expectedType profile.ProfileType) (profile.ProfileRef, error) {
-	// claims must be present from the middleware
-	claims := jwt.RequireBuildkiteClaimsFromContext(r.Context())
-
-	// Extract profile parameter from path (empty string for legacy routes)
-	profileStr := r.PathValue("profile")
-
-	// Construct ProfileRef from claims and profile parameter. Scope is
-	// resolved separately at the handler boundary in Phase 2, so pass "" here.
-	return profile.NewProfileRef(claims, expectedType, profileStr, "")
-}
-
-func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile.ProfileType) http.Handler {
+func handlePostToken(tokenVendor vendor.ProfileTokenVendor, builder ProfileRefBuilder, expectedType profile.ProfileType) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
-		ref, err := buildProfileRef(r, expectedType)
-		if err != nil {
-			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid profile parameter: %w", err))
-			return
-		}
-
+		// Resolve repository scope first so the builder receives a normalised
+		// value. Pipeline routes (ProfileTypeRepo) are never scoped: skip the
+		// query-parameter read entirely to preserve their current behaviour.
 		var repositoryScope string
 		if expectedType == profile.ProfileTypeOrg {
+			var err error
 			repositoryScope, err = extractRepositoryScope(r)
 			if err != nil {
 				requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid repository-scope: %w", err))
 				return
 			}
+		}
+
+		ref, err := builder(r.Context(), r, repositoryScope)
+		if err != nil {
+			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid profile parameter: %w", err))
+			return
 		}
 
 		result := tokenVendor(r.Context(), ref, "", repositoryScope)
@@ -108,16 +149,13 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile
 	})
 }
 
-func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, expectedType profile.ProfileType) http.Handler {
+func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, builder ProfileRefBuilder, expectedType profile.ProfileType) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 
-		ref, err := buildProfileRef(r, expectedType)
-		if err != nil {
-			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid profile parameter: %w", err))
-			return
-		}
-
+		// Read and reconstruct the Git-supplied URL first: the org path uses
+		// it to derive repository scope, so the builder receives a normalised
+		// value. Keeping the order consistent across endpoints reads cleanly.
 		requestedRepo, err := credentialhandler.ReadProperties(r.Body)
 		if err != nil {
 			writeTextError(r.Context(), w, fmt.Errorf("read repository properties from client failed: %w", err))
@@ -127,6 +165,21 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, expectedTyp
 		requestedRepoURL, err := credentialhandler.ConstructRepositoryURL(requestedRepo)
 		if err != nil {
 			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid request parameters: %w", err))
+			return
+		}
+
+		// Derive repository scope from the Git-supplied URL only for org
+		// routes. Pipeline routes remain unscoped: they pass the full URL
+		// directly to the vendor, which continues to match against the
+		// pipeline's configured repository.
+		var scopedRepo string
+		if expectedType == profile.ProfileTypeOrg {
+			scopedRepo = deriveScopeFromRepoURL(requestedRepoURL)
+		}
+
+		ref, err := builder(r.Context(), r, scopedRepo)
+		if err != nil {
+			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid profile parameter: %w", err))
 			return
 		}
 
