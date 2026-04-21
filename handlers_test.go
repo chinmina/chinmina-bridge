@@ -24,24 +24,48 @@ import (
 
 var defaultExpiry = time.Date(2024, time.May, 7, 17, 59, 36, 0, time.UTC)
 
+// testBuilder returns the default ProfileRefBuilder wired with a nil store
+// (sufficient for tests that exercise handler plumbing without needing
+// type-aware scope validation — that is covered in builder-unit tests).
+func testBuilder(expectedType profile.ProfileType) ProfileRefBuilder {
+	return NewProfileRefBuilder(nil, expectedType)
+}
+
 func TestHandlers_RequireClaims(t *testing.T) {
+	// The builder's call to jwt.RequireBuildkiteClaimsFromContext panics when
+	// claims are absent — a defence-in-depth signal that the JWT middleware
+	// was bypassed. For /token the builder runs first; for /git-credentials
+	// the body is read first, so we send a valid body to reach the builder.
+	validGitCredsBody := func() *bytes.Buffer {
+		m := credentialhandler.NewMap(3)
+		m.Set("protocol", "https")
+		m.Set("host", "github.com")
+		m.Set("path", "org/repo")
+		b := &bytes.Buffer{}
+		require.NoError(t, credentialhandler.WriteProperties(m, b))
+		return b
+	}
+
 	cases := []struct {
 		name    string
 		handler http.Handler
+		body    io.Reader
 	}{
 		{
 			name:    "postToken",
-			handler: handlePostToken(nil, profile.ProfileTypeRepo),
+			handler: handlePostToken(nil, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo),
+			body:    nil,
 		},
 		{
 			name:    "postGitCredentials",
-			handler: handlePostGitCredentials(nil, profile.ProfileTypeRepo),
+			handler: handlePostGitCredentials(nil, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo),
+			body:    validGitCredsBody(),
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequestWithContext(t.Context(), "POST", "/not-applicable", nil)
+			req, err := http.NewRequestWithContext(t.Context(), "POST", "/not-applicable", tc.body)
 			require.NoError(t, err)
 
 			rr := httptest.NewRecorder()
@@ -63,7 +87,7 @@ func TestHandlePostToken_ReturnsTokenOnSuccess(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
+	handler := handlePostToken(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -91,7 +115,7 @@ func TestHandlePostToken_ReturnsFailureOnVendorFailure(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
+	handler := handlePostToken(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -135,7 +159,7 @@ func TestHandlePostTokenWithProfile_ReturnsTokenOnSuccess(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// act
-			handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
+			handler := handlePostToken(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 			handler.ServeHTTP(rr, req)
 
 			// assert
@@ -172,7 +196,7 @@ func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -202,7 +226,7 @@ func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -226,7 +250,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnInvalidRequest(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -255,7 +279,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnReadFailure(t *testing.T) {
 	// act
 	handler := maxRequestSize(1)(
 		// use the request size limit to force an error in the credentials handler
-		handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo),
+		handlePostGitCredentials(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo),
 	)
 	handler.ServeHTTP(rr, req)
 
@@ -282,7 +306,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnVendorFailure(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -330,7 +354,7 @@ func TestHandlePostGitCredentialsWithRepoProfile_ReturnsTokenOnSuccess(t *testin
 			rr := httptest.NewRecorder()
 
 			// act
-			handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
+			handler := handlePostGitCredentials(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 			handler.ServeHTTP(rr, req)
 
 			// assert
@@ -393,7 +417,7 @@ func TestHandlePostGitCredentialsWithProfile_ReturnsTokenOnSuccess(t *testing.T)
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeOrg)
+	handler := handlePostGitCredentials(tokenVendor, testBuilder(profile.ProfileTypeOrg), profile.ProfileTypeOrg)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -503,7 +527,7 @@ func TestHandlePostToken_ProfileErrors(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// act
-			handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
+			handler := handlePostToken(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 			handler.ServeHTTP(rr, req)
 
 			// assert
@@ -532,7 +556,7 @@ func TestHandlePostToken_ClaimValidationError(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostToken(tokenVendor, profile.ProfileTypeRepo)
+	handler := handlePostToken(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -562,7 +586,7 @@ func TestHandlePostGitCredentials_ClaimValidationError(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testBuilder(profile.ProfileTypeRepo), profile.ProfileTypeRepo)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -689,6 +713,59 @@ func TestAuditError(t *testing.T) {
 			assert.Equal(t, tc.expectedAuditError, auditLog.Error)
 		})
 	}
+}
+
+// mapPathValuer is a minimal PathValuer for tests that do not need a real
+// *http.Request.
+type mapPathValuer map[string]string
+
+func (m mapPathValuer) PathValue(name string) string { return m[name] }
+
+func TestNewProfileRefBuilder_OrgProfile(t *testing.T) {
+	builder := NewProfileRefBuilder(nil, profile.ProfileTypeOrg)
+
+	ctx := claimsContext()
+	pv := mapPathValuer{"profile": "write-packages"}
+
+	ref, err := builder(ctx, pv, "")
+	require.NoError(t, err)
+
+	assert.Equal(t, profile.ProfileRef{
+		Organization: "organization-slug",
+		Type:         profile.ProfileTypeOrg,
+		Name:         "write-packages",
+	}, ref)
+}
+
+func TestNewProfileRefBuilder_RepoProfileDefault(t *testing.T) {
+	builder := NewProfileRefBuilder(nil, profile.ProfileTypeRepo)
+
+	ctx := claimsContext()
+	pv := mapPathValuer{} // no path parameter — repo profiles default to "default"
+
+	ref, err := builder(ctx, pv, "")
+	require.NoError(t, err)
+
+	assert.Equal(t, profile.ProfileRef{
+		Organization: "organization-slug",
+		Type:         profile.ProfileTypeRepo,
+		Name:         "default",
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "pipeline-slug",
+	}, ref)
+}
+
+func TestNewProfileRefBuilder_Phase2aIgnoresScopedRepo(t *testing.T) {
+	// Phase 2a default builder does not yet propagate scopedRepo onto the ref.
+	// Scope validation and population move into the builder in a later phase.
+	builder := NewProfileRefBuilder(nil, profile.ProfileTypeOrg)
+
+	ctx := claimsContext()
+	pv := mapPathValuer{"profile": "write-packages"}
+
+	ref, err := builder(ctx, pv, "caller-supplied-repo")
+	require.NoError(t, err)
+	assert.Empty(t, ref.ScopedRepository)
 }
 
 func TestExtractRepositoryScope_Valid(t *testing.T) {
