@@ -51,8 +51,9 @@ func buildProfileRef(r *http.Request, expectedType profile.ProfileType) (profile
 	// Extract profile parameter from path (empty string for legacy routes)
 	profileStr := r.PathValue("profile")
 
-	// Construct ProfileRef from claims and profile parameter
-	return profile.NewProfileRef(claims, expectedType, profileStr)
+	// Construct ProfileRef from claims and profile parameter. Scope is
+	// resolved separately at the handler boundary in Phase 2, so pass "" here.
+	return profile.NewProfileRef(claims, expectedType, profileStr, "")
 }
 
 func handlePostToken(tokenVendor vendor.ProfileTokenVendor, expectedType profile.ProfileType) http.Handler {
