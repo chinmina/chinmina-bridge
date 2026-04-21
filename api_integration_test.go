@@ -666,7 +666,9 @@ func TestIntegrationOrganizationToken_CallerScoped_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "ghs_scoped_token", result.Token)
-	assert.Equal(t, "org:caller-scoped-profile", result.Profile)
+	// Scoped URN short form: org:<profile>/<repo> — the ref now carries
+	// ScopedRepository, so downstream rendering picks it up automatically.
+	assert.Equal(t, "org:caller-scoped-profile/my-repo", result.Profile)
 	assert.Equal(t, profile.NewSpecificScope("my-repo"), result.Repositories)
 }
 
