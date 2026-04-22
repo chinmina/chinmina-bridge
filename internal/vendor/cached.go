@@ -51,7 +51,7 @@ func recordOutcome(ctx context.Context, result string) {
 // additional tokens issued are worth gains made skipping locking.
 func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) func(ProfileTokenVendor) ProfileTokenVendor {
 	return func(v ProfileTokenVendor) ProfileTokenVendor {
-		return func(ctx context.Context, ref profile.ProfileRef, requestedRepository string, repositoryScope string) VendorResult {
+		return func(ctx context.Context, ref profile.ProfileRef, requestedRepository string) VendorResult {
 			// Cache key includes digest prefix for config version namespacing
 			// and ref.String() which embeds ScopedRepository for caller-scoped profiles.
 			key := fmt.Sprintf("%s:%s", digester.Digest(), ref.String())
@@ -101,7 +101,7 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 			}
 
 			// cache miss: request and cache
-			result := v(ctx, ref, requestedRepository, repositoryScope)
+			result := v(ctx, ref, requestedRepository)
 
 			// Only cache successful results
 			if token, tokenVended := result.Token(); tokenVended {

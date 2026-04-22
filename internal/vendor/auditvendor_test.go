@@ -15,7 +15,7 @@ import (
 
 func TestAuditor_Success(t *testing.T) {
 	vendedDate := time.Date(1970, 1, 1, 0, 0, 10, 0, time.UTC)
-	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string, repositoryScope string) vendor.VendorResult {
+	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{
 			Repositories:        profile.NewSpecificScope("https://example.com/repo"),
 			Permissions:         []string{"contents:read", "metadata:read"},
@@ -37,7 +37,7 @@ func TestAuditor_Success(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := auditedVendor(ctx, ref1, repo, "")
+	result := auditedVendor(ctx, ref1, repo)
 
 	expectedToken := vendor.ProfileToken{
 		Repositories:        profile.NewSpecificScope("https://example.com/repo"),
@@ -71,7 +71,7 @@ func TestAuditor_Success(t *testing.T) {
 		Type:         profile.ProfileTypeOrg,
 		PipelineSlug: "",
 	}
-	result = auditedVendor(ctx, ref2, repo, "")
+	result = auditedVendor(ctx, ref2, repo)
 
 	assertVendorSuccess(t, result, expectedToken)
 
@@ -94,7 +94,7 @@ func TestAuditor_Success(t *testing.T) {
 }
 
 func TestAuditor_Mismatch(t *testing.T) {
-	unmatchedVendor := func(ctx context.Context, ref profile.ProfileRef, repo string, repositoryScope string) vendor.VendorResult {
+	unmatchedVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
 		return vendor.NewVendorUnmatched()
 	}
 	auditedVendor := vendor.Auditor(unmatchedVendor)
@@ -109,7 +109,7 @@ func TestAuditor_Mismatch(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := auditedVendor(ctx, ref, repo, "")
+	result := auditedVendor(ctx, ref, repo)
 
 	assertVendorUnmatched(t, result)
 
@@ -127,7 +127,7 @@ func TestAuditor_Mismatch(t *testing.T) {
 }
 
 func TestAuditor_Failure(t *testing.T) {
-	failingVendor := func(ctx context.Context, ref profile.ProfileRef, repo string, repositoryScope string) vendor.VendorResult {
+	failingVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
 		return vendor.NewVendorFailed(errors.New("vendor error"))
 	}
 	auditedVendor := vendor.Auditor(failingVendor)
@@ -142,7 +142,7 @@ func TestAuditor_Failure(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := auditedVendor(ctx, ref, repo, "")
+	result := auditedVendor(ctx, ref, repo)
 	assertVendorFailure(t, result, "vendor error")
 
 	entry := audit.Log(ctx)
@@ -158,7 +158,7 @@ func TestAuditor_Failure(t *testing.T) {
 	assert.Equal(t, expected, *entry)
 }
 func TestAuditor_ProfileAuditing(t *testing.T) {
-	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string, repositoryScope string) vendor.VendorResult {
+	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{
 			Repositories:        profile.NewSpecificScope("https://example.com/repo"),
 			Permissions:         []string{"contents:read", "metadata:read"},
@@ -187,7 +187,7 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 		PipelineSlug: "my-pipeline",
 	}
 	// Case 1: Test with default profile - audit log should contain full URN
-	result := auditedVendor(ctx, ref1, repo, "")
+	result := auditedVendor(ctx, ref1, repo)
 
 	_, failed := result.Failed()
 	assert.False(t, failed)
@@ -207,7 +207,7 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 		PipelineSlug: "",
 	}
 	// Case 2: Test with specified profile - audit log should contain full URN
-	result = auditedVendor(ctx, ref2, repo, "")
+	result = auditedVendor(ctx, ref2, repo)
 
 	_, failed = result.Failed()
 	assert.False(t, failed)
@@ -381,7 +381,7 @@ func TestAuditor_RecordsScopingMismatchError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			inner := func(ctx context.Context, ref profile.ProfileRef, repo string, repositoryScope string) vendor.VendorResult {
+			inner := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
 				return vendor.NewVendorFailed(tt.vendorError)
 			}
 
@@ -389,7 +389,7 @@ func TestAuditor_RecordsScopingMismatchError(t *testing.T) {
 
 			ctx, _ := audit.Context(context.Background())
 			ref := profile.ProfileRef{Organization: "org", Name: "test", Type: profile.ProfileTypeOrg}
-			auditor(ctx, ref, "", "")
+			auditor(ctx, ref, "")
 
 			entry := audit.Log(ctx)
 			assert.Contains(t, entry.Error, tt.expectedAudit)

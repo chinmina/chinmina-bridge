@@ -15,7 +15,7 @@ import (
 // Used by /organization/token/{profile} and /organization/git-credentials/{profile} routes.
 // It vends tokens for a set of repositories defined in the profile configuration.
 func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) ProfileTokenVendor {
-	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string, repositoryScope string) VendorResult {
+	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) VendorResult {
 		// Validate that this is an org-scoped profile
 		if ref.Type != profile.ProfileTypeOrg {
 			return NewVendorFailed(fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeOrg.String(), ref.Type.String()))
@@ -49,7 +49,7 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 
 		// --- Bidirectional scoping validation ---
 		profileScope := authProfile.Attrs.RepositoryScope()
-		repoScope, err := resolveRequestScope(profileScope, repositoryScope, requestedRepoURL, ref.Name)
+		repoScope, err := resolveRequestScope(profileScope, ref)
 		if err != nil {
 			return NewVendorFailed(err)
 		}
@@ -99,28 +99,16 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 	}
 }
 
-// resolveRequestScope determines the effective repository scope for a request
-// based on the profile's declared scope, the caller-supplied scope parameter,
-// and the requested repository URL (from git-credentials).
-func resolveRequestScope(profileScope profile.RepositoryScope, repositoryScope string, requestedRepoURL string, profileName string) (profile.RepositoryScope, error) {
+// resolveRequestScope determines the effective repository scope for a request.
+// Scope validation happens at the handler boundary (in the ProfileRefBuilder);
+// here we simply interpret the ref's ScopedRepository against the profile's
+// declared scope. The builder is the single enforcement point, so this function
+// only needs to read the already-validated ref and apply the profile's scope rules.
+// For caller-scoped profiles, ScopedRepository is guaranteed non-empty by the builder.
+func resolveRequestScope(profileScope profile.RepositoryScope, ref profile.ProfileRef) (profile.RepositoryScope, error) {
 	if profileScope.IsCallerScoped() {
-		if repositoryScope != "" {
-			return profile.NewSpecificScope(repositoryScope), nil
-		}
-		if requestedRepoURL != "" {
-			// Git-credentials path: derive scope from the Git-supplied repository
-			repo, err := url.Parse(requestedRepoURL)
-			if err != nil {
-				return profile.RepositoryScope{}, fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err)
-			}
-			_, repository := github.RepoForURL(*repo)
-			return profile.NewSpecificScope(repository), nil
-		}
-		return profile.RepositoryScope{}, profile.RepositoryScopeRequiredError{ProfileName: profileName}
-	}
-
-	if repositoryScope != "" {
-		return profile.RepositoryScope{}, profile.RepositoryScopeUnexpectedError{ProfileName: profileName}
+		// Builder guarantees ScopedRepository is non-empty for caller-scoped refs.
+		return profile.NewSpecificScope(ref.ScopedRepository), nil
 	}
 
 	return profileScope, nil

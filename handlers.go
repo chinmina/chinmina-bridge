@@ -162,23 +162,23 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, builder ProfileRefBu
 		// Resolve repository scope first so the builder receives a normalised
 		// value. Pipeline routes (ProfileTypeRepo) are never scoped: skip the
 		// query-parameter read entirely to preserve their current behaviour.
-		var repositoryScope string
+		var explicitScope string
 		if expectedType == profile.ProfileTypeOrg {
 			var err error
-			repositoryScope, err = extractRepositoryScope(r)
+			explicitScope, err = extractRepositoryScope(r)
 			if err != nil {
 				requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid repository-scope: %w", err))
 				return
 			}
 		}
 
-		ref, err := builder(r.Context(), r, repositoryScope, "")
+		ref, err := builder(r.Context(), r, explicitScope, "")
 		if err != nil {
 			writeJSONError(r.Context(), w, builderError{err: err})
 			return
 		}
 
-		result := tokenVendor(r.Context(), ref, "", repositoryScope)
+		result := tokenVendor(r.Context(), ref, "")
 		if err, failed := result.Failed(); failed {
 			writeJSONError(r.Context(), w, fmt.Errorf("token creation failed: %w", err))
 			return
@@ -246,7 +246,7 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, builder Pro
 			return
 		}
 
-		result := tokenVendor(r.Context(), ref, requestedRepoURL, "")
+		result := tokenVendor(r.Context(), ref, requestedRepoURL)
 		if err, failed := result.Failed(); failed {
 			writeTextError(r.Context(), w, fmt.Errorf("token creation failed: %w", err))
 			return
