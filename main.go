@@ -83,22 +83,28 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 
 	vendorCache := vendor.Cached(tokenCache, orgProfile)
 
+	// One ProfileRefBuilder per route type, closed over the store and the
+	// expected profile type. The store is captured for Phase 2b scope
+	// validation; the expected type drives profile-string resolution.
+	pipelineBuilder := NewProfileRefBuilder(orgProfile, profile.ProfileTypeRepo)
+	orgBuilder := NewProfileRefBuilder(orgProfile, profile.ProfileTypeOrg)
+
 	// Pipeline routes use repoVendor (defaults to "default" profile)
 	// The bare (non-profile) routes are for backward compatibility
 	repoVendor := vendor.Auditor(vendorCache(vendor.NewRepoVendor(orgProfile, bk.RepositoryLookup, gh.CreateAccessToken)))
-	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, profile.ProfileTypeRepo))
+	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, pipelineBuilder, profile.ProfileTypeRepo))
 	mux.Handle("POST /token", pipelineTokenHandler)
 	mux.Handle("POST /token/{profile}", pipelineTokenHandler)
 
-	pipelineGitCredentialsHandler := authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, profile.ProfileTypeRepo))
+	pipelineGitCredentialsHandler := authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, pipelineBuilder, profile.ProfileTypeRepo))
 	mux.Handle("POST /git-credentials", pipelineGitCredentialsHandler)
 	mux.Handle("POST /git-credentials/{profile}", pipelineGitCredentialsHandler)
 
 	// Organization routes use orgVendor (profile specified in path)
 	orgVendor := vendor.Auditor(vendorCache(vendor.NewOrgVendor(orgProfile, gh.CreateAccessToken)))
 
-	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, profile.ProfileTypeOrg)))
-	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, profile.ProfileTypeOrg)))
+	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, orgBuilder, profile.ProfileTypeOrg)))
+	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, orgBuilder, profile.ProfileTypeOrg)))
 
 	// healthchecks are not included in telemetry or authorization
 	muxWithoutTelemetry.Handle("GET /healthcheck", standardRouteMiddleware.Then(handleHealthCheck()))

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/jwt/jwxtest"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/lestrrat-go/jwx/v3/jwt"
@@ -641,4 +642,166 @@ func TestIntegrationBasePath(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
+}
+
+// ============================================================================
+// Dynamic Repository Scoping Tests
+// ============================================================================
+
+func TestIntegrationOrganizationToken_CallerScoped_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	harness.GitHubMock.Token = "ghs_scoped_token"
+
+	token := harness.PipelineToken()
+
+	result, err := harness.Client().OrganizationTokenScoped(token, "caller-scoped-profile", "my-repo")
+	require.NoError(t, err)
+
+	assert.Equal(t, "ghs_scoped_token", result.Token)
+	// Scoped URN short form: org:<profile>/<repo> — the ref now carries
+	// ScopedRepository, so downstream rendering picks it up automatically.
+	assert.Equal(t, "org:caller-scoped-profile/my-repo", result.Profile)
+	assert.Equal(t, profile.NewSpecificScope("my-repo"), result.Repositories)
+}
+
+func TestIntegrationOrganizationToken_CallerScoped_MissingScope(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	token := harness.PipelineToken()
+
+	// Call without repository-scope — should fail
+	_, err = harness.Client().OrganizationTokenScoped(token, "caller-scoped-profile", "")
+	require.Error(t, err)
+
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+}
+
+func TestIntegrationOrganizationToken_StaticProfile_RejectsScope(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	token := harness.PipelineToken()
+
+	// Provide repository-scope to a static-list profile — should fail
+	_, err = harness.Client().OrganizationTokenScoped(token, "static-profile", "unwanted-scope")
+	require.Error(t, err)
+
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+}
+
+func TestIntegrationOrganizationToken_AllRepos_RejectsScope(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	token := harness.PipelineToken()
+
+	// Provide repository-scope to an all-repos profile — should fail
+	_, err = harness.Client().OrganizationTokenScoped(token, "all-repos-profile", "unwanted-scope")
+	require.Error(t, err)
+
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+}
+
+func TestIntegrationOrganizationToken_InvalidScope_Slash(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	token := harness.PipelineToken()
+
+	// Provide invalid repository-scope with slash — should fail with 400
+	_, err = harness.Client().OrganizationTokenScoped(token, "caller-scoped-profile", "owner/repo")
+	require.Error(t, err)
+
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+}
+
+func TestIntegrationOrganizationGitCredentials_CallerScoped_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	harness.GitHubMock.Token = "ghs_scoped_creds"
+
+	token := harness.PipelineToken()
+
+	// Git-credentials derives scope from the request body (path field)
+	props, err := harness.Client().OrganizationGitCredentials(token, "caller-scoped-profile", GitCredentialRequest{
+		Protocol: "https",
+		Host:     "github.com",
+		Path:     "test-org/target-repo",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "ghs_scoped_creds", props.Get("password"))
+	assert.Equal(t, "test-org/target-repo", props.Get("path"))
+}
+
+func TestIntegrationOrganizationGitCredentials_AllRepos_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	harness.GitHubMock.Token = "ghs_allrepos_creds"
+
+	token := harness.PipelineToken()
+
+	props, err := harness.Client().OrganizationGitCredentials(token, "all-repos-profile", GitCredentialRequest{
+		Protocol: "https",
+		Host:     "github.com",
+		Path:     "test-org/any-repo",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "ghs_allrepos_creds", props.Get("password"))
 }

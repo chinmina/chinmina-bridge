@@ -22,6 +22,13 @@ func TestNewSpecificScope(t *testing.T) {
 	assert.Equal(t, names, rs.Names)
 }
 
+func TestNewCallerScopedScope(t *testing.T) {
+	rs := NewCallerScopedScope()
+	assert.False(t, rs.Wildcard)
+	assert.Nil(t, rs.Names)
+	assert.True(t, rs.CallerScoped)
+}
+
 func TestRepositoryScope_IsWildcard(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -31,10 +38,29 @@ func TestRepositoryScope_IsWildcard(t *testing.T) {
 		{"wildcard scope", NewWildcardScope(), true},
 		{"specific scope", NewSpecificScope("repo-a"), false},
 		{"zero value", RepositoryScope{}, false},
+		{"caller-scoped scope", NewCallerScopedScope(), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.scope.IsWildcard())
+		})
+	}
+}
+
+func TestRepositoryScope_IsCallerScoped(t *testing.T) {
+	tests := []struct {
+		name     string
+		scope    RepositoryScope
+		expected bool
+	}{
+		{"caller-scoped scope", NewCallerScopedScope(), true},
+		{"wildcard scope", NewWildcardScope(), false},
+		{"specific scope", NewSpecificScope("repo-a"), false},
+		{"zero value", RepositoryScope{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.scope.IsCallerScoped())
 		})
 	}
 }
@@ -52,6 +78,7 @@ func TestRepositoryScope_Contains(t *testing.T) {
 		{"specific does not match non-member", NewSpecificScope("repo-a", "repo-b"), "repo-c", false},
 		{"empty specific matches nothing", NewSpecificScope(), "repo-a", false},
 		{"zero value matches nothing", RepositoryScope{}, "repo-a", false},
+		{"caller-scoped matches nothing", NewCallerScopedScope(), "any-repo", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -70,6 +97,7 @@ func TestRepositoryScope_IsZero(t *testing.T) {
 		{"wildcard scope", NewWildcardScope(), false},
 		{"specific scope with names", NewSpecificScope("repo-a"), false},
 		{"specific scope with empty names", NewSpecificScope(), true},
+		{"caller-scoped scope", NewCallerScopedScope(), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -87,6 +115,7 @@ func TestRepositoryScope_NamesForDisplay(t *testing.T) {
 		{"wildcard returns star", NewWildcardScope(), []string{"*"}},
 		{"specific returns names", NewSpecificScope("repo-a", "repo-b"), []string{"repo-a", "repo-b"}},
 		{"zero value returns nil", RepositoryScope{}, nil},
+		{"caller-scoped returns empty", NewCallerScopedScope(), []string{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -115,6 +144,11 @@ func TestRepositoryScope_JSONRoundTrip(t *testing.T) {
 			name:         "zero value",
 			scope:        RepositoryScope{},
 			expectedJSON: `{}`,
+		},
+		{
+			name:         "caller-scoped",
+			scope:        NewCallerScopedScope(),
+			expectedJSON: `{"callerScoped":true}`,
 		},
 	}
 	for _, tt := range tests {
@@ -151,6 +185,11 @@ func TestRepositoryScope_LogValue(t *testing.T) {
 			name:     "zero value logs nil",
 			scope:    RepositoryScope{},
 			expected: slog.AnyValue([]string(nil)),
+		},
+		{
+			name:     "caller-scoped logs empty",
+			scope:    NewCallerScopedScope(),
+			expected: slog.AnyValue([]string{}),
 		},
 	}
 	for _, tt := range tests {

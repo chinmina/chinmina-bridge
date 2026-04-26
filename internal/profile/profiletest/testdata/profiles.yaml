@@ -32,6 +32,19 @@ organization:
         - test-repo
       permissions:
         - contents:read
+    - name: caller-scoped-profile
+      repositories:
+        - "{{caller-scoped-repository}}"
+      permissions:
+        - contents:write
+      match:
+        - claim: pipeline_slug
+          valuePattern: "agent-workflows.*"
+    - name: all-repos-profile
+      repositories:
+        - "{{all-repositories}}"
+      permissions:
+        - contents:read
 
 pipeline:
   defaults:

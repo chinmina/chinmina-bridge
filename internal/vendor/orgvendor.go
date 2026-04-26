@@ -47,21 +47,25 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			return NewVendorFailed(profile.ProfileMatchFailedError{Name: ref.Name})
 		}
 
-		// The repository is only supplied for the git-credentials endpoint:
-		// checking it allows Git to respond properly: it's not a security measure.
-		if requestedRepoURL != "" {
-			// Otherwise validate it against the profile.
+		// --- Bidirectional scoping validation ---
+		profileScope := authProfile.Attrs.RepositoryScope()
+		repoScope, err := resolveRequestScope(profileScope, ref)
+		if err != nil {
+			return NewVendorFailed(err)
+		}
+
+		// For non-caller-scoped profiles at the git-credentials endpoint,
+		// check the requested repo against the profile's scope. Static-list
+		// profiles return unmatched for repos outside their list; wildcard
+		// profiles skip this check (they claim all repos).
+		if requestedRepoURL != "" && !profileScope.IsCallerScoped() && !profileScope.IsWildcard() {
 			repo, err := url.Parse(requestedRepoURL)
 			if err != nil {
 				return NewVendorFailed(fmt.Errorf("could not parse requested repo URL %s: %w", requestedRepoURL, err))
 			}
 
-			// If the requested repository isn't in the profile, return unmatched. This
-			// indicates that the handler should return a successful (but empty)
-			// response. This allows Git (for example) to try a different provider in
-			// its credentials chain.
 			_, repository := github.RepoForURL(*repo)
-			if !authProfile.Attrs.HasRepository(repository) {
+			if !repoScope.Contains(repository) {
 				slog.Debug("profile doesn't support requested repository: no token vended.",
 					"organization", ref.Organization,
 					"profile", ref.ShortString(),
@@ -72,7 +76,6 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 		}
 
 		// Use the GitHub API to vend a token for the repository
-		repoScope := authProfile.Attrs.RepositoryScope()
 		token, expiry, err := tokenVendor(ctx, repoScope.Names, authProfile.Attrs.Permissions)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not issue token for profile %s: %w", ref, err))
@@ -94,4 +97,19 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			Expiry:              expiry,
 		})
 	}
+}
+
+// resolveRequestScope determines the effective repository scope for a request.
+// Scope validation happens at the handler boundary (in the ProfileRefBuilder);
+// here we simply interpret the ref's ScopedRepository against the profile's
+// declared scope. The builder is the single enforcement point, so this function
+// only needs to read the already-validated ref and apply the profile's scope rules.
+// For caller-scoped profiles, ScopedRepository is guaranteed non-empty by the builder.
+func resolveRequestScope(profileScope profile.RepositoryScope, ref profile.ProfileRef) (profile.RepositoryScope, error) {
+	if profileScope.IsCallerScoped() {
+		// Builder guarantees ScopedRepository is non-empty for caller-scoped refs.
+		return profile.NewSpecificScope(ref.ScopedRepository), nil
+	}
+
+	return profileScope, nil
 }

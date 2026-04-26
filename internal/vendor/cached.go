@@ -53,6 +53,7 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 	return func(v ProfileTokenVendor) ProfileTokenVendor {
 		return func(ctx context.Context, ref profile.ProfileRef, requestedRepository string) VendorResult {
 			// Cache key includes digest prefix for config version namespacing
+			// and ref.String() which embeds ScopedRepository for caller-scoped profiles.
 			key := fmt.Sprintf("%s:%s", digester.Digest(), ref.String())
 
 			cachedToken, found, err := tokenCache.Get(ctx, key)

@@ -11,6 +11,27 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/github"
 )
 
+const (
+	// LiteralCallerScoped is the YAML literal for caller-supplied repository scoping.
+	LiteralCallerScoped = "{{caller-scoped-repository}}"
+	// LiteralAllRepositories is the YAML literal for all-repositories access.
+	LiteralAllRepositories = "{{all-repositories}}"
+)
+
+// resolveRepositoryScope converts a raw repositories list into a typed RepositoryScope.
+// This is called after validation, so the input is known to be well-formed.
+func resolveRepositoryScope(repos []string) RepositoryScope {
+	if len(repos) == 1 {
+		switch repos[0] {
+		case LiteralCallerScoped:
+			return NewCallerScopedScope()
+		case LiteralAllRepositories, "*":
+			return NewWildcardScope()
+		}
+	}
+	return NewSpecificScope(repos...)
+}
+
 // compileOrganizationProfiles compiles organization profiles from config.
 // Returns a ProfileStoreOf containing valid and invalid profiles.
 func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[OrganizationProfileAttr] {
@@ -81,9 +102,17 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 			continue
 		}
 
+		// Emit deprecation warning for "*" wildcard
+		if len(p.Repositories) == 1 && p.Repositories[0] == "*" {
+			slog.Warn("organization profile: '*' is deprecated, use '{{all-repositories}}' instead",
+				"profile", p.Name,
+			)
+		}
+
+		scope := resolveRepositoryScope(p.Repositories)
 		attrs := OrganizationProfileAttr{
-			Repositories: p.Repositories,
-			Permissions:  ensureMetadataRead(p.Permissions),
+			Scope:       scope,
+			Permissions: ensureMetadataRead(p.Permissions),
 		}
 
 		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
@@ -226,20 +255,21 @@ func ensureMetadataRead(permissions []string) []string {
 }
 
 // validateRepositories validates that the repositories list follows the required format:
-// - If wildcard "*" is present, it must be the only entry
+// - If a literal ({{caller-scoped-repository}}, {{all-repositories}}, or "*") is present, it must be the only entry
 // - Repository names must not contain "/" (no owner prefix)
 func validateRepositories(repos []string) error {
-	// Check for wildcard mixed with other entries
-	hasWildcard := slices.Contains(repos, "*")
-	if hasWildcard && len(repos) > 1 {
-		return fmt.Errorf("wildcard '*' must be the only repository entry")
+	for _, repo := range repos {
+		switch repo {
+		case LiteralCallerScoped, LiteralAllRepositories, "*":
+			if len(repos) > 1 {
+				return fmt.Errorf("%q must be the only repository entry", repo)
+			}
+			return nil
+		}
 	}
 
-	// Check for owner prefix (slash in repo name)
+	// Static repo names: check for owner prefix (slash)
 	for _, repo := range repos {
-		if repo == "*" {
-			continue
-		}
 		if strings.Contains(repo, "/") {
 			return fmt.Errorf("repository %q must not contain owner prefix", repo)
 		}

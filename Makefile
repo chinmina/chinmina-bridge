@@ -36,6 +36,12 @@ fuzz: mod
 	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_LOCAL_SECS)s ./internal/credentialhandler
 	@echo "Fuzzing internal/jwt..."
 	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_LOCAL_SECS)s ./internal/jwt
+	@echo "Fuzzing internal/profile..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_LOCAL_SECS)s ./internal/profile
+	@echo "Fuzzing internal/vendor..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_LOCAL_SECS)s ./internal/vendor
+	@echo "Fuzzing handlers..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_LOCAL_SECS)s .
 
 # CI targets - output coverage.out for codecov
 .PHONY: ci-unit
@@ -52,6 +58,12 @@ ci-fuzz: mod
 	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_CI_SECS)s ./internal/credentialhandler
 	@echo "Fuzzing internal/jwt..."
 	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_CI_SECS)s ./internal/jwt
+	@echo "Fuzzing internal/profile..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_CI_SECS)s ./internal/profile
+	@echo "Fuzzing internal/vendor..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_CI_SECS)s ./internal/vendor
+	@echo "Fuzzing handlers..."
+	@go test -tags=fuzz -fuzz=Fuzz -run=^$$ -fuzztime=$(FUZZING_CI_SECS)s .
 
 dist:
 	mkdir -p dist
