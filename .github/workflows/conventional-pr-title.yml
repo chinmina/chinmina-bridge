@@ -1,0 +1,11 @@
+name: Conventional PR Title
+
+on:
+  pull_request:
+    types: [opened, reopened, edited]
+
+permissions: {}
+
+jobs:
+  conventional-pr-title:
+    uses: chinmina/.github/.github/workflows/conventional-pr-title.yml@verified-actions
