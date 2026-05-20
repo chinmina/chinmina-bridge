@@ -145,4 +145,4 @@ require (
 // Using a fork of the official package that adds support for AWS SDK v2 (avoiding dependency on the EoL v1 SDK).
 // We can switch back to the official package once it supports AWS SDK v2.
 // See: https://github.com/tink-crypto/tink-go-awskms/issues/10
-replace github.com/tink-crypto/tink-go-awskms/v3 => github.com/chinmina/tink-go-awskms/v3 v3.0.0-20260214054955-8ffd434cd534
+replace github.com/tink-crypto/tink-go-awskms/v3 => github.com/chinmina/tink-go-awskms/v3 ce56148d0edc
