@@ -54,8 +54,8 @@ github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UF
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/chinmina/iamcacheauth v1.0.0 h1:XkTxwyyCKGjhkzxYsjxOskUQOy2z1/ydLKE4lnC3p7U=
 github.com/chinmina/iamcacheauth v1.0.0/go.mod h1:DeTkBnLZa+TV+er2swRh+Tx9qhm2ik4WOPliPE2PPKk=
-github.com/chinmina/tink-go-awskms/v3 v3.0.0-20260214054955-8ffd434cd534 h1:lHcsbnd2dFI1qlublwaZOoLRXpgxT9NWVvfwZy/Nojs=
-github.com/chinmina/tink-go-awskms/v3 v3.0.0-20260214054955-8ffd434cd534/go.mod h1:ciVwsJdxX68uWXesc76h/ybP30tRPhmYEiMJkyO7j1E=
+github.com/chinmina/tink-go-awskms/v3 v3.0.0-20260226230112-214ff3a1f04d h1:E/zExewqbEB3ym16fQsxP1moDV6j94SLYJNt2O9ujVQ=
+github.com/chinmina/tink-go-awskms/v3 v3.0.0-20260226230112-214ff3a1f04d/go.mod h1:ciVwsJdxX68uWXesc76h/ybP30tRPhmYEiMJkyO7j1E=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
 github.com/containerd/errdefs v1.0.0/go.mod h1:+YBYIdtsnF4Iw6nWZhJcqGSg/dwvV7tyJ/kCkyJ2k+M=
 github.com/containerd/errdefs/pkg v0.3.0 h1:9IKJ06FvyNlexW690DXuQNx2KA2cUJXx151Xdx3ZPPE=
