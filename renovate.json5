@@ -65,6 +65,13 @@
       allowedVersions: "<2.0.0",
     },
     {
+      // This is a fork with the v3 module on a non-default branch
+      // (v3-candidate). Renovate tracks the default branch (main), which is
+      // the v2 module, producing broken replace directives.
+      matchDepNames: ["github.com/chinmina/tink-go-awskms/v3"],
+      enabled: false,
+    },
+    {
       // OpenTelemetry modules must be updated together: they have inter-module
       // version constraints and mixing versions causes build failures.
       groupName: "opentelemetry",
