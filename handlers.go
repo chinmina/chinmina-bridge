@@ -217,21 +217,20 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, builder ProfileRefBu
 		}
 
 		result := tokenVendor(r.Context(), ref, "")
-		if err, failed := result.Failed(); failed {
-			writeJSONError(r.Context(), w, fmt.Errorf("token creation failed: %w", err))
-			return
-		}
 
-		// Check if a token was vended (success vs unmatched)
-		tokenResponse, tokenVended := result.Token()
-		if !tokenVended {
+		switch result.Status() {
+		case vendor.VendStatusFailed:
+			writeJSONError(r.Context(), w, fmt.Errorf("token creation failed: %w", result.Err()))
+			return
+		case vendor.VendStatusSuccessUnmatched:
 			// No token vended (unmatched case): return 204 No Content
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
-		// write the response to the client as JSON, supplying the token and URL
-		// of the repository it's vended for.
+		// VendStatusSuccess: write the response to the client as JSON, supplying
+		// the token and URL of the repository it's vended for.
+		tokenResponse := result.Token()
 		marshalledResponse, err := json.Marshal(tokenResponse)
 		if err != nil {
 			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("failed to marshal token response: %w", err))
@@ -285,26 +284,26 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, builder Pro
 		}
 
 		result := tokenVendor(r.Context(), ref, requestedRepoURL)
-		if err, failed := result.Failed(); failed {
-			writeTextError(r.Context(), w, fmt.Errorf("token creation failed: %w", err))
+
+		switch result.Status() {
+		case vendor.VendStatusFailed:
+			writeTextError(r.Context(), w, fmt.Errorf("token creation failed: %w", result.Err()))
 			return
-		}
-
-		w.Header().Set("Content-Type", "text/plain")
-
-		// Check if a token was vended (success vs unmatched)
-		tokenResponse, tokenVended := result.Token()
-		if !tokenVended {
+		case vendor.VendStatusSuccessUnmatched:
 			// Given repository doesn't match the pipeline: empty return this means
 			// that we understand the request but cannot fulfil it: this is a
 			// successful case for a credential helper, so we successfully return
 			// but don't offer credentials.
+			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Add("Content-Length", "0")
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
-		// write the response to the client in git credentials property format
+		// VendStatusSuccess: write the response to the client in git credentials
+		// property format.
+		w.Header().Set("Content-Type", "text/plain")
+		tokenResponse := result.Token()
 		tokenURL, err := tokenResponse.URL()
 		if err != nil {
 			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("invalid repo URL: %w", err))

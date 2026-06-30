@@ -18,15 +18,17 @@ func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
 
 		result := vendor(ctx, ref, repo)
 
-		if err, failed := result.Failed(); failed {
-			entry.Error = fmt.Sprintf("vendor failure: %v", err)
-		} else if token, tokenVended := result.Token(); tokenVended {
+		switch result.Status() {
+		case VendStatusFailed:
+			entry.Error = fmt.Sprintf("vendor failure: %v", result.Err())
+		case VendStatusSuccess:
+			token := result.Token()
 			entry.VendedRepository = token.VendedRepositoryURL
 			entry.Repositories = token.Repositories.NamesForDisplay()
 			entry.Permissions = token.Permissions
 			entry.ExpirySecs = token.Expiry.Unix()
 			entry.HashedToken = token.HashedToken
-		} else {
+		case VendStatusSuccessUnmatched:
 			// this is a successful no-result: it's not an error, but we don't have credentials for the request
 			// this happens on a repository mismatch, or on a profile request where the requested repo doesn't match.
 			entry.Error = "skipped(success): profile has no credentials for requested repository"

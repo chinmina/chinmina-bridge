@@ -189,8 +189,7 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	// Case 1: Test with default profile - audit log should contain full URN
 	result := auditedVendor(ctx, ref1, repo)
 
-	_, failed := result.Failed()
-	assert.False(t, failed)
+	assert.NotEqual(t, vendor.VendStatusFailed, result.Status())
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
@@ -209,8 +208,7 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	// Case 2: Test with specified profile - audit log should contain full URN
 	result = auditedVendor(ctx, ref2, repo)
 
-	_, failed = result.Failed()
-	assert.False(t, failed)
+	assert.NotEqual(t, vendor.VendStatusFailed, result.Status())
 
 	entry = audit.Log(ctx)
 	expected = audit.Entry{

@@ -212,9 +212,8 @@ func TestVendorResult_Failed(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err, failed := tc.result.Failed()
-			assert.Equal(t, tc.expectFailed, failed)
-			assert.Equal(t, tc.expectError, err)
+			assert.Equal(t, tc.expectFailed, tc.result.Status() == vendor.VendStatusFailed)
+			assert.Equal(t, tc.expectError, tc.result.Err())
 		})
 	}
 }
@@ -256,9 +255,8 @@ func TestVendorResult_Token(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			token, ok := tc.result.Token()
-			assert.Equal(t, tc.expectOk, ok)
-			assert.Equal(t, tc.expectToken, token)
+			assert.Equal(t, tc.expectOk, tc.result.Status() == vendor.VendStatusSuccess)
+			assert.Equal(t, tc.expectToken, tc.result.Token())
 		})
 	}
 }

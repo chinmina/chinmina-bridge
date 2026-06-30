@@ -104,8 +104,8 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 			result := v(ctx, ref, requestedRepository)
 
 			// Only cache successful results
-			if token, tokenVended := result.Token(); tokenVended {
-				if err := tokenCache.Set(ctx, key, token); err != nil {
+			if result.Status() == VendStatusSuccess {
+				if err := tokenCache.Set(ctx, key, result.Token()); err != nil {
 					slog.Warn("cache set failed", "error", err, "key", key)
 				}
 			}
