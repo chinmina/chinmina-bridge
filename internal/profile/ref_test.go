@@ -53,7 +53,7 @@ func TestNewProfileRef_WithTypePrefix_Success(t *testing.T) {
 				PipelineSlug:     "pipeline-slug",
 			}
 
-			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr, "")
+			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, ref)
 		})
@@ -96,7 +96,7 @@ func TestNewProfileRef_WithoutTypePrefix_Success(t *testing.T) {
 				PipelineSlug:     "pipeline-slug",
 			}
 
-			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr, "")
+			ref, err := NewProfileRef(claims, tt.expected.Type, tt.profileStr)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, ref)
 		})
@@ -110,7 +110,7 @@ func TestNewProfileRef_EmptyString_DefaultBehavior(t *testing.T) {
 		PipelineSlug:     "pipeline-slug",
 	}
 
-	ref, err := NewProfileRef(claims, ProfileTypeRepo, "", "")
+	ref, err := NewProfileRef(claims, ProfileTypeRepo, "")
 	require.NoError(t, err)
 	assert.Equal(t, ProfileTypeRepo, ref.Type)
 	assert.Equal(t, "default", ref.Name)
@@ -123,7 +123,7 @@ func TestNewProfileRef_EmptyOrgSlug_Accepted(t *testing.T) {
 		PipelineSlug:     "pipeline-slug",
 	}
 
-	ref, err := NewProfileRef(claims, ProfileTypeRepo, "default", "")
+	ref, err := NewProfileRef(claims, ProfileTypeRepo, "default")
 	require.NoError(t, err)
 	assert.Equal(t, "", ref.Organization)
 }
@@ -181,7 +181,7 @@ func TestNewProfileRef_Failure(t *testing.T) {
 				PipelineSlug:     "pipeline-slug",
 			}
 
-			_, err := NewProfileRef(claims, tt.expectedType, tt.profileStr, "")
+			_, err := NewProfileRef(claims, tt.expectedType, tt.profileStr)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errorMsg)
 		})
@@ -472,15 +472,19 @@ func TestNewProfileRef_ScopedRepository(t *testing.T) {
 		PipelineSlug:     "pipeline-slug",
 	}
 
-	t.Run("empty scope leaves ScopedRepository unset", func(t *testing.T) {
-		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages", "")
+	// NewProfileRef never populates ScopedRepository: caller-supplied scope is
+	// resolved and assigned by the ProfileRefBuilder at the handler boundary,
+	// not by this constructor.
+	t.Run("org ref leaves ScopedRepository unset", func(t *testing.T) {
+		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages")
 		require.NoError(t, err)
 		assert.Empty(t, ref.ScopedRepository)
 	})
 
-	t.Run("non-empty scope populates ScopedRepository on org ref", func(t *testing.T) {
-		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages", "repo-a")
+	t.Run("ScopedRepository is assignable on the ref (as the builder does)", func(t *testing.T) {
+		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages")
 		require.NoError(t, err)
+		ref.ScopedRepository = "repo-a"
 		assert.Equal(t, "repo-a", ref.ScopedRepository)
 	})
 }
@@ -493,13 +497,13 @@ func TestNewProfileRef_PipelineFieldsOnlySetForRepo(t *testing.T) {
 	}
 
 	// Repo profile should have pipeline fields set
-	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "default", "")
+	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "default")
 	require.NoError(t, err)
 	assert.Equal(t, "pipeline-id", repoRef.PipelineID)
 	assert.Equal(t, "pipeline-slug", repoRef.PipelineSlug)
 
 	// Org profile should NOT have pipeline fields set
-	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages", "")
+	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages")
 	require.NoError(t, err)
 	assert.Empty(t, orgRef.PipelineID)
 	assert.Empty(t, orgRef.PipelineSlug)
@@ -514,7 +518,7 @@ func TestProfileRef_Consistency(t *testing.T) {
 	}
 
 	// Create a repo profile ref
-	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "custom-profile", "")
+	repoRef, err := NewProfileRef(claims, ProfileTypeRepo, "custom-profile")
 	require.NoError(t, err)
 
 	// Verify complete struct matches expected
@@ -542,7 +546,7 @@ func TestProfileRef_Consistency(t *testing.T) {
 	assert.Equal(t, repoRef, parsed)
 
 	// Create an org profile ref
-	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "org-profile", "")
+	orgRef, err := NewProfileRef(claims, ProfileTypeOrg, "org-profile")
 	require.NoError(t, err)
 
 	// Verify complete struct matches expected

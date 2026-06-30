@@ -52,7 +52,7 @@ func FuzzValidateRepositories(f *testing.F) {
 		err := validateRepositories(repos)
 
 		// Property 2: If a special literal is present with other entries, it must be rejected
-		isSpecial := entry == "*" || entry == LiteralCallerScoped || entry == LiteralAllRepositories
+		isSpecial := entry == LiteralDeprecatedWildcard || entry == LiteralCallerScoped || entry == LiteralAllRepositories
 		if isSpecial && count > 1 && err == nil {
 			t.Errorf("special literal %q with %d entries should be rejected but wasn't", entry, count)
 		}
@@ -87,7 +87,7 @@ func FuzzValidateRepositories(f *testing.F) {
 				if !scope.IsCallerScoped() {
 					t.Errorf("expected caller-scoped scope for %q, got %+v", entry, scope)
 				}
-			case LiteralAllRepositories, "*":
+			case LiteralAllRepositories, LiteralDeprecatedWildcard:
 				if !scope.IsWildcard() {
 					t.Errorf("expected wildcard scope for %q, got %+v", entry, scope)
 				}

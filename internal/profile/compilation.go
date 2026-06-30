@@ -16,6 +16,9 @@ const (
 	LiteralCallerScoped = "{{caller-scoped-repository}}"
 	// LiteralAllRepositories is the YAML literal for all-repositories access.
 	LiteralAllRepositories = "{{all-repositories}}"
+	// LiteralDeprecatedWildcard is the deprecated "*" wildcard, retained as an
+	// alias for LiteralAllRepositories until it is removed in version 1.
+	LiteralDeprecatedWildcard = "*"
 )
 
 // resolveRepositoryScope converts a raw repositories list into a typed RepositoryScope.
@@ -25,7 +28,7 @@ func resolveRepositoryScope(repos []string) RepositoryScope {
 		switch repos[0] {
 		case LiteralCallerScoped:
 			return NewCallerScopedScope()
-		case LiteralAllRepositories, "*":
+		case LiteralAllRepositories, LiteralDeprecatedWildcard:
 			return NewWildcardScope()
 		}
 	}
@@ -42,6 +45,12 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 	for _, prof := range profiles {
 		// Check for duplicate profile names
 		if err := duplicateNameCheck(prof.Name); err != nil {
+			invalidProfiles[prof.Name] = err
+			continue
+		}
+
+		// Reject names that would produce an ambiguous URN
+		if err := validateProfileName(prof.Name); err != nil {
 			invalidProfiles[prof.Name] = err
 			continue
 		}
@@ -103,7 +112,7 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 		}
 
 		// Emit deprecation warning for "*" wildcard
-		if len(p.Repositories) == 1 && p.Repositories[0] == "*" {
+		if len(p.Repositories) == 1 && p.Repositories[0] == LiteralDeprecatedWildcard {
 			slog.Warn("organization profile: '*' is deprecated, use '{{all-repositories}}' instead",
 				"profile", p.Name,
 			)
@@ -140,6 +149,12 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 
 		// Check for duplicate profile names
 		if err := duplicateNameCheck(prof.Name); err != nil {
+			invalidProfiles[prof.Name] = err
+			continue
+		}
+
+		// Reject names that would produce an ambiguous URN
+		if err := validateProfileName(prof.Name); err != nil {
 			invalidProfiles[prof.Name] = err
 			continue
 		}
@@ -254,13 +269,26 @@ func ensureMetadataRead(permissions []string) []string {
 	return append(permissions, metadataRead)
 }
 
+// validateProfileName rejects profile names containing characters that would
+// produce an ambiguous profile URN. '/' is the URN path separator and ':' is
+// the ShortString type prefix separator (see ProfileRef.String/ShortString),
+// so a name containing either could not be represented or round-tripped
+// unambiguously — and a '/' in particular would inject extra segments into the
+// cache-key URN.
+func validateProfileName(name string) error {
+	if strings.ContainsAny(name, "/:") {
+		return fmt.Errorf("profile name %q must not contain '/' or ':'", name)
+	}
+	return nil
+}
+
 // validateRepositories validates that the repositories list follows the required format:
 // - If a literal ({{caller-scoped-repository}}, {{all-repositories}}, or "*") is present, it must be the only entry
 // - Repository names must not contain "/" (no owner prefix)
 func validateRepositories(repos []string) error {
 	for _, repo := range repos {
 		switch repo {
-		case LiteralCallerScoped, LiteralAllRepositories, "*":
+		case LiteralCallerScoped, LiteralAllRepositories, LiteralDeprecatedWildcard:
 			if len(repos) > 1 {
 				return fmt.Errorf("%q must be the only repository entry", repo)
 			}

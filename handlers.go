@@ -82,12 +82,20 @@ type ProfileRefBuilder func(ctx context.Context, pv PathValuer, explicitScope, i
 // token can actually reach. Honouring caller-supplied scope without cross-
 // checking it against a separate list is therefore safe — the caller already
 // has some legitimate claim on the profile by virtue of matching it.
+//
+// Note the blast radius this implies: a caller-scoped profile lets any caller
+// that matches it obtain a token for *any single repository the App
+// installation can reach*, with that profile's permissions. There is no
+// per-repository allow-list for caller-scoped profiles by design; the only
+// controls are the match rules, the granted permissions, and the App's
+// installation scope. Operators should pair caller-scoped profiles with
+// narrow permissions and tight match rules accordingly.
 func NewProfileRefBuilder(store *profile.ProfileStore, expectedType profile.ProfileType) ProfileRefBuilder {
 	return func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (profile.ProfileRef, error) {
 		claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
 		profileStr := pv.PathValue("profile")
 
-		ref, err := profile.NewProfileRef(claims, expectedType, profileStr, "")
+		ref, err := profile.NewProfileRef(claims, expectedType, profileStr)
 		if err != nil {
 			return profile.ProfileRef{}, err
 		}

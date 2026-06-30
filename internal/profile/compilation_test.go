@@ -1365,3 +1365,86 @@ pipeline:
 	require.NoError(t, err)
 	assert.Equal(t, NewWildcardScope(), p.Attrs.Scope)
 }
+
+func TestCompile_OrganizationProfile_InvalidProfileName(t *testing.T) {
+	// Names containing '/' or ':' would produce an ambiguous profile URN
+	// (the URN path separator and the ShortString type-prefix separator), so
+	// the compiler must reject them.
+	tests := []struct {
+		name        string
+		profileName string
+	}{
+		{"name with slash", "team/write"},
+		{"name with colon", "team:write"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yamlContent := fmt.Sprintf(`
+organization:
+  profiles:
+    - name: "%s"
+      repositories:
+        - "{{all-repositories}}"
+      permissions:
+        - "contents:read"
+
+pipeline:
+  defaults:
+    permissions:
+      - "contents:read"
+`, tt.profileName)
+
+			config, digest, err := parse(yamlContent)
+			require.NoError(t, err)
+
+			profiles, err := compile(config, digest, "local")
+			require.NoError(t, err)
+
+			_, err = profiles.GetOrgProfile(tt.profileName)
+			require.Error(t, err)
+			var unavailErr ProfileUnavailableError
+			require.ErrorAs(t, err, &unavailErr)
+		})
+	}
+}
+
+func TestCompile_PipelineProfile_InvalidProfileName(t *testing.T) {
+	yamlContent := `
+pipeline:
+  defaults:
+    permissions:
+      - "contents:read"
+  profiles:
+    - name: "team/deploy"
+      permissions:
+        - "contents:write"
+`
+	config, digest, err := parse(yamlContent)
+	require.NoError(t, err)
+
+	profiles, err := compile(config, digest, "local")
+	require.NoError(t, err)
+
+	_, err = profiles.GetPipelineProfile("team/deploy")
+	require.Error(t, err)
+	var unavailErr ProfileUnavailableError
+	require.ErrorAs(t, err, &unavailErr)
+}
+
+func TestParse_PipelineProfile_RejectsRepositoriesField(t *testing.T) {
+	// Repository literals (and a repositories list generally) are invalid on
+	// pipeline profiles (Req 1.7). The pipelineProfile struct has no
+	// Repositories field, so KnownFields(true) rejects the unknown key at parse.
+	yamlContent := `
+pipeline:
+  profiles:
+    - name: bad-pipeline
+      repositories:
+        - "{{caller-scoped-repository}}"
+      permissions:
+        - "contents:read"
+`
+	_, _, err := parse(yamlContent)
+	require.Error(t, err)
+}

@@ -39,6 +39,9 @@ func (pt ProfileType) String() string {
 // may invoke the profile at all, and GitHub is the final enforcement
 // boundary for whether a specific repository is reachable. Honouring
 // caller-supplied scope without additional cross-checks is therefore safe.
+// Note the blast radius: a caller-scoped profile lets any matching caller
+// obtain a token for any single repository the App installation can reach,
+// with that profile's permissions — there is no per-repository allow-list.
 // Only applicable to ProfileTypeOrg; repo profiles are never scoped.
 type ProfileRef struct {
 	Organization     string      // Buildkite organization slug
@@ -50,15 +53,18 @@ type ProfileRef struct {
 }
 
 // NewProfileRef constructs a ProfileRef from Buildkite claims, an expected profile type,
-// a profile string, and an optional caller-supplied repository scope.
+// and a profile string.
 // If profileStr is empty and expectedType is ProfileTypeRepo, it defaults to "default".
 // If profileStr is empty and expectedType is ProfileTypeOrg, it returns an error.
 // If profileStr contains a colon, it must be in the format "type:name" and the type must match expectedType.
 // If profileStr does not contain a colon, it uses expectedType with profileStr as the name.
-// scopedRepo is populated onto the returned ref only for ProfileTypeOrg profiles;
-// pass "" for non-scoped requests. Profile-type × scope-value validation (e.g. rejecting
-// scope on non-caller-scoped profiles) happens at the handler boundary, not here.
-func NewProfileRef(claims jwt.BuildkiteClaims, expectedType ProfileType, profileStr string, scopedRepo string) (ProfileRef, error) {
+//
+// The returned ref never carries a repository scope. ScopedRepository is the
+// sole responsibility of the ProfileRefBuilder at the handler boundary, which
+// resolves and validates caller-supplied scope (profile-type × scope-value
+// rules) before assigning the field. Keeping that logic in one place avoids a
+// second, unvalidated write path through this constructor.
+func NewProfileRef(claims jwt.BuildkiteClaims, expectedType ProfileType, profileStr string) (ProfileRef, error) {
 	profileType, profileName, err := resolveProfileTypeAndName(expectedType, profileStr)
 	if err != nil {
 		return ProfileRef{}, err
@@ -75,11 +81,6 @@ func NewProfileRef(claims jwt.BuildkiteClaims, expectedType ProfileType, profile
 	if profileType == ProfileTypeRepo {
 		ref.PipelineID = claims.PipelineID
 		ref.PipelineSlug = claims.PipelineSlug
-	}
-
-	// Repository scope is only meaningful for org profiles; repo profiles never carry it.
-	if profileType == ProfileTypeOrg {
-		ref.ScopedRepository = scopedRepo
 	}
 
 	return ref, nil

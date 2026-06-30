@@ -112,10 +112,10 @@ func TestRepositoryScope_NamesForDisplay(t *testing.T) {
 		scope    RepositoryScope
 		expected []string
 	}{
-		{"wildcard returns star", NewWildcardScope(), []string{"*"}},
+		{"wildcard returns star", NewWildcardScope(), []string{LiteralAllRepositories}},
 		{"specific returns names", NewSpecificScope("repo-a", "repo-b"), []string{"repo-a", "repo-b"}},
 		{"zero value returns nil", RepositoryScope{}, nil},
-		{"caller-scoped returns empty", NewCallerScopedScope(), []string{}},
+		{"caller-scoped returns literal", NewCallerScopedScope(), []string{LiteralCallerScoped}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,9 +172,9 @@ func TestRepositoryScope_LogValue(t *testing.T) {
 		expected slog.Value
 	}{
 		{
-			name:     "wildcard logs as star",
+			name:     "wildcard logs as all-repo literal",
 			scope:    NewWildcardScope(),
-			expected: slog.AnyValue([]string{"*"}),
+			expected: slog.AnyValue([]string{LiteralAllRepositories}),
 		},
 		{
 			name:     "specific logs names",
@@ -187,9 +187,9 @@ func TestRepositoryScope_LogValue(t *testing.T) {
 			expected: slog.AnyValue([]string(nil)),
 		},
 		{
-			name:     "caller-scoped logs empty",
+			name:     "caller-scoped logs literal",
 			scope:    NewCallerScopedScope(),
-			expected: slog.AnyValue([]string{}),
+			expected: slog.AnyValue([]string{LiteralCallerScoped}),
 		},
 	}
 	for _, tt := range tests {

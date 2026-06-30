@@ -75,7 +75,10 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 			}
 		}
 
-		// Use the GitHub API to vend a token for the repository
+		// Use the GitHub API to vend a token for the repository. For a wildcard
+		// scope repoScope.Names is nil; GitHub treats a nil/empty Repositories
+		// list as "all repositories in the installation", which is the intended
+		// all-repositories behaviour — do not "fix" this by passing an empty slice.
 		token, expiry, err := tokenVendor(ctx, repoScope.Names, authProfile.Attrs.Permissions)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not issue token for profile %s: %w", ref, err))
@@ -107,7 +110,14 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 // For caller-scoped profiles, ScopedRepository is guaranteed non-empty by the builder.
 func resolveRequestScope(profileScope profile.RepositoryScope, ref profile.ProfileRef) (profile.RepositoryScope, error) {
 	if profileScope.IsCallerScoped() {
-		// Builder guarantees ScopedRepository is non-empty for caller-scoped refs.
+		// The builder is the enforcement point and guarantees ScopedRepository is
+		// non-empty for caller-scoped refs. This guard keeps that invariant local
+		// to the vendor (which is exported and could acquire other callers) so an
+		// empty scope can never be vended as a token request for the repository
+		// name "".
+		if ref.ScopedRepository == "" {
+			return profile.RepositoryScope{}, fmt.Errorf("caller-scoped profile %q requires a non-empty repository scope", ref.Name)
+		}
 		return profile.NewSpecificScope(ref.ScopedRepository), nil
 	}
 

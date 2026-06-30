@@ -67,13 +67,18 @@ func (rs RepositoryScope) IsZero() bool {
 }
 
 // NamesForDisplay returns a human-readable representation of the scope.
-// Wildcard scopes return ["*"]; caller-scoped returns empty slice; specific scopes return their Names slice.
+// All repository and profile scoped values return their literal, keeping these
+// states distinguishable from the zero value, which returns nil); specific
+// scopes return their Names slice.
 func (rs RepositoryScope) NamesForDisplay() []string {
 	if rs.Wildcard {
-		return []string{"*"}
+		// the legacy "*" literal will be displayed using the new
+		// LiteralAllRepositories constant, but we still want to preserve the old
+		// literal for backwards compatibility
+		return []string{LiteralAllRepositories}
 	}
 	if rs.CallerScoped {
-		return []string{}
+		return []string{LiteralCallerScoped}
 	}
 	return rs.Names
 }
