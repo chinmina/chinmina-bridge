@@ -394,3 +394,31 @@ func TestAuditor_RecordsScopingMismatchError(t *testing.T) {
 		})
 	}
 }
+
+func TestAuditor_RecordsScopedRepositoryInProfileURN(t *testing.T) {
+	// Req 9.1: the audit log includes the scoped repository name. The Auditor
+	// records ref.String() in RequestedProfile, and a caller-scoped org ref's
+	// URN carries the /repository/<repo> suffix. Guards against a future change
+	// to ref.String() that dropped the suffix.
+	inner := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+		return vendor.NewVendorSuccess(vendor.ProfileToken{
+			Token:        "scoped-token",
+			Repositories: profile.NewSpecificScope("target-repo"),
+			Permissions:  []string{"contents:read"},
+		})
+	}
+
+	auditor := vendor.Auditor(inner)
+
+	ctx, _ := audit.Context(context.Background())
+	ref := profile.ProfileRef{
+		Organization:     "org",
+		Name:             "scoped-profile",
+		Type:             profile.ProfileTypeOrg,
+		ScopedRepository: "target-repo",
+	}
+	auditor(ctx, ref, "")
+
+	entry := audit.Log(ctx)
+	assert.Contains(t, entry.RequestedProfile, "/repository/target-repo")
+}

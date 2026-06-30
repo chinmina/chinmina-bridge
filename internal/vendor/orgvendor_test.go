@@ -341,12 +341,40 @@ organization:
 }
 
 func TestOrgVendor_CallerScoped_MissingScopeParameter(t *testing.T) {
-	// This test verifies that the vendor handles the case where a caller-scoped
-	// profile ref has an empty ScopedRepository. In normal operation, the builder
-	// (phase 2b) prevents this at the handler boundary. Since the builder enforces
-	// the invariant, this scenario should never occur in production. We remove this
-	// test because it's testing validation that the builder now handles.
-	t.Skip("Skipped: Builder (phase 2b) validates scope at handler boundary")
+	// Defence-in-depth (resolveRequestScope guard): the builder normally
+	// guarantees a non-empty ScopedRepository for caller-scoped profiles, but the
+	// vendor is exported. If a caller-scoped ref reaches the vendor with an empty
+	// ScopedRepository, the vendor must fail rather than vend a token for the
+	// repository name "".
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
+		t.Errorf("token vendor must not be called for an empty caller scope; got repoNames=%v", repoNames)
+		return "", time.Time{}, nil
+	})
+
+	profileYAML := `
+organization:
+  profiles:
+    - name: caller-scoped-profile
+      repositories: ["{{caller-scoped-repository}}"]
+      permissions: [contents:write]
+      match:
+        - claim: pipeline_slug
+          valuePattern: "agent-workflows.*"
+`
+
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Name:         "caller-scoped-profile",
+		Type:         profile.ProfileTypeOrg,
+		// ScopedRepository intentionally empty.
+	}
+
+	ctx := createTestClaimsContextWithPipeline("agent-workflows")
+	result := v(ctx, ref, "")
+
+	assertVendorFailure(t, result, "requires a non-empty repository scope")
 }
 
 func TestOrgVendor_ScopeProvidedToNonScopedProfile(t *testing.T) {
@@ -403,8 +431,40 @@ organization:
 	assert.Equal(t, []string{"target-repo"}, capturedRepoNames)
 }
 
-func TestOrgVendor_GitCredentials_CallerScoped_NoRepoURL_Fails(t *testing.T) {
-	t.Skip("Skipped: Builder (phase 2b) validates scope at handler boundary")
+func TestOrgVendor_GitCredentials_CallerScoped_IssuanceFailure(t *testing.T) {
+	// Req 3.1/7.1: for a caller-scoped profile, a token-issuance failure must be
+	// a vendor failure (→ 403 at the handler), never an unmatched/empty-success.
+	// Mirrors TestOrgVendor_GitCredentials_AllRepos_NoUnmatched for the
+	// caller-scoped path.
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
+		return "", time.Time{}, errors.New("GitHub API rejected request")
+	})
+
+	profileYAML := `
+organization:
+  profiles:
+    - name: caller-scoped-profile
+      repositories: ["{{caller-scoped-repository}}"]
+      permissions: [contents:write]
+      match:
+        - claim: pipeline_slug
+          valuePattern: "agent-workflows.*"
+`
+
+	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+
+	ref := profile.ProfileRef{
+		Organization:     "organization-slug",
+		Name:             "caller-scoped-profile",
+		Type:             profile.ProfileTypeOrg,
+		ScopedRepository: "target-repo",
+	}
+
+	ctx := createTestClaimsContextWithPipeline("agent-workflows")
+	result := v(ctx, ref, "https://github.com/org/target-repo")
+
+	// Must be a failure, not an unmatched (empty-success).
+	assertVendorFailure(t, result, "GitHub API rejected request")
 }
 
 func TestOrgVendor_GitCredentials_AllRepos_NoUnmatched(t *testing.T) {
