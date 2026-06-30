@@ -44,9 +44,11 @@ func (e builderError) Status() (int, string) {
 	return http.StatusBadRequest, http.StatusText(http.StatusBadRequest)
 }
 
-// PathValuer abstracts path-parameter extraction to keep the builder free of
-// HTTP-type dependencies. *http.Request satisfies this implicitly via its
-// PathValue method.
+// PathValuer abstracts path-parameter extraction so a ProfileRefBuilder can be
+// exercised without constructing a full *http.Request: test code can pass a
+// trivial stub instead. It decouples the builder from *http.Request, not the
+// handler (which is inherently HTTP and still holds the concrete request).
+// *http.Request satisfies this implicitly via its PathValue method (Go 1.22+).
 type PathValuer interface {
 	PathValue(name string) string
 }
@@ -68,6 +70,19 @@ type PathValuer interface {
 // Validation of scope against profile type is applied inside the builder,
 // centralising the authorisation-boundary logic and keeping the handler
 // focused on transport concerns.
+//
+// Endpoint asymmetry — why only /organization/token surfaces scope-mismatch
+// errors to the caller: implicitScope is ALWAYS present on a git-credentials
+// request (Git always sends the repository URL), so it carries no caller
+// intent — it cannot be "absent" by choice, and it is never read as an
+// explicit scope request. Consequently:
+//   - RepositoryScopeUnexpectedError (Reqs 2.2/5.2) can only originate from
+//     explicitScope, i.e. only at /organization/token. git-credentials silently
+//     ignores the body URL for non-caller-scoped profiles.
+//   - RepositoryScopeRequiredError (Req 2.3) is a caller-facing signal only at
+//     /organization/token; at git-credentials it arises solely when the body
+//     URL fails to resolve to a repository (e.g. a non-github.com host) — a
+//     structural failure, not a scope choice.
 type ProfileRefBuilder func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (profile.ProfileRef, error)
 
 // NewProfileRefBuilder returns a ProfileRefBuilder closed over the given
@@ -433,8 +448,11 @@ func requestError(ctx context.Context, w http.ResponseWriter, statusCode int, er
 // for connection reuse in HTTP/1 clients.
 func drainRequestBody(r *http.Request) {
 	if r.Body != nil {
-		// 5kb max: after this we'll assume the client is broken or malicious
-		// and close the connection
+		// Drain up to 5 MiB to help HTTP/1 connection reuse. In practice the
+		// MaxBytesReader installed by the request-size middleware (maxRequestSize,
+		// 20 KiB) caps r.Body well below this, so the effective drain is bounded
+		// by that cap; the 5 MiB here is defensive headroom if the middleware
+		// stack changes.
 		_, _ = io.CopyN(io.Discard, r.Body, 5*1024*1024)
 	}
 }
