@@ -992,6 +992,10 @@ func TestExtractRepositoryScope_Invalid(t *testing.T) {
 		{"contains slash", "repository-scope=owner/repo"},
 		{"empty value", "repository-scope="},
 		{"whitespace only", "repository-scope=%20%20"},
+		{"leading whitespace", "repository-scope=%20repo"},
+		{"trailing whitespace", "repository-scope=repo%20"},
+		{"internal tab", "repository-scope=re%09po"},
+		{"newline", "repository-scope=re%0Apo"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -999,6 +1003,27 @@ func TestExtractRepositoryScope_Invalid(t *testing.T) {
 			require.NoError(t, err)
 			_, err = extractRepositoryScope(req)
 			require.Error(t, err)
+		})
+	}
+}
+
+func TestDeriveScopeFromRepoURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		repoURL  string
+		expected string
+	}{
+		{"github single-segment repo", "https://github.com/acme/widget", "widget"},
+		{"github repo with .git suffix", "https://github.com/acme/widget.git", "widget"},
+		// A multi-segment path leaves a '/' in the derived repo name, which the
+		// shared validateRepositoryScope rejects (F-02): same rule as the query
+		// param channel, so it falls back to "" (unscoped → 400 for caller-scoped).
+		{"multi-segment path rejected", "https://github.com/acme/sub/widget", ""},
+		{"non-github host yields empty", "https://example.com/acme/widget", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, deriveScopeFromRepoURL(tt.repoURL))
 		})
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
@@ -124,33 +125,62 @@ func NewProfileRefBuilder(store *profile.ProfileStore, expectedType profile.Prof
 	}
 }
 
+// validateRepositoryScope rejects repository-scope values that are unsafe or
+// malformed: empty/whitespace-only, containing '/', or containing any
+// whitespace or control characters. Surrounding whitespace is rejected rather
+// than silently trimmed so the caller-supplied value reaches GitHub and the
+// cache key verbatim (Req 6.3: no normalization). The same validation is
+// applied to both scope channels — the ?repository-scope= query parameter and
+// the repository name derived from a git-credentials request URL — so a value
+// forbidden on one channel cannot slip through the other.
+func validateRepositoryScope(scope string) error {
+	if strings.TrimSpace(scope) == "" {
+		return fmt.Errorf("repository-scope must not be empty")
+	}
+	if strings.Contains(scope, "/") {
+		return fmt.Errorf("repository-scope must not contain '/'")
+	}
+	if strings.ContainsFunc(scope, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r)
+	}) {
+		return fmt.Errorf("repository-scope must not contain whitespace or control characters")
+	}
+	return nil
+}
+
 // deriveScopeFromRepoURL extracts the repository-name component from a
 // git-credentials request URL (e.g. "https://github.com/acme/widget" →
-// "widget"). Returns "" if the URL is unparseable or does not resolve to a
-// GitHub org/repo pair; callers then fall back to unscoped behaviour.
+// "widget"). Returns "" if the URL is unparseable, does not resolve to a
+// GitHub org/repo pair, or fails the same validation as the query-param
+// channel (validateRepositoryScope) — e.g. a multi-segment path that would
+// leave a '/' in the derived name. Callers then fall back to unscoped
+// behaviour, which for a caller-scoped profile surfaces as a 400.
 func deriveScopeFromRepoURL(repoURL string) string {
 	u, err := url.Parse(repoURL)
 	if err != nil {
 		return ""
 	}
 	_, repo := github.RepoForURL(*u)
+	if repo == "" {
+		return ""
+	}
+	if err := validateRepositoryScope(repo); err != nil {
+		return ""
+	}
 	return repo
 }
 
 // extractRepositoryScope extracts and validates the repository-scope query parameter.
 // Returns empty string if the parameter is absent.
-// Returns an error if the parameter is present but invalid (empty, whitespace-only, or contains '/').
+// Returns an error if the parameter is present but invalid (see validateRepositoryScope).
 func extractRepositoryScope(r *http.Request) (string, error) {
 	if !r.URL.Query().Has("repository-scope") {
 		return "", nil
 	}
 
 	scope := r.URL.Query().Get("repository-scope")
-	if strings.TrimSpace(scope) == "" {
-		return "", fmt.Errorf("repository-scope must not be empty")
-	}
-	if strings.Contains(scope, "/") {
-		return "", fmt.Errorf("repository-scope must not contain '/'")
+	if err := validateRepositoryScope(scope); err != nil {
+		return "", err
 	}
 	return scope, nil
 }
