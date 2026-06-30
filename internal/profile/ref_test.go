@@ -430,14 +430,22 @@ func TestParseProfileRef_Failure(t *testing.T) {
 }
 
 func TestParseProfileRef_RejectsScopeOnPipelineRef(t *testing.T) {
-	// Pipeline/repo refs never carry repository scope.
-	// Old format has 4 parts after org; new format has 6. A 5-part form between
-	// them is ambiguous, but any attempt to bolt /repository/ onto a repo ref
-	// must not round-trip as a scoped repo profile.
+	// Pipeline/repo refs never carry repository scope. The (test-only) parser
+	// currently DROPS a trailing /repository/<repo> segment on a pipeline URN
+	// rather than erroring (the extra-slashes-ignored behaviour). Assert the
+	// whole parsed struct so the contract is explicit: the result is the
+	// non-scoped pipeline ref, and a future parser change that mis-routed the
+	// repo into any field (including ScopedRepository) would fail here.
 	urn := "profile://organization/acme/pipeline/pipeline-id/pipeline-slug/profile/default/repository/repo-a"
 	parsed, err := ParseProfileRef(urn)
-	require.NoError(t, err) // parser currently stops at "default" via TestParseProfileRef_ExtraSlashesIgnored semantics
-	assert.Empty(t, parsed.ScopedRepository, "repo profiles must never carry ScopedRepository")
+	require.NoError(t, err)
+	assert.Equal(t, ProfileRef{
+		Organization: "acme",
+		Type:         ProfileTypeRepo,
+		Name:         "default",
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "pipeline-slug",
+	}, parsed)
 }
 
 func TestProfileType_String(t *testing.T) {
