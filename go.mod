@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.42.5
 	github.com/buildkite/go-buildkite/v4 v4.18.0
 	github.com/chinmina/iamcacheauth v1.0.0
-	github.com/docker/go-connections v0.6.0
+	github.com/docker/go-connections v0.7.0
 	github.com/gkampitakis/go-snaps v0.5.22
 	github.com/go-logr/logr v1.4.3
 	github.com/google/go-github/v84 v84.0.0
