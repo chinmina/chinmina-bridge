@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	api "github.com/buildkite/go-buildkite/v4"
+	api "github.com/buildkite/go-buildkite/v5"
 	"github.com/chinmina/chinmina-bridge/internal/buildkite"
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/stretchr/testify/assert"
