@@ -13,7 +13,7 @@ require (
 	github.com/gkampitakis/go-snaps v0.5.22
 	github.com/go-logr/logr v1.4.3
 	github.com/google/go-github/v84 v84.0.0
-	github.com/grafana/otel-profiling-go v0.5.1
+	github.com/grafana/otel-profiling-go v0.6.0
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/jferrl/go-githubauth v1.5.1
 	github.com/justinas/alice v1.2.0
