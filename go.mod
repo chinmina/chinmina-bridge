@@ -15,7 +15,7 @@ require (
 	github.com/google/go-github/v84 v84.0.0
 	github.com/grafana/otel-profiling-go v0.5.1
 	github.com/grafana/pyroscope-go v1.2.8
-	github.com/jferrl/go-githubauth v1.5.1
+	github.com/jferrl/go-githubauth v1.7.0
 	github.com/justinas/alice v1.2.0
 	github.com/lestrrat-go/jwx/v3 v3.0.13
 	github.com/maypok86/otter/v2 v2.3.0
