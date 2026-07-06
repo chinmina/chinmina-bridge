@@ -23,7 +23,7 @@ require (
 	github.com/sethvargo/go-envconfig v1.3.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.41.0
-	github.com/tink-crypto/tink-go-awskms/v3 v3.0.0-test
+	github.com/tink-crypto/tink-go-awskms/v3 v3.0.0
 	github.com/tink-crypto/tink-go/v2 v2.6.0
 	github.com/valkey-io/valkey-go v1.0.73
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.43.0
