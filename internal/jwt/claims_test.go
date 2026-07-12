@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
+	jwxjwt "github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

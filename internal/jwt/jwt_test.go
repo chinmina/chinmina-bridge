@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/justinas/alice"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v3"
 	"github.com/chinmina/chinmina-bridge/internal/audit"

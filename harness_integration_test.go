@@ -20,7 +20,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
-	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
+	jwxjwt "github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/stretchr/testify/require"
 	"github.com/valkey-io/valkey-go"
 )
