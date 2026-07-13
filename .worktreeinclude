@@ -1,6 +1,7 @@
 integration/**
 .claude/settings.local.json
 .development/keys/**
+.development/app/**
 .envrc.private
 .serena/**
 !.serena/logs/
