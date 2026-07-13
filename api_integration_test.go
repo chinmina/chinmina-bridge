@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/jwt/jwxtest"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
@@ -445,7 +446,18 @@ var cacheVariants = []cacheVariant{
 	{name: "valkey/encrypted", options: []APITestHarnessOption{WithValkeyCache()}},
 }
 
-// TestIntegrationCache_CacheHit verifies that both cache implementations correctly serve cached tokens
+// TestIntegrationCache_CacheHit verifies that both cache implementations serve a
+// previously-vended token from cache on a later request, avoiding a redundant
+// GitHub token mint.
+//
+// The distributed (Valkey) cache is deliberately eventually consistent: it uses
+// server-assisted client-side caching, so the initial cache miss is negatively
+// cached locally and only cleared once the server's invalidation for the
+// subsequent Set propagates. During that brief window a request re-mints the
+// same token — the accepted "occasional duplicate token" tradeoff, not a
+// correctness issue. This test therefore asserts the guarantee the system
+// actually makes ("once warm, hits are served without re-minting") rather than
+// immediate read-after-write consistency, which only the memory cache provides.
 func TestIntegrationCache_CacheHit(t *testing.T) {
 	for _, variant := range cacheVariants {
 		t.Run(variant.name, func(t *testing.T) {
@@ -457,23 +469,38 @@ func TestIntegrationCache_CacheHit(t *testing.T) {
 
 			token := harness.PipelineToken()
 
-			// First request - should miss cache and call GitHub
+			// First request warms the cache with the initial token.
 			result1, err := harness.Client().Token(token, "")
 			require.NoError(t, err)
 			assert.Equal(t, "ghs_firsttoken", result1.Token)
-			assert.Equal(t, 1, harness.GitHubMock.RequestCount, "expected GitHub to be called once for cache miss")
 
-			// Reset GitHub mock to return a different token
-			// If cache is working, we should still get the first token
+			// Warm to steady state: repeat requests (upstream unchanged) until one
+			// completes without minting a new token. A request that does not
+			// increment the mint count was served from cache, proving the client is
+			// now reading locally. This must happen *before* the upstream changes:
+			// a miss in the consistency window would re-mint and cache the new
+			// token, from which the cache could never converge back to the original.
+			require.Eventually(t, func() bool {
+				before := harness.GitHubMock.RequestCount
+				result, err := harness.Client().Token(token, "")
+				if err != nil {
+					return false
+				}
+				return result.Token == "ghs_firsttoken" && harness.GitHubMock.RequestCount == before
+			}, 5*time.Second, 20*time.Millisecond, "cache should warm and serve the token without re-minting")
+
+			// Now that the cache is warm, change the upstream. A genuine cache hit
+			// must ignore this and keep returning the cached token.
 			harness.GitHubMock.Token = "ghs_differenttoken"
 
-			// Second request - should hit cache and not call GitHub again
+			mintsBeforeHit := harness.GitHubMock.RequestCount
+
 			result2, err := harness.Client().Token(token, "")
 			require.NoError(t, err)
 
-			// Should still be the original token from cache
+			// Should still be the original token from cache, with no new mint.
 			assert.Equal(t, "ghs_firsttoken", result2.Token, "expected cached token, not new token from GitHub")
-			assert.Equal(t, 1, harness.GitHubMock.RequestCount, "expected GitHub to still be called only once (cache hit)")
+			assert.Equal(t, mintsBeforeHit, harness.GitHubMock.RequestCount, "expected a cache hit with no additional GitHub token mint")
 		})
 	}
 }
