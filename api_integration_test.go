@@ -699,88 +699,55 @@ func TestIntegrationOrganizationToken_CallerScoped_Success(t *testing.T) {
 	assert.Equal(t, profile.NewSpecificScope("my-repo"), result.Repositories)
 }
 
-func TestIntegrationOrganizationToken_CallerScoped_MissingScope(t *testing.T) {
-	harness := NewAPITestHarness(t)
+func TestIntegrationOrganizationToken_ScopeValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+		scope   string
+	}{
+		{
+			name:    "caller-scoped profile with missing scope",
+			profile: "caller-scoped-profile",
+			scope:   "",
+		},
+		{
+			name:    "static-list profile rejects scope",
+			profile: "static-profile",
+			scope:   "unwanted-scope",
+		},
+		{
+			name:    "all-repos profile rejects scope",
+			profile: "all-repos-profile",
+			scope:   "unwanted-scope",
+		},
+		{
+			name:    "invalid scope containing slash",
+			profile: "caller-scoped-profile",
+			scope:   "owner/repo",
+		},
+	}
 
-	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			harness := NewAPITestHarness(t)
 
-	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
-	require.NoError(t, err)
-	harness.ProfileStore.Update(t.Context(), profiles)
+			yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+			require.NoError(t, err)
 
-	token := harness.PipelineToken()
+			profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+			require.NoError(t, err)
+			harness.ProfileStore.Update(t.Context(), profiles)
 
-	// Call without repository-scope — should fail
-	_, err = harness.Client().OrganizationTokenScoped(token, "caller-scoped-profile", "")
-	require.Error(t, err)
+			token := harness.PipelineToken()
 
-	var apiErr *APIError
-	require.ErrorAs(t, err, &apiErr)
-	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
-}
+			_, err = harness.Client().OrganizationTokenScoped(token, tt.profile, tt.scope)
+			require.Error(t, err)
 
-func TestIntegrationOrganizationToken_StaticProfile_RejectsScope(t *testing.T) {
-	harness := NewAPITestHarness(t)
-
-	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
-	require.NoError(t, err)
-
-	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
-	require.NoError(t, err)
-	harness.ProfileStore.Update(t.Context(), profiles)
-
-	token := harness.PipelineToken()
-
-	// Provide repository-scope to a static-list profile — should fail
-	_, err = harness.Client().OrganizationTokenScoped(token, "static-profile", "unwanted-scope")
-	require.Error(t, err)
-
-	var apiErr *APIError
-	require.ErrorAs(t, err, &apiErr)
-	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
-}
-
-func TestIntegrationOrganizationToken_AllRepos_RejectsScope(t *testing.T) {
-	harness := NewAPITestHarness(t)
-
-	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
-	require.NoError(t, err)
-
-	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
-	require.NoError(t, err)
-	harness.ProfileStore.Update(t.Context(), profiles)
-
-	token := harness.PipelineToken()
-
-	// Provide repository-scope to an all-repos profile — should fail
-	_, err = harness.Client().OrganizationTokenScoped(token, "all-repos-profile", "unwanted-scope")
-	require.Error(t, err)
-
-	var apiErr *APIError
-	require.ErrorAs(t, err, &apiErr)
-	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
-}
-
-func TestIntegrationOrganizationToken_InvalidScope_Slash(t *testing.T) {
-	harness := NewAPITestHarness(t)
-
-	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
-	require.NoError(t, err)
-
-	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
-	require.NoError(t, err)
-	harness.ProfileStore.Update(t.Context(), profiles)
-
-	token := harness.PipelineToken()
-
-	// Provide invalid repository-scope with slash — should fail with 400
-	_, err = harness.Client().OrganizationTokenScoped(token, "caller-scoped-profile", "owner/repo")
-	require.Error(t, err)
-
-	var apiErr *APIError
-	require.ErrorAs(t, err, &apiErr)
-	assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+			var apiErr *APIError
+			require.ErrorAs(t, err, &apiErr)
+			assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+		})
+	}
 }
 
 func TestIntegrationOrganizationGitCredentials_CallerScoped_Success(t *testing.T) {
