@@ -85,8 +85,9 @@ Spawn a single subagent with `subagent_type: general-purpose` and
 > You write augmented release notes from pre-digested PR summaries. Read the
 > instructions at `<skill>/references/synthesize-notes.md` and follow them
 > exactly. Your WORK directory is `<WORK>`. Write the finished notes to
-> `<NOTES_FILE>`. Reply only with the path you wrote and a two-line summary of
-> the release's themes.
+> `<NOTES_FILE>` and the release title to `<WORK>/title.txt`. Reply only with
+> the title you chose, the path you wrote, and a two-line summary of the
+> release's themes.
 
 ## Step 4 — Verify
 
@@ -100,13 +101,16 @@ with the mismatch noted) — do not hand-edit the notes yourself.
 
 ## Step 5 — Review and publish
 
-Read `NOTES_FILE` now (this is the finished, compact result — reading it here is
-fine) and show the user the Highlights plus the file path. Publishing edits a
-public release, so **do not publish without explicit confirmation.** On the
-user's go-ahead:
+Read `NOTES_FILE` and `<WORK>/title.txt` now (the finished, compact results —
+reading them here is fine) and show the user the release title and Highlights
+plus the file path. Publishing edits a public release, so **do not publish
+without explicit confirmation.** On the user's go-ahead (`--title` sets the
+release's display name):
 
 ```bash
-gh release edit <tag> --repo <REPO> --notes-file <NOTES_FILE>
+gh release edit <tag> --repo <REPO> \
+  --title "$(cat <WORK>/title.txt)" \
+  --notes-file <NOTES_FILE>
 ```
 
 ## Notes
