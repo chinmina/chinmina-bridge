@@ -214,6 +214,16 @@ func TestProfileRef_String_CanonicalFormat(t *testing.T) {
 			},
 			expected: "profile://organization/acme/profile/write-packages",
 		},
+		{
+			name: "org profile with scoped repository",
+			ref: ProfileRef{
+				Organization:     "acme",
+				Type:             ProfileTypeOrg,
+				Name:             "write-packages",
+				ScopedRepository: "repo-a",
+			},
+			expected: "profile://organization/acme/profile/write-packages/repository/repo-a",
+		},
 	}
 
 	for _, tt := range tests {
@@ -245,6 +255,15 @@ func TestProfileRef_ShortString(t *testing.T) {
 			},
 			expected: "org:write-packages",
 		},
+		{
+			name: "org profile with scoped repository",
+			ref: ProfileRef{
+				Type:             ProfileTypeOrg,
+				Name:             "write-packages",
+				ScopedRepository: "repo-a",
+			},
+			expected: "org:write-packages/repo-a",
+		},
 	}
 
 	for _, tt := range tests {
@@ -275,6 +294,15 @@ func TestParseProfileRef_Roundtrip(t *testing.T) {
 				Organization: "acme",
 				Type:         ProfileTypeOrg,
 				Name:         "write-packages",
+			},
+		},
+		{
+			name: "org profile with scoped repository",
+			ref: ProfileRef{
+				Organization:     "acme",
+				Type:             ProfileTypeOrg,
+				Name:             "write-packages",
+				ScopedRepository: "repo-a",
 			},
 		},
 	}
@@ -375,6 +403,21 @@ func TestParseProfileRef_Failure(t *testing.T) {
 			urn:      "profile://organization/acme/unknown/value/name",
 			errorMsg: "could not determine profile type",
 		},
+		{
+			name:     "org scope trailing empty",
+			urn:      "profile://organization/acme/profile/write-packages/repository/",
+			errorMsg: "malformed org profile suffix",
+		},
+		{
+			name:     "org scope extra segments",
+			urn:      "profile://organization/acme/profile/write-packages/repository/repo-a/extra",
+			errorMsg: "malformed org profile suffix",
+		},
+		{
+			name:     "org malformed suffix not repository",
+			urn:      "profile://organization/acme/profile/write-packages/other/value",
+			errorMsg: "malformed org profile suffix",
+		},
 	}
 
 	for _, tt := range tests {
@@ -384,6 +427,25 @@ func TestParseProfileRef_Failure(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.errorMsg)
 		})
 	}
+}
+
+func TestParseProfileRef_RejectsScopeOnPipelineRef(t *testing.T) {
+	// Pipeline/repo refs never carry repository scope. The (test-only) parser
+	// currently DROPS a trailing /repository/<repo> segment on a pipeline URN
+	// rather than erroring (the extra-slashes-ignored behaviour). Assert the
+	// whole parsed struct so the contract is explicit: the result is the
+	// non-scoped pipeline ref, and a future parser change that mis-routed the
+	// repo into any field (including ScopedRepository) would fail here.
+	urn := "profile://organization/acme/pipeline/pipeline-id/pipeline-slug/profile/default/repository/repo-a"
+	parsed, err := ParseProfileRef(urn)
+	require.NoError(t, err)
+	assert.Equal(t, ProfileRef{
+		Organization: "acme",
+		Type:         ProfileTypeRepo,
+		Name:         "default",
+		PipelineID:   "pipeline-id",
+		PipelineSlug: "pipeline-slug",
+	}, parsed)
 }
 
 func TestProfileType_String(t *testing.T) {
@@ -409,6 +471,30 @@ func TestProfileType_String(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.pt.String())
 		})
 	}
+}
+
+func TestNewProfileRef_ScopedRepository(t *testing.T) {
+	claims := jwt.BuildkiteClaims{
+		OrganizationSlug: "acme",
+		PipelineID:       "pipeline-id",
+		PipelineSlug:     "pipeline-slug",
+	}
+
+	// NewProfileRef never populates ScopedRepository: caller-supplied scope is
+	// resolved and assigned by the ProfileRefBuilder at the handler boundary,
+	// not by this constructor.
+	t.Run("org ref leaves ScopedRepository unset", func(t *testing.T) {
+		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages")
+		require.NoError(t, err)
+		assert.Empty(t, ref.ScopedRepository)
+	})
+
+	t.Run("ScopedRepository is assignable on the ref (as the builder does)", func(t *testing.T) {
+		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages")
+		require.NoError(t, err)
+		ref.ScopedRepository = "repo-a"
+		assert.Equal(t, "repo-a", ref.ScopedRepository)
+	})
 }
 
 func TestNewProfileRef_PipelineFieldsOnlySetForRepo(t *testing.T) {

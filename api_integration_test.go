@@ -7,8 +7,10 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/jwt/jwxtest"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/lestrrat-go/jwx/v3/jwt"
@@ -444,7 +446,18 @@ var cacheVariants = []cacheVariant{
 	{name: "valkey/encrypted", options: []APITestHarnessOption{WithValkeyCache()}},
 }
 
-// TestIntegrationCache_CacheHit verifies that both cache implementations correctly serve cached tokens
+// TestIntegrationCache_CacheHit verifies that both cache implementations serve a
+// previously-vended token from cache on a later request, avoiding a redundant
+// GitHub token mint.
+//
+// The distributed (Valkey) cache is deliberately eventually consistent: it uses
+// server-assisted client-side caching, so the initial cache miss is negatively
+// cached locally and only cleared once the server's invalidation for the
+// subsequent Set propagates. During that brief window a request re-mints the
+// same token — the accepted "occasional duplicate token" tradeoff, not a
+// correctness issue. This test therefore asserts the guarantee the system
+// actually makes ("once warm, hits are served without re-minting") rather than
+// immediate read-after-write consistency, which only the memory cache provides.
 func TestIntegrationCache_CacheHit(t *testing.T) {
 	for _, variant := range cacheVariants {
 		t.Run(variant.name, func(t *testing.T) {
@@ -456,23 +469,38 @@ func TestIntegrationCache_CacheHit(t *testing.T) {
 
 			token := harness.PipelineToken()
 
-			// First request - should miss cache and call GitHub
+			// First request warms the cache with the initial token.
 			result1, err := harness.Client().Token(token, "")
 			require.NoError(t, err)
 			assert.Equal(t, "ghs_firsttoken", result1.Token)
-			assert.Equal(t, 1, harness.GitHubMock.RequestCount, "expected GitHub to be called once for cache miss")
 
-			// Reset GitHub mock to return a different token
-			// If cache is working, we should still get the first token
+			// Warm to steady state: repeat requests (upstream unchanged) until one
+			// completes without minting a new token. A request that does not
+			// increment the mint count was served from cache, proving the client is
+			// now reading locally. This must happen *before* the upstream changes:
+			// a miss in the consistency window would re-mint and cache the new
+			// token, from which the cache could never converge back to the original.
+			require.Eventually(t, func() bool {
+				before := harness.GitHubMock.RequestCount
+				result, err := harness.Client().Token(token, "")
+				if err != nil {
+					return false
+				}
+				return result.Token == "ghs_firsttoken" && harness.GitHubMock.RequestCount == before
+			}, 5*time.Second, 20*time.Millisecond, "cache should warm and serve the token without re-minting")
+
+			// Now that the cache is warm, change the upstream. A genuine cache hit
+			// must ignore this and keep returning the cached token.
 			harness.GitHubMock.Token = "ghs_differenttoken"
 
-			// Second request - should hit cache and not call GitHub again
+			mintsBeforeHit := harness.GitHubMock.RequestCount
+
 			result2, err := harness.Client().Token(token, "")
 			require.NoError(t, err)
 
-			// Should still be the original token from cache
+			// Should still be the original token from cache, with no new mint.
 			assert.Equal(t, "ghs_firsttoken", result2.Token, "expected cached token, not new token from GitHub")
-			assert.Equal(t, 1, harness.GitHubMock.RequestCount, "expected GitHub to still be called only once (cache hit)")
+			assert.Equal(t, mintsBeforeHit, harness.GitHubMock.RequestCount, "expected a cache hit with no additional GitHub token mint")
 		})
 	}
 }
@@ -641,4 +669,133 @@ func TestIntegrationBasePath(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	})
+}
+
+// ============================================================================
+// Dynamic Repository Scoping Tests
+// ============================================================================
+
+func TestIntegrationOrganizationToken_CallerScoped_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	harness.GitHubMock.Token = "ghs_scoped_token"
+
+	token := harness.PipelineToken()
+
+	result, err := harness.Client().OrganizationTokenScoped(token, "caller-scoped-profile", "my-repo")
+	require.NoError(t, err)
+
+	assert.Equal(t, "ghs_scoped_token", result.Token)
+	// Scoped URN short form: org:<profile>/<repo> — the ref now carries
+	// ScopedRepository, so downstream rendering picks it up automatically.
+	assert.Equal(t, "org:caller-scoped-profile/my-repo", result.Profile)
+	assert.Equal(t, profile.NewSpecificScope("my-repo"), result.Repositories)
+}
+
+func TestIntegrationOrganizationToken_ScopeValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+		scope   string
+	}{
+		{
+			name:    "caller-scoped profile with missing scope",
+			profile: "caller-scoped-profile",
+			scope:   "",
+		},
+		{
+			name:    "static-list profile rejects scope",
+			profile: "static-profile",
+			scope:   "unwanted-scope",
+		},
+		{
+			name:    "all-repos profile rejects scope",
+			profile: "all-repos-profile",
+			scope:   "unwanted-scope",
+		},
+		{
+			name:    "invalid scope containing slash",
+			profile: "caller-scoped-profile",
+			scope:   "owner/repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			harness := NewAPITestHarness(t)
+
+			yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+			require.NoError(t, err)
+
+			profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+			require.NoError(t, err)
+			harness.ProfileStore.Update(t.Context(), profiles)
+
+			token := harness.PipelineToken()
+
+			_, err = harness.Client().OrganizationTokenScoped(token, tt.profile, tt.scope)
+			require.Error(t, err)
+
+			var apiErr *APIError
+			require.ErrorAs(t, err, &apiErr)
+			assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+		})
+	}
+}
+
+func TestIntegrationOrganizationGitCredentials_CallerScoped_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	harness.GitHubMock.Token = "ghs_scoped_creds"
+
+	token := harness.PipelineToken()
+
+	// Git-credentials derives scope from the request body (path field)
+	props, err := harness.Client().OrganizationGitCredentials(token, "caller-scoped-profile", GitCredentialRequest{
+		Protocol: "https",
+		Host:     "github.com",
+		Path:     "test-org/target-repo",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "ghs_scoped_creds", props.Get("password"))
+	assert.Equal(t, "test-org/target-repo", props.Get("path"))
+}
+
+func TestIntegrationOrganizationGitCredentials_AllRepos_Success(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	harness.GitHubMock.Token = "ghs_allrepos_creds"
+
+	token := harness.PipelineToken()
+
+	props, err := harness.Client().OrganizationGitCredentials(token, "all-repos-profile", GitCredentialRequest{
+		Protocol: "https",
+		Host:     "github.com",
+		Path:     "test-org/any-repo",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "ghs_allrepos_creds", props.Get("password"))
 }

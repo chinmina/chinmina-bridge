@@ -111,6 +111,34 @@ func (e ProfileMatchFailedError) Status() (int, string) {
 	return http.StatusForbidden, http.StatusText(http.StatusForbidden)
 }
 
+// RepositoryScopeUnexpectedError indicates a repository-scope was provided
+// to a profile that does not accept caller scoping.
+type RepositoryScopeUnexpectedError struct {
+	ProfileName string
+}
+
+func (e RepositoryScopeUnexpectedError) Error() string {
+	return fmt.Sprintf("profile %q does not accept repository scoping", e.ProfileName)
+}
+
+func (e RepositoryScopeUnexpectedError) Status() (int, string) {
+	return http.StatusBadRequest, "profile does not accept repository scoping"
+}
+
+// RepositoryScopeRequiredError indicates a repository-scope was not provided
+// but the profile requires one.
+type RepositoryScopeRequiredError struct {
+	ProfileName string
+}
+
+func (e RepositoryScopeRequiredError) Error() string {
+	return fmt.Sprintf("profile %q requires a repository scope", e.ProfileName)
+}
+
+func (e RepositoryScopeRequiredError) Status() (int, string) {
+	return http.StatusBadRequest, "repository scope is required for this profile"
+}
+
 // parse deserializes YAML into profileConfig and calculates digest.
 // Fails on YAML parsing issues including unknown properties.
 func parse(yamlContent string) (profileConfig, string, error) {

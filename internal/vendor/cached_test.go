@@ -3,6 +3,7 @@ package vendor_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -617,6 +619,153 @@ func (m *mutableDigester) Digest() string {
 	return m.digest
 }
 
+// TestCacheCallerScoped_DifferentReposAreSeparateEntries verifies that different
+// repositories under the same caller-scoped profile get separate cache entries.
+// Distinctness comes from ref.String() which embeds ScopedRepository (Phase 1),
+// not from the repositoryScope parameter.
+func TestCacheCallerScoped_DifferentReposAreSeparateEntries(t *testing.T) {
+	wrapped := sequenceVendor("token-for-repo-a", "token-for-repo-b", "token-for-repo-a")
+
+	c := newTestCached(t, defaultTTL, "test-digest")
+	v := c(wrapped)
+
+	refA := profile.ProfileRef{
+		Organization:     "org",
+		Name:             "scoped-profile",
+		Type:             profile.ProfileTypeOrg,
+		ScopedRepository: "repo-a",
+	}
+
+	refB := profile.ProfileRef{
+		Organization:     "org",
+		Name:             "scoped-profile",
+		Type:             profile.ProfileTypeOrg,
+		ScopedRepository: "repo-b",
+	}
+
+	// First call with repo-a scoped ref: cache miss
+	result := v(context.Background(), refA, "")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token := result.Token()
+	assert.Equal(t, "token-for-repo-a", token.Token)
+	// The vended token must carry the narrow single-repo scope, not a wildcard.
+	assert.Equal(t, profile.NewSpecificScope("repo-a"), token.Repositories)
+
+	// Second call with repo-b scoped ref: must also miss (different cache key from ref.String())
+	result = v(context.Background(), refB, "")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token = result.Token()
+	assert.Equal(t, "token-for-repo-b", token.Token)
+	assert.Equal(t, profile.NewSpecificScope("repo-b"), token.Repositories)
+
+	// Third call with repo-a scoped ref again: cache hit (returns first token)
+	result = v(context.Background(), refA, "")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token = result.Token()
+	assert.Equal(t, "token-for-repo-a", token.Token)
+}
+
+// TestCacheCallerScoped_GitCredentialsPath_DistinctCacheEntries verifies that
+// git-credentials requests with different scoped repos produce distinct cache entries.
+func TestCacheCallerScoped_GitCredentialsPath_DistinctCacheEntries(t *testing.T) {
+	wrapped := sequenceVendor("git-token-repo-a", "git-token-repo-b", "git-token-repo-a")
+
+	c := newTestCached(t, defaultTTL, "test-digest")
+	v := c(wrapped)
+
+	refA := profile.ProfileRef{
+		Organization:     "org",
+		Name:             "scoped-profile",
+		Type:             profile.ProfileTypeOrg,
+		ScopedRepository: "repo-a",
+	}
+
+	refB := profile.ProfileRef{
+		Organization:     "org",
+		Name:             "scoped-profile",
+		Type:             profile.ProfileTypeOrg,
+		ScopedRepository: "repo-b",
+	}
+
+	// First git-credentials call for repo-a: cache miss
+	result := v(context.Background(), refA, "https://github.com/test-org/repo-a.git")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token := result.Token()
+	assert.Equal(t, "git-token-repo-a", token.Token)
+
+	// Second git-credentials call for repo-b: must also miss (different cache key from ref.String())
+	result = v(context.Background(), refB, "https://github.com/test-org/repo-b.git")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token = result.Token()
+	assert.Equal(t, "git-token-repo-b", token.Token)
+
+	// Third git-credentials call for repo-a again: cache hit (returns first token)
+	result = v(context.Background(), refA, "https://github.com/test-org/repo-a.git")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token = result.Token()
+	assert.Equal(t, "git-token-repo-a", token.Token)
+}
+
+// TestCacheCallerScoped_SameScopeIsCacheHit verifies that two identical
+// caller-scoped requests return a cached token.
+func TestCacheCallerScoped_SameScopeIsCacheHit(t *testing.T) {
+	wrapped := sequenceVendor("cached-token", "should-not-be-called")
+
+	c := newTestCached(t, defaultTTL, "test-digest")
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization:     "org",
+		Name:             "scoped-profile",
+		Type:             profile.ProfileTypeOrg,
+		ScopedRepository: "repo-a",
+	}
+
+	// First call: cache miss, vends token
+	result := v(context.Background(), ref, "")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token := result.Token()
+	assert.Equal(t, "cached-token", token.Token)
+
+	// Second call with identical ref: cache hit, returns same token
+	// If the wrapped vendor were called, it would return "should-not-be-called" and fail
+	result = v(context.Background(), ref, "")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token = result.Token()
+	assert.Equal(t, "cached-token", token.Token)
+}
+
+// TestCacheAllRepositories_SameCallGetsCacheHit verifies that an
+// all-repositories profile caches on a key with no repository component, so a
+// repeat request is a cache hit. Note the cache key is keyed by profile *name*
+// (via ref.String()), not by scope type: a "*" profile and an
+// "{{all-repositories}}" profile resolve to the same wildcard scope but, having
+// different names, occupy different cache entries — which is correct.
+func TestCacheAllRepositories_SameCallGetsCacheHit(t *testing.T) {
+	wrapped := sequenceVendor("first-call", "should-not-be-called")
+
+	c := newTestCached(t, defaultTTL, "test-digest")
+	v := c(wrapped)
+
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "all-repos-profile",
+		Type:         profile.ProfileTypeOrg,
+	}
+
+	// First call: cache miss
+	result := v(context.Background(), ref, "")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token := result.Token()
+	assert.Equal(t, "first-call", token.Token)
+
+	// Second call: cache hit (same key, no repository scope component)
+	result = v(context.Background(), ref, "")
+	require.Equal(t, vendor.VendStatusSuccess, result.Status())
+	token = result.Token()
+	assert.Equal(t, "first-call", token.Token)
+}
+
 // sequenceVendor returns each of the calls in sequence, either a token or an error
 func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 	callIndex := 0
@@ -636,6 +785,14 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		},
 		"org:two-repos": {
 			repositories: profile.NewSpecificScope("any-repo", "other-repo"),
+			permissions:  []string{"contents:read"},
+		},
+		"org:scoped-profile": {
+			repositories: profile.NewWildcardScope(),
+			permissions:  []string{"contents:read"},
+		},
+		"org:all-repos-profile": {
+			repositories: profile.NewWildcardScope(),
 			permissions:  []string{"contents:read"},
 		},
 	}
@@ -666,13 +823,26 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 					Profile:             ref.ShortString(),
 				})
 			} else {
-				data, ok := profileData[ref.ShortString()]
+				// For scoped profiles, extract base profile name for lookup
+				profileKey := ref.ShortString()
+				if ref.ScopedRepository != "" {
+					// ShortString returns "org:name/repo", extract just "org:name"
+					profileKey = fmt.Sprintf("%s:%s", ref.Type.String(), ref.Name)
+				}
+				data, ok := profileData[profileKey]
 				if !ok {
 					return vendor.NewVendorFailed(errors.New("unknown profile"))
 				}
+				// For caller-scoped profiles the real vendor narrows the vended
+				// token to the single requested repository; reflect that here so
+				// cache tests can assert the token carries the narrow scope.
+				repositories := data.repositories
+				if ref.ScopedRepository != "" {
+					repositories = profile.NewSpecificScope(ref.ScopedRepository)
+				}
 				return vendor.NewVendorSuccess(vendor.ProfileToken{
 					Token:               v,
-					Repositories:        data.repositories,
+					Repositories:        repositories,
 					Permissions:         data.permissions,
 					VendedRepositoryURL: repo,
 					Profile:             ref.ShortString(),

@@ -2,7 +2,6 @@ package profile
 
 import (
 	"maps"
-	"slices"
 )
 
 // --- Attribute types (leaf types) ---
@@ -12,32 +11,19 @@ import (
 // Callers should not modify slice contents after passing to
 // NewAuthorizedProfile or NewProfileStoreOf.
 type OrganizationProfileAttr struct {
-	Repositories []string
-	Permissions  []string
+	Scope       RepositoryScope
+	Permissions []string
 }
 
 // HasRepository checks if the given repository is included in the profile's
-// repositories. Supports wildcard "*" to match any repository.
+// repositories using the compiled Scope.
 func (attr OrganizationProfileAttr) HasRepository(repo string) bool {
-	return attr.allowAllRepositories() ||
-		slices.Contains(attr.Repositories, repo)
+	return attr.Scope.Contains(repo)
 }
 
-// RepositoryScope returns a RepositoryScope describing which repositories the
-// profile allows. A wildcard profile (single "*" entry) returns NewWildcardScope();
-// all other configurations return NewSpecificScope with the named repositories.
+// RepositoryScope returns the compiled RepositoryScope stored in this profile attribute.
 func (attr OrganizationProfileAttr) RepositoryScope() RepositoryScope {
-	if attr.allowAllRepositories() {
-		return NewWildcardScope()
-	}
-	return NewSpecificScope(attr.Repositories...)
-}
-
-// allowAllRepositories returns true if the profile allows access to all
-// repositories accessible to the Chinmina installation. This is signified by
-// the single "*" entry.
-func (attr OrganizationProfileAttr) allowAllRepositories() bool {
-	return len(attr.Repositories) == 1 && attr.Repositories[0] == "*"
+	return attr.Scope
 }
 
 // PipelineProfileAttr contains the attributes for a pipeline profile.

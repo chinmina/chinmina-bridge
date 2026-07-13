@@ -1,0 +1,26 @@
+organization:
+  profiles:
+    - name: caller-scoped-profile
+      repositories:
+        - "{{caller-scoped-repository}}"
+      permissions:
+        - contents:write
+      match:
+        - claim: pipeline_slug
+          valuePattern: ".*"
+    - name: all-repos-profile
+      repositories:
+        - "{{all-repositories}}"
+      permissions:
+        - contents:read
+    - name: static-profile
+      repositories:
+        - repo1
+        - repo2
+      permissions:
+        - contents:read
+
+pipeline:
+  defaults:
+    permissions:
+      - contents:read

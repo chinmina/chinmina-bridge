@@ -32,19 +32,38 @@ func (pt ProfileType) String() string {
 }
 
 // ProfileRef uniquely identifies a profile request.
+//
+// ScopedRepository narrows an already-authorised org profile to a single
+// repository. It is caller-supplied at request time and is never granted by
+// the profile itself: the profile's match rules decide whether the caller
+// may invoke the profile at all, and GitHub is the final enforcement
+// boundary for whether a specific repository is reachable. Honouring
+// caller-supplied scope without additional cross-checks is therefore safe.
+// Note the blast radius: a caller-scoped profile lets any matching caller
+// obtain a token for any single repository the App installation can reach,
+// with that profile's permissions — there is no per-repository allow-list.
+// Only applicable to ProfileTypeOrg; repo profiles are never scoped.
 type ProfileRef struct {
-	Organization string      // Buildkite organization slug
-	Type         ProfileType // repo or org
-	Name         string      // Profile name (e.g., "default", "write-packages")
-	PipelineID   string      // Only set for ProfileTypeRepo
-	PipelineSlug string      // Only set for ProfileTypeRepo
+	Organization     string      // Buildkite organization slug
+	Type             ProfileType // repo or org
+	Name             string      // Profile name (e.g., "default", "write-packages")
+	PipelineID       string      // Only set for ProfileTypeRepo
+	PipelineSlug     string      // Only set for ProfileTypeRepo
+	ScopedRepository string      // Only set for caller-scoped ProfileTypeOrg requests
 }
 
-// NewProfileRef constructs a ProfileRef from Buildkite claims, an expected profile type, and a profile string.
+// NewProfileRef constructs a ProfileRef from Buildkite claims, an expected profile type,
+// and a profile string.
 // If profileStr is empty and expectedType is ProfileTypeRepo, it defaults to "default".
 // If profileStr is empty and expectedType is ProfileTypeOrg, it returns an error.
 // If profileStr contains a colon, it must be in the format "type:name" and the type must match expectedType.
 // If profileStr does not contain a colon, it uses expectedType with profileStr as the name.
+//
+// The returned ref never carries a repository scope. ScopedRepository is the
+// sole responsibility of the ProfileRefBuilder at the handler boundary, which
+// resolves and validates caller-supplied scope (profile-type × scope-value
+// rules) before assigning the field. Keeping that logic in one place avoids a
+// second, unvalidated write path through this constructor.
 func NewProfileRef(claims jwt.BuildkiteClaims, expectedType ProfileType, profileStr string) (ProfileRef, error) {
 	profileType, profileName, err := resolveProfileTypeAndName(expectedType, profileStr)
 	if err != nil {
@@ -119,82 +138,30 @@ func parseProfileType(typeStr string) (ProfileType, error) {
 // String returns the canonical URN format for this ProfileRef.
 // Format for repo profiles: profile://organization/org-name/pipeline/pipeline-id/pipeline-slug/profile/profile-name
 // Format for org profiles: profile://organization/org-name/profile/profile-name
+// Caller-scoped org profiles append /repository/repo-name.
 func (pr ProfileRef) String() string {
 	switch pr.Type {
 	case ProfileTypeRepo:
 		return fmt.Sprintf("profile://organization/%s/pipeline/%s/%s/profile/%s", pr.Organization, pr.PipelineID, pr.PipelineSlug, pr.Name)
 	case ProfileTypeOrg:
-		return fmt.Sprintf("profile://organization/%s/profile/%s", pr.Organization, pr.Name)
+		base := fmt.Sprintf("profile://organization/%s/profile/%s", pr.Organization, pr.Name)
+		if pr.ScopedRepository != "" {
+			return base + "/repository/" + pr.ScopedRepository
+		}
+		return base
 	default:
 		return "profile://unknown"
 	}
 }
 
 // ShortString returns the short format for this ProfileRef.
-// Format: "type:name" (e.g., "repo:default", "org:profile-name")
+// Format: "type:name" (e.g., "repo:default", "org:profile-name").
+// Caller-scoped org profiles render as "org:profile-name/repo-name".
+// The "/" separator is unambiguous: repository scope values reject "/" at
+// the handler boundary, and profile names cannot contain "/".
 func (pr ProfileRef) ShortString() string {
+	if pr.ScopedRepository != "" {
+		return fmt.Sprintf("%s:%s/%s", pr.Type.String(), pr.Name, pr.ScopedRepository)
+	}
 	return fmt.Sprintf("%s:%s", pr.Type.String(), pr.Name)
-}
-
-// ParseProfileRef parses a URN format string back to a ProfileRef.
-// This is primarily useful for testing roundtrips.
-// Supports both new format (with pipeline-slug and /profile/ segment) and old format (backward compatibility).
-func ParseProfileRef(s string) (ProfileRef, error) {
-	// Both repo and org formats use the same prefix
-	rest, found := strings.CutPrefix(s, "profile://organization/")
-	if !found {
-		return ProfileRef{}, fmt.Errorf("invalid profile ref format: expected to start with 'profile://organization/'")
-	}
-
-	// Split by "/" to extract components
-	parts := strings.Split(rest, "/")
-	if len(parts) < 3 {
-		return ProfileRef{}, fmt.Errorf("invalid profile ref format: expected at least 3 components after organization/")
-	}
-
-	org := parts[0]
-
-	// Check if it's a repo or org profile
-	if parts[1] == "pipeline" {
-		// Repo profile - detect format based on structure
-		if len(parts) >= 6 && parts[4] == "profile" {
-			// New format: organization/org-name/pipeline/pipeline-id/pipeline-slug/profile/profile-name
-			pipelineID := parts[2]
-			pipelineSlug := parts[3]
-			profileName := parts[5]
-
-			return ProfileRef{
-				Organization: org,
-				Type:         ProfileTypeRepo,
-				Name:         profileName,
-				PipelineID:   pipelineID,
-				PipelineSlug: pipelineSlug,
-			}, nil
-		} else if len(parts) >= 4 {
-			// Old format (backward compatibility): organization/org-name/pipeline/pipeline-id/profile-name
-			pipelineID := parts[2]
-			profileName := parts[3]
-
-			return ProfileRef{
-				Organization: org,
-				Type:         ProfileTypeRepo,
-				Name:         profileName,
-				PipelineID:   pipelineID,
-				PipelineSlug: "", // Not available in old format
-			}, nil
-		}
-	} else if parts[1] == "profile" {
-		// Org profile: organization/org-name/profile/profile-name
-		profileName := parts[2]
-
-		return ProfileRef{
-			Organization: org,
-			Type:         ProfileTypeOrg,
-			Name:         profileName,
-			PipelineID:   "",
-			PipelineSlug: "",
-		}, nil
-	}
-
-	return ProfileRef{}, fmt.Errorf("invalid profile ref format: could not determine profile type from '%s'", s)
 }

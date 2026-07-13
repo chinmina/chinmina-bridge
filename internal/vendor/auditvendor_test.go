@@ -189,8 +189,7 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	// Case 1: Test with default profile - audit log should contain full URN
 	result := auditedVendor(ctx, ref1, repo)
 
-	_, failed := result.Failed()
-	assert.False(t, failed)
+	assert.NotEqual(t, vendor.VendStatusFailed, result.Status())
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
@@ -209,8 +208,7 @@ func TestAuditor_ProfileAuditing(t *testing.T) {
 	// Case 2: Test with specified profile - audit log should contain full URN
 	result = auditedVendor(ctx, ref2, repo)
 
-	_, failed = result.Failed()
-	assert.False(t, failed)
+	assert.NotEqual(t, vendor.VendStatusFailed, result.Status())
 
 	entry = audit.Log(ctx)
 	expected = audit.Entry{
@@ -359,4 +357,68 @@ func TestAuditingMatcher_ValidationError(t *testing.T) {
 	}
 	assert.Equal(t, expected, entry.ClaimsFailed)
 	assert.Nil(t, entry.ClaimsMatched)
+}
+
+func TestAuditor_RecordsScopingMismatchError(t *testing.T) {
+	tests := []struct {
+		name          string
+		vendorError   error
+		expectedAudit string
+	}{
+		{
+			name:          "scope provided to non-scoped profile",
+			vendorError:   profile.RepositoryScopeUnexpectedError{ProfileName: "static-profile"},
+			expectedAudit: "does not accept repository scoping",
+		},
+		{
+			name:          "scope missing for caller-scoped profile",
+			vendorError:   profile.RepositoryScopeRequiredError{ProfileName: "scoped-profile"},
+			expectedAudit: "requires a repository scope",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inner := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+				return vendor.NewVendorFailed(tt.vendorError)
+			}
+
+			auditor := vendor.Auditor(inner)
+
+			ctx, _ := audit.Context(context.Background())
+			ref := profile.ProfileRef{Organization: "org", Name: "test", Type: profile.ProfileTypeOrg}
+			auditor(ctx, ref, "")
+
+			entry := audit.Log(ctx)
+			assert.Contains(t, entry.Error, tt.expectedAudit)
+		})
+	}
+}
+
+func TestAuditor_RecordsScopedRepositoryInProfileURN(t *testing.T) {
+	// Req 9.1: the audit log includes the scoped repository name. The Auditor
+	// records ref.String() in RequestedProfile, and a caller-scoped org ref's
+	// URN carries the /repository/<repo> suffix. Guards against a future change
+	// to ref.String() that dropped the suffix.
+	inner := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+		return vendor.NewVendorSuccess(vendor.ProfileToken{
+			Token:        "scoped-token",
+			Repositories: profile.NewSpecificScope("target-repo"),
+			Permissions:  []string{"contents:read"},
+		})
+	}
+
+	auditor := vendor.Auditor(inner)
+
+	ctx, _ := audit.Context(context.Background())
+	ref := profile.ProfileRef{
+		Organization:     "org",
+		Name:             "scoped-profile",
+		Type:             profile.ProfileTypeOrg,
+		ScopedRepository: "target-repo",
+	}
+	auditor(ctx, ref, "")
+
+	entry := audit.Log(ctx)
+	assert.Contains(t, entry.RequestedProfile, "/repository/target-repo")
 }

@@ -56,7 +56,7 @@ pipeline:
 	// Verify profile can be accessed
 	profile, err := profiles.GetOrgProfile("test-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 }
 
 func TestFetchOrganizationProfile_ReturnsCorrectDigest(t *testing.T) {
@@ -142,7 +142,7 @@ func TestProfileStore_GetOrganizationProfile_Success(t *testing.T) {
 	// Retrieve profile
 	profile, err := store.GetOrganizationProfile("test-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"silk"}, profile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	assert.Equal(t, []string{"contents:read", "pull_requests:write", "metadata:read"}, profile.Attrs.Permissions)
 }
 
@@ -379,7 +379,7 @@ func TestProfileStore_Concurrency(t *testing.T) {
 			}
 
 			// Basic sanity check
-			if len(profile.Attrs.Repositories) != 1 {
+			if len(profile.Attrs.Scope.NamesForDisplay()) != 1 {
 				return
 			}
 
@@ -424,7 +424,7 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 
 	profile1, err := store.GetOrganizationProfile("profile-v1")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"v1"}, profile1.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("v1"), profile1.Attrs.Scope)
 
 	// Update with second version
 	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh)
@@ -438,7 +438,7 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 	// New profile should be accessible
 	profile2, err := store.GetOrganizationProfile("profile-v2")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"v2"}, profile2.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("v2"), profile2.Attrs.Scope)
 }
 
 func TestProfileStore_Update_NoChange(t *testing.T) {
@@ -469,7 +469,7 @@ func TestProfileStore_Update_NoChange(t *testing.T) {
 	// Verify profile is still accessible
 	profile, err := store.GetOrganizationProfile("profile-v1")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"v1"}, profile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("v1"), profile.Attrs.Scope)
 }
 
 func TestFetchOrganizationProfile_InvalidYAML(t *testing.T) {
@@ -522,7 +522,7 @@ pipeline:
 	// Verify prod profile
 	prodProfile, err := profiles.GetOrgProfile("prod-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"silk"}, prodProfile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk"), prodProfile.Attrs.Scope)
 	assert.Equal(t, []string{"contents:write", "metadata:read"}, prodProfile.Attrs.Permissions)
 
 	// Test prod profile matching
@@ -533,7 +533,7 @@ pipeline:
 	// Verify staging profile
 	stagingProfile, err := profiles.GetOrgProfile("staging-profile")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"silk", "cotton"}, stagingProfile.Attrs.Repositories)
+	assert.Equal(t, NewSpecificScope("silk", "cotton"), stagingProfile.Attrs.Scope)
 
 	// Test staging profile matching with regex
 	claims = mapClaimLookup{"pipeline_slug": "silk-staging"}

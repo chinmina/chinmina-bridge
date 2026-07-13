@@ -85,20 +85,26 @@ func NewVendorFailed(err error) VendorResult {
 	}
 }
 
-// Failed returns the failure error if the vending failed
-func (vr VendorResult) Failed() (error, bool) {
-	if vr.status == VendStatusFailed {
-		return vr.failureCause, true
-	}
-	return nil, false
+// Status reports which of the three vend outcomes this result represents:
+// VendStatusSuccess (a token was vended), VendStatusSuccessUnmatched (no
+// credentials, but not an error — the credential-helper empty-success), or
+// VendStatusFailed (an error). Callers switch on this rather than chaining
+// boolean probes; the variant — not the nil-ness of the token or error —
+// is the source of truth.
+func (vr VendorResult) Status() VendStatus {
+	return vr.status
 }
 
-// Token returns the vended token if vending succeeded with a match
-func (vr VendorResult) Token() (ProfileToken, bool) {
-	if vr.status == VendStatusSuccess {
-		return vr.token, true
-	}
-	return ProfileToken{}, false
+// Token returns the vended token. It is meaningful only when Status is
+// VendStatusSuccess; otherwise it is the zero value.
+func (vr VendorResult) Token() ProfileToken {
+	return vr.token
+}
+
+// Err returns the failure cause. It is non-nil only when Status is
+// VendStatusFailed.
+func (vr VendorResult) Err() error {
+	return vr.failureCause
 }
 
 var sshURL = regexp.MustCompile(`^git@github\.com:([^/].+)$`)
