@@ -33,6 +33,26 @@ file fresh, overwriting any existing version** — a file may be left over from 
 earlier run against different instructions, so never inspect it and decide "no
 change needed". You were asked to produce these notes; produce them.
 
+### Release title
+
+Also write a one-line release title to `<WORK>/title.txt`, in the form
+`<tag> <phrase>` — the tag from `meta.json`, a space, then a short thematic
+phrase. This becomes the release's display name in GitHub's releases list, so it
+has to earn a glance: it is a signpost, not a summary.
+
+- The phrase names what the release is *about*, led by its headline theme —
+  e.g. `Audit logging`, or `Flexible access to wider token permissions`.
+- When two or three themes genuinely share the billing, join them and signal
+  there is more, e.g. `Distributed caching, security improvements, and more`.
+- Keep it short (roughly three to eight words), sentence case, no trailing
+  punctuation. Resist listing everything — the notes below do that.
+- For a small patch with a single change, describe that change plainly rather
+  than inflating it, e.g. `Automatic metadata:read on all tokens`.
+
+So `<WORK>/title.txt` contains a single line such as:
+`v0.10.0 Distributed caching, security improvements, and more`. Write it fresh,
+overwriting any existing version.
+
 ### `## Highlights` — the part that adds value
 
 GitHub already produces the flat list. Highlights exist to give a reader the
@@ -88,5 +108,6 @@ every bullet in GitHub's exact style so author and PR links render:
 
 ## When done
 
-Reply only with the path you wrote and a two-line summary of the release's
-themes (so the orchestrator can relay it). Do not paste the whole document back.
+Reply only with the release title you chose, the path you wrote, and a two-line
+summary of the release's themes (so the orchestrator can relay it). Do not paste
+the whole document back.
