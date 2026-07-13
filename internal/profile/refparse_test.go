@@ -31,7 +31,8 @@ func ParseProfileRef(s string) (ProfileRef, error) {
 	org := parts[0]
 
 	// Check if it's a repo or org profile
-	if parts[1] == "pipeline" {
+	switch parts[1] {
+	case "pipeline":
 		// Repo profile - detect format based on structure
 		if len(parts) >= 6 && parts[4] == "profile" {
 			// New format: organization/org-name/pipeline/pipeline-id/pipeline-slug/profile/profile-name
@@ -59,7 +60,7 @@ func ParseProfileRef(s string) (ProfileRef, error) {
 				PipelineSlug: "", // Not available in old format
 			}, nil
 		}
-	} else if parts[1] == "profile" {
+	case "profile":
 		// Org profile: organization/org-name/profile/profile-name
 		// Optionally scoped: organization/org-name/profile/profile-name/repository/repo-name
 		profileName := parts[2]
