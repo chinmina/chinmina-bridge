@@ -5,7 +5,9 @@ env:
     - 'CI={{ (envOrDefault "CI" "false") }}'
     - 'CHANGELOG_DISABLE={{ eq (envOrDefault "CI" "false") "false" }}'
     - 'RELEASE_DISABLE={{ eq (envOrDefault "CI" "false") "false" }}'
-    - 'KO_DOCKER_REPO={{ envOrDefault "KO_DOCKER_REPO" (printf "ttl.sh/chinmina-prerelease/%d" .Now.Unix) }}'
+    # Docker Hub (chinmina) when running in CI, throwaway ttl.sh otherwise.
+    # The release wrapper never sets KO_DOCKER_REPO: keying is done here off CI.
+    - 'KO_DOCKER_REPO={{ if eq (envOrDefault "CI" "false") "true" }}chinmina{{ else }}ttl.sh/chinmina-prerelease/{{ .Now.Unix }}{{ end }}'
 
 builds:
   - id: release
@@ -42,7 +44,7 @@ checksum:
 
 archives:
   - id: archives
-    format: tar.gz
+    formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     files:
       # cosign produces a bundle file to allow for verification of the artifacts
@@ -57,6 +59,13 @@ changelog:
 
 release:
   disable: "{{ .Env.RELEASE_DISABLE }}"
+
+  # Draft contract for the shared release pipeline: goreleaser FILLS the existing
+  # release-please draft (keep-existing + use_existing_draft) and leaves it a
+  # draft so attestation can run before the wrapper publishes it last.
+  draft: true
+  mode: keep-existing
+  use_existing_draft: true
 
   ids:
     - archives

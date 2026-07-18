@@ -61,7 +61,11 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      # mise is the single version authority; install golangci-lint from mise.toml
+      # and let the lint action use that binary (install-mode: none).
+      - uses: jdx/mise-action@v2
+
       - name: lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version-file: .tool-versions
+          install-mode: none
