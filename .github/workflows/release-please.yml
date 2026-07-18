@@ -1,0 +1,29 @@
+# Release-please trigger (chinmina-drawbridge App token path).
+#
+# On every push to main, calls the shared release-please reusable workflow, which
+# maintains the Release PR and — on merge — creates the draft release and pushes
+# the plain v* tag as chinmina-drawbridge[bot].
+
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+# Default-deny at the workflow level; the GITHUB_TOKEN ceiling is granted on the
+# calling job below.
+permissions: {}
+
+jobs:
+  release-please:
+    # Caller permissions are a CEILING: a reusable workflow can only downgrade
+    # the GITHUB_TOKEN, never elevate it, so grant at least what the reusable
+    # workflow's job declares.
+    permissions:
+      contents: read # all writes use the minted App installation token
+      id-token: write # required by the reusable workflow's job contract
+    uses: chinmina/.github/.github/workflows/release-please.yml@verified-actions
+    # token-source defaults to `app`; RELEASE_PLEASE_* are environment-scoped to
+    # `automation`, so a narrowed caller secrets map would resolve empty — deliver
+    # them with `secrets: inherit` (the broad pass is intentional).
+    secrets: inherit # zizmor: ignore[secrets-inherit]
