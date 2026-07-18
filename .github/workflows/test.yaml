@@ -61,7 +61,16 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      # mise is the single version authority; install only golangci-lint from
+      # mise.toml (the lint job needs nothing else) and let the lint action use
+      # that binary (install-mode: none).
+      # Only write the tool cache from main pushes so PRs don't pollute it.
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: golangci-lint
+          cache_save: ${{ github.event_name != 'pull_request' }}
+
       - name: lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version-file: .tool-versions
+          install-mode: none
