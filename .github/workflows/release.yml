@@ -1,0 +1,39 @@
+# Build / attest / publish on the v* tag pushed by release-please.
+#
+# Calls the shared goreleaser reusable workflow, which fills the existing
+# release-please draft, attests the checksummed artifacts, and publishes the
+# release LAST so nothing is downloadable before its provenance exists. Docker/ko
+# image build+sign+push stays entirely in this repo's goreleaser config; the
+# wrapper only performs the Docker Hub login (kept on) and puts cosign on PATH.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Default-deny at the workflow level; the GITHUB_TOKEN ceiling is granted on the
+# calling job below.
+permissions: {}
+
+jobs:
+  release:
+    # Caller permissions are a CEILING: grant at least what the reusable
+    # workflow's job declares.
+    permissions:
+      contents: write # fill + publish the release, push assets
+      id-token: write # keyless attestation OIDC
+      attestations: write # record build attestations
+    uses: chinmina/.github/.github/workflows/goreleaser-release.yml@verified-actions
+    with:
+      token-source: app
+      # Channels off for this repo; GitHub Release + Docker/ko image stay on.
+      disable-binstaller: true
+      disable-homebrew: true
+      disable-npm: true
+      # cosign reaches PATH for the goreleaser ko/cosign signing config. Docker
+      # login is left ON (no disable-docker-login) since we publish an image.
+      extra-mise-tools: cosign
+    # DOCKERHUB_TOKEN is environment-scoped to `release`, so a narrowed caller
+    # secrets map would resolve empty — deliver it with `secrets: inherit`.
+    secrets: inherit # zizmor: ignore[secrets-inherit]
