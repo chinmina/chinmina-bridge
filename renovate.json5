@@ -1,6 +1,11 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   description: "Golang config",
+  // Emit "fix(deps): ..." so dependency updates trigger a release-please patch
+  // release and ship, rather than sitting unreleased.
+  semanticCommits: "enabled",
+  semanticCommitType: "fix",
+  semanticCommitScope: "deps",
   postUpdateOptions: [
     // Tidy mod after updates: keeps compatibility with our go.mod checks.
     "gomodTidy",
