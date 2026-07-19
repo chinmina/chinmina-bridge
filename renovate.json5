@@ -1,6 +1,11 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   description: "Golang config",
+  // Emit "fix(deps): ..." so dependency updates trigger a release-please patch
+  // release and ship, rather than sitting unreleased.
+  semanticCommits: "enabled",
+  semanticCommitType: "fix",
+  semanticCommitScope: "deps",
   postUpdateOptions: [
     // Tidy mod after updates: keeps compatibility with our go.mod checks.
     "gomodTidy",
@@ -70,6 +75,21 @@
       // the v2 module, producing broken replace directives.
       matchDepNames: ["github.com/chinmina/tink-go-awskms/v3"],
       enabled: false,
+    },
+    {
+      // auth0's middleware exchanges jwx types across its API, so jwx and the
+      // middleware must move as one.
+      groupName: "jwx-and-auth0-jwt-middleware",
+      matchDepNames: [
+        "github.com/lestrrat-go/jwx/v3",
+        "github.com/auth0/go-jwt-middleware/v3",
+      ],
+    },
+    {
+      // auth0's middleware pins jwx v3; a lone v4 bump ships both majors and
+      // silently breaks JWKS validation. Unblock when auth0 supports v4.
+      matchDepNames: ["github.com/lestrrat-go/jwx/v3"],
+      allowedVersions: "<4.0.0",
     },
     {
       // OpenTelemetry modules must be updated together: they have inter-module
