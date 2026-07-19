@@ -35,7 +35,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: 'go.mod'
 
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: 'go.mod'
 
@@ -65,7 +65,7 @@ jobs:
       # mise.toml (the lint job needs nothing else) and let the lint action use
       # that binary (install-mode: none).
       # Only write the tool cache from main pushes so PRs don't pollute it.
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
         with:
           install_args: golangci-lint
           cache_save: ${{ github.event_name != 'pull_request' }}
