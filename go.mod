@@ -19,7 +19,7 @@ require (
 	github.com/lestrrat-go/jwx/v3 v3.1.1
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/phuslu/log v1.0.127
-	github.com/sethvargo/go-envconfig v1.3.0
+	github.com/sethvargo/go-envconfig v1.4.3
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/tink-crypto/tink-go-awskms/v3 v3.0.0
