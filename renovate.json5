@@ -103,6 +103,15 @@
       groupName: "github-actions",
       groupSlug: "github-actions",
       matchManagers: ["github-actions"],
+      // Pin actions to commit SHAs so a moved tag can't change what CI runs.
+      pinDigests: true,
+    },
+    {
+      // Keep the "verified-actions" branch pin: this repo SHA-pins its own
+      // transitive actions, so trust extends to one org-owned repo only.
+      // Must stay after the github-actions rule; last matching rule wins.
+      matchDepNames: ["chinmina/.github"],
+      pinDigests: false,
     },
   ],
 }
