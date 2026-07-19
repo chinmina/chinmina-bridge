@@ -61,18 +61,23 @@ func New(ctx context.Context, cfg appconfig.GithubConfig, config ...ClientOption
 
 	// Create a client with the configured credentials. This client will be used
 	// concurrently.
-	client := github.NewClient(
-		&http.Client{
+	clientOpts := []github.ClientOptionsFunc{
+		github.WithHTTPClient(&http.Client{
 			Transport: authTransport,
-		},
-	)
+		}),
+	}
 
 	if cfg.APIURL != "" {
-		u, err := url.Parse(normalizeAPIURL(cfg.APIURL))
-		if err != nil {
+		apiURL := normalizeAPIURL(cfg.APIURL)
+		if _, err := url.Parse(apiURL); err != nil {
 			return Client{}, fmt.Errorf("parse GitHub API URL %q: %w", cfg.APIURL, err)
 		}
-		client.BaseURL = u
+		clientOpts = append(clientOpts, github.WithURLs(&apiURL, &apiURL))
+	}
+
+	client, err := github.NewClient(clientOpts...)
+	if err != nil {
+		return Client{}, fmt.Errorf("could not create GitHub client: %w", err)
 	}
 
 	return Client{
