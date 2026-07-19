@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/log"
@@ -40,7 +39,7 @@ func RunValkeyContainer(t *testing.T) config.CacheConfig {
 		ExposedPorts: []string{valkeyProtocolPort},
 		WaitingFor: wait.ForAll(
 			wait.ForLog("Ready to accept connections"),
-			wait.ForListeningPort(nat.Port(valkeyProtocolPort)),
+			wait.ForListeningPort(valkeyProtocolPort),
 		),
 	}
 
@@ -55,7 +54,7 @@ func RunValkeyContainer(t *testing.T) config.CacheConfig {
 		_ = container.Terminate(ctx)
 	})
 
-	port, err := container.MappedPort(ctx, nat.Port(valkeyPort))
+	port, err := container.MappedPort(ctx, valkeyPort)
 	require.NoError(t, err)
 
 	// Use 127.0.0.1 explicitly to avoid IPv6 issues
