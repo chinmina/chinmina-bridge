@@ -15,27 +15,33 @@ Full documentation: https://chinmina.github.io
 ### Build and Run
 
 ```bash
-make build              # Build binaries (Linux + local platform)
-make run                # Build and run locally
-make docker             # Run integration tests with docker-compose
-make docker-down        # Stop docker-compose
+just build              # Build all binaries in parallel (container + local + oidc-local)
+just build-container    # Build only the Linux container binary
+just build-local        # Build only the local dev binary; extra `go build` args are forwarded
+just build-oidc         # Build only the oidc-local test helper
+just run                # Build and run locally
+just docker             # Run integration tests with docker-compose
+just docker-down        # Stop docker-compose
 ```
 
 ### Testing
 
 ```bash
-make test               # Run unit tests with coverage
-make integration        # Run integration tests only
-go test ./...           # Run all unit tests
-go test -v -run TestName ./path/to/package    # Run specific test
-go test ./... -race -coverprofile=coverage.out -covermode=atomic    # With race detector
+just test               # Run unit tests with coverage across ./...
+just test -run TestName # Narrow by test name across every package; extra `go test` args are forwarded after ./...
+just integration        # Run integration tests only
+just integration -run TestIntegrationName    # Narrow integration tests by name the same way
+just fuzz               # Run fuzz tests locally (override duration: `just fuzz 60`)
+go test ./... -race -coverprofile=coverage.out -covermode=atomic    # With race detector (or `just ci-unit`)
 go tool cover -html=coverage.out    # View coverage report
 ```
+
+Note: `just test`/`just integration` always run against `./...` — any extra arguments are appended, not substituted, so a package path narrows nothing (it's already covered by `./...`). To run a single package in isolation, call `go test ./path/to/package` directly.
 
 **Integration Tests:**
 - Integration tests use the `//go:build integration` build tag
 - All integration test functions must be named with the `TestIntegration` prefix
-- Run integration tests only: `make integration` or `go test -tags=integration -run="^TestIntegration" .`
+- Run integration tests only: `just integration` or `go test -tags=integration -run="^TestIntegration" ./...`
 - Integration tests use `APITestHarness` which provides real HTTP handlers with mocked external services
 - Located in `api_integration_test.go` alongside unit tests in the same package
 
@@ -43,7 +49,7 @@ go tool cover -html=coverage.out    # View coverage report
 
 ```bash
 go mod tidy             # Tidy dependencies
-make ensure-deps        # Verify dependencies are clean
+just ensure-deps        # Verify dependencies are clean
 ```
 
 ### Local Development Setup
@@ -186,7 +192,9 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 
 ## Before Committing
 
-1. Run the agent make task: `make agent`. this gets dependencies, builds, formats and tests.
+1. Run the agent task: `just agent`. This formats, lints, tests, and builds — everything expected to pass before committing.
+
+Run `just` (or `just --list`) to see all recipes, organised into `build`, `test`, `ci`, and `dev` groups.
 
 ## When committing
 

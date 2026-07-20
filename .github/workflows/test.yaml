@@ -20,15 +20,15 @@ jobs:
           - unit
           - integration
           - fuzz
-        include: # add complete make target for each type
+        include: # add complete just target for each type
           - type: unit
-            make-target: ci-unit
+            just-target: ci-unit
             upload-coverage: true
           - type: integration
-            make-target: ci-integration
+            just-target: ci-integration
             upload-coverage: true
           - type: fuzz
-            make-target: ci-fuzz
+            just-target: ci-fuzz
             upload-coverage: false
     steps:
       - uses: actions/checkout@v7
@@ -39,8 +39,16 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      # mise is the single version authority; install only just from
+      # mise.toml, matching the lint job's approach for golangci-lint. Only
+      # write the tool cache from main pushes so PRs don't pollute it.
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
+        with:
+          install_args: just
+          cache_save: ${{ github.event_name != 'pull_request' }}
+
       - name: Run ${{ matrix.type }} tests
-        run: make ${{ matrix.make-target }}
+        run: just ${{ matrix.just-target }}
 
       - name: Upload coverage to Codecov
         if: matrix.upload-coverage
