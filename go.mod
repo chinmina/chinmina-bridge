@@ -11,7 +11,7 @@ require (
 	github.com/chinmina/iamcacheauth v1.0.0
 	github.com/gkampitakis/go-snaps v0.5.22
 	github.com/go-logr/logr v1.4.3
-	github.com/google/go-github/v84 v84.0.0
+	github.com/google/go-github/v89 v89.0.0
 	github.com/grafana/otel-profiling-go v0.6.0
 	github.com/grafana/pyroscope-go v1.4.0
 	github.com/jferrl/go-githubauth v1.7.0

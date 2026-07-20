@@ -15,7 +15,7 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/github"
-	api "github.com/google/go-github/v84/github"
+	api "github.com/google/go-github/v89/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,7 +42,7 @@ func TestNew_FailsWithInvalidAPIURL(t *testing.T) {
 		},
 	)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "parse GitHub API URL")
+	assert.ErrorContains(t, err, "could not create GitHub client")
 }
 
 func TestNew_SucceedsWithKMSConfig(t *testing.T) {

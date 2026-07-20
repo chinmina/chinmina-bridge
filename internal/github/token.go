@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	appconfig "github.com/chinmina/chinmina-bridge/internal/config"
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v89/github"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"log/slog"
 
@@ -61,18 +61,22 @@ func New(ctx context.Context, cfg appconfig.GithubConfig, config ...ClientOption
 
 	// Create a client with the configured credentials. This client will be used
 	// concurrently.
-	client := github.NewClient(
-		&http.Client{
+	clientOpts := []github.ClientOptionsFunc{
+		github.WithHTTPClient(&http.Client{
 			Transport: authTransport,
-		},
-	)
+		}),
+	}
 
 	if cfg.APIURL != "" {
-		u, err := url.Parse(normalizeAPIURL(cfg.APIURL))
-		if err != nil {
-			return Client{}, fmt.Errorf("parse GitHub API URL %q: %w", cfg.APIURL, err)
-		}
-		client.BaseURL = u
+		// URL validation is performed by github.WithURLs below; any invalid
+		// value surfaces via the github.NewClient error path.
+		apiURL := normalizeAPIURL(cfg.APIURL)
+		clientOpts = append(clientOpts, github.WithURLs(&apiURL, &apiURL))
+	}
+
+	client, err := github.NewClient(clientOpts...)
+	if err != nil {
+		return Client{}, fmt.Errorf("could not create GitHub client: %w", err)
 	}
 
 	return Client{
