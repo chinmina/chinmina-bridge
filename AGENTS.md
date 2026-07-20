@@ -15,8 +15,10 @@ Full documentation: https://chinmina.github.io
 ### Build and Run
 
 ```bash
-just build              # Build binaries (Linux + local platform)
+just build              # Build all binaries in parallel (container + local + oidc-local)
+just build-container    # Build only the Linux container binary
 just build-local        # Build only the local dev binary; extra `go build` args are forwarded
+just build-oidc         # Build only the oidc-local test helper
 just run                # Build and run locally
 just docker             # Run integration tests with docker-compose
 just docker-down        # Stop docker-compose
@@ -29,6 +31,7 @@ just test               # Run unit tests with coverage across ./...
 just test -run TestName # Narrow by test name across every package; extra `go test` args are forwarded after ./...
 just integration        # Run integration tests only
 just integration -run TestIntegrationName    # Narrow integration tests by name the same way
+just fuzz               # Run fuzz tests locally (override duration: `just fuzz 60`)
 go test ./... -race -coverprofile=coverage.out -covermode=atomic    # With race detector (or `just ci-unit`)
 go tool cover -html=coverage.out    # View coverage report
 ```
@@ -189,7 +192,9 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 
 ## Before Committing
 
-1. Run the agent task: `just agent`. this gets dependencies, builds, formats and tests.
+1. Run the agent task: `just agent`. this formats, lints, tests, and builds — everything expected to pass before committing.
+
+Run `just` (or `just --list`) to see all recipes, organised into `build`, `test`, `ci`, and `dev` groups.
 
 ## When committing
 
