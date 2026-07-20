@@ -28,9 +28,11 @@ type jwtErrorResponse struct {
 // auditErrorHandler.
 //
 // The only case handled differently is a request with no credentials at
-// all: RFC 6750 section 3.1 requires a bare challenge with no error/
-// error_description, and since the caller already knows they sent nothing,
-// this discloses no validation state.
+// all: RFC 6750 section 3.1 requires the WWW-Authenticate header to be a
+// bare challenge, with no error/error_description auth-params (the JSON
+// body still carries "error":"invalid_token", matching the other branch's
+// shape). Since the caller already knows they sent nothing, this discloses
+// no validation state.
 func writeJWTError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "application/json")
 
