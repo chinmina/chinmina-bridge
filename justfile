@@ -77,7 +77,7 @@ build: dist mod
 
 # Build only the local dev binary; extra go build arguments are forwarded, e.g. `just build-local -v`
 build-local *args: dist mod
-    CGO_ENABLED=0 go build {{GO_BUILD_FLAGS}} -ldflags="{{GO_LD_FLAGS}}" -o dist/chinmina-bridge-local . {{args}}
+    CGO_ENABLED=0 go build {{args}} {{GO_BUILD_FLAGS}} -ldflags="{{GO_LD_FLAGS}}" -o dist/chinmina-bridge-local .
 
 # Build and run the local binary
 run: build-local
