@@ -85,9 +85,15 @@ func SetupJWKSServer(t *testing.T, j JWK) *httptest.Server {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.String() {
 		case "/.well-known/openid-configuration":
+			// OIDC discovery double-validates the 'issuer' field: it must be
+			// present and must exactly match the issuer URL used to initiate
+			// discovery. The mock must serve a compliant value or key resolution
+			// fails before the JWT itself is checked.
 			wk := struct {
+				Issuer  string `json:"issuer"`
 				JWKSURI string `json:"jwks_uri"`
 			}{
+				Issuer:  server.URL,
 				JWKSURI: server.URL + "/.well-known/jwks.json",
 			}
 			w.Header().Set("Content-Type", "application/json")

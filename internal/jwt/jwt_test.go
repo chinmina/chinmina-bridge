@@ -64,7 +64,7 @@ func TestMiddleware(t *testing.T) {
 			},
 			audienceCheck:  "audience",
 			wantStatusCode: http.StatusUnauthorized,
-			wantBodyText:   "JWT is invalid",
+			wantBodyText:   "The access token is invalid",
 		},
 		{
 			name: "does not have an audience",
@@ -76,7 +76,7 @@ func TestMiddleware(t *testing.T) {
 			},
 			audienceCheck:  "an-actor-demands-an",
 			wantStatusCode: http.StatusUnauthorized,
-			wantBodyText:   "JWT is invalid",
+			wantBodyText:   "The access token is invalid",
 		},
 		{
 			name: "no validity period",
@@ -88,7 +88,7 @@ func TestMiddleware(t *testing.T) {
 			},
 			audienceCheck:  "audience",
 			wantStatusCode: http.StatusUnauthorized,
-			wantBodyText:   "JWT is invalid",
+			wantBodyText:   "The access token is invalid",
 		},
 		{
 			name: "mismatched organization",
@@ -100,7 +100,7 @@ func TestMiddleware(t *testing.T) {
 			},
 			audienceCheck:  "audience",
 			wantStatusCode: http.StatusUnauthorized,
-			wantBodyText:   "JWT is invalid",
+			wantBodyText:   "The access token is invalid",
 		},
 	}
 
@@ -175,6 +175,44 @@ func TestMiddleware(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMiddleware_MissingAuthHeader(t *testing.T) {
+	testhelpers.SetupLogger(t)
+
+	j := jwxtest.NewJWK(t)
+
+	testServer := jwxtest.SetupJWKSServer(t, j)
+	defer testServer.Close()
+
+	ctx, _ := audit.Context(context.Background())
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "", nil)
+	require.NoError(t, err)
+
+	cfg := config.AuthorizationConfig{
+		Audience:                  "audience",
+		IssuerURL:                 testServer.URL,
+		BuildkiteOrganizationSlug: "test-organization",
+	}
+
+	responseRecorder := httptest.NewRecorder()
+
+	authMiddleware, err := Middleware(cfg)
+	require.NoError(t, err)
+
+	testMiddleware := alice.New(audit.Middleware(), authMiddleware)
+
+	successHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := testMiddleware.Then(successHandler)
+	handler.ServeHTTP(responseRecorder, request)
+
+	assert.Equal(t, http.StatusUnauthorized, responseRecorder.Code)
+	assert.Equal(t, `Bearer realm="api"`, responseRecorder.Header().Get("WWW-Authenticate"))
+	assert.JSONEq(t, `{"error":"invalid_token"}`, responseRecorder.Body.String())
 }
 
 func TestAuditClaimsMiddleware_SpanAttributes(t *testing.T) {
