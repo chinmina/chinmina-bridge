@@ -26,10 +26,10 @@ lint:
     golangci-lint run
 
 # Ensure `go mod tidy` has been run after any dependency changes
-[group('dev')]
+[group('ci')]
 ensure-deps:
     @go mod tidy
-    @git diff --exit-code
+    @git diff --exit-code go.mod go.sum
 
 # Everything expected to pass before committing
 agent: format lint test build

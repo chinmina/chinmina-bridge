@@ -41,7 +41,7 @@ Note: `just test`/`just integration` always run against `./...` — any extra ar
 **Integration Tests:**
 - Integration tests use the `//go:build integration` build tag
 - All integration test functions must be named with the `TestIntegration` prefix
-- Run integration tests only: `just integration` or `go test -tags=integration -run="^TestIntegration" .`
+- Run integration tests only: `just integration` or `go test -tags=integration -run="^TestIntegration" ./...`
 - Integration tests use `APITestHarness` which provides real HTTP handlers with mocked external services
 - Located in `api_integration_test.go` alongside unit tests in the same package
 
@@ -192,7 +192,7 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 
 ## Before Committing
 
-1. Run the agent task: `just agent`. this formats, lints, tests, and builds — everything expected to pass before committing.
+1. Run the agent task: `just agent`. This formats, lints, tests, and builds — everything expected to pass before committing.
 
 Run `just` (or `just --list`) to see all recipes, organised into `build`, `test`, `ci`, and `dev` groups.
 
