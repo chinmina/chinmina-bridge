@@ -174,10 +174,9 @@ func auditErrorHandler() jwtmiddleware.ErrorHandler {
 		entry := audit.Log(r.Context())
 		entry.Error = fmt.Sprintf("JWT authorization failure: %s", err.Error())
 
-		// The default error handler will write the appropriate response status
-		// code. The status code is recorded centrally by the central audit
+		// The response status code is recorded centrally by the audit
 		// middleware.
-		jwtmiddleware.DefaultErrorHandler(w, r, err)
+		writeJWTError(w, err)
 	}
 }
 

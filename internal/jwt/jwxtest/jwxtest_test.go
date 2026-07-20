@@ -65,10 +65,14 @@ func TestSetupJWKSServer(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		var config struct {
+			Issuer  string `json:"issuer"`
 			JWKSURI string `json:"jwks_uri"`
 		}
 		err = json.NewDecoder(resp.Body).Decode(&config)
 		require.NoError(t, err)
+		// The discovery metadata's issuer field must be present and must
+		// exactly match the issuer URL used for discovery.
+		assert.Equal(t, server.URL, config.Issuer)
 		assert.Equal(t, server.URL+"/.well-known/jwks.json", config.JWKSURI)
 	})
 
