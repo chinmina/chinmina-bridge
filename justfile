@@ -24,13 +24,13 @@ format:
 lint: mod
     golangci-lint run
 
-# Run unit tests; extra go test arguments narrow the target, e.g. `just test ./internal/jwt -run TestFoo`
-test *args='./...': mod
-    go test -cover -covermode=atomic {{args}}
+# Run unit tests; extra go test arguments narrow the target, e.g. `just test -run TestFoo`
+test *args: mod
+    go test -cover -covermode=atomic ./... {{args}}
 
 # Run integration tests; extra go test arguments narrow the target
-integration *args='./...': mod
-    go test -tags=integration -run='^TestIntegration' -cover -covermode=atomic {{args}}
+integration *args: mod
+    go test -tags=integration -run='^TestIntegration' -cover -covermode=atomic ./... {{args}}
 
 # Run fuzz tests locally (FUZZING_LOCAL_SECS per target, default 30s)
 fuzz: mod

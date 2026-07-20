@@ -25,12 +25,15 @@ just docker-down        # Stop docker-compose
 ### Testing
 
 ```bash
-just test               # Run unit tests with coverage
-just test ./path/to/package -run TestName    # Narrow to a package/test; extra `go test` args are forwarded
+just test               # Run unit tests with coverage across ./...
+just test -run TestName # Narrow by test name across every package; extra `go test` args are forwarded after ./...
 just integration        # Run integration tests only
-go test ./... -race -coverprofile=coverage.out -covermode=atomic    # With race detector
+just integration -run TestIntegrationName    # Narrow integration tests by name the same way
+go test ./... -race -coverprofile=coverage.out -covermode=atomic    # With race detector (or `just ci-unit`)
 go tool cover -html=coverage.out    # View coverage report
 ```
+
+Note: `just test`/`just integration` always run against `./...` — any extra arguments are appended, not substituted, so a package path narrows nothing (it's already covered by `./...`). To run a single package in isolation, call `go test ./path/to/package` directly.
 
 **Integration Tests:**
 - Integration tests use the `//go:build integration` build tag
