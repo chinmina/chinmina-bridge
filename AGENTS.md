@@ -15,19 +15,19 @@ Full documentation: https://chinmina.github.io
 ### Build and Run
 
 ```bash
-make build              # Build binaries (Linux + local platform)
-make run                # Build and run locally
-make docker             # Run integration tests with docker-compose
-make docker-down        # Stop docker-compose
+just build              # Build binaries (Linux + local platform)
+just build-local        # Build only the local dev binary; extra `go build` args are forwarded
+just run                # Build and run locally
+just docker             # Run integration tests with docker-compose
+just docker-down        # Stop docker-compose
 ```
 
 ### Testing
 
 ```bash
-make test               # Run unit tests with coverage
-make integration        # Run integration tests only
-go test ./...           # Run all unit tests
-go test -v -run TestName ./path/to/package    # Run specific test
+just test               # Run unit tests with coverage
+just test ./path/to/package -run TestName    # Narrow to a package/test; extra `go test` args are forwarded
+just integration        # Run integration tests only
 go test ./... -race -coverprofile=coverage.out -covermode=atomic    # With race detector
 go tool cover -html=coverage.out    # View coverage report
 ```
@@ -35,7 +35,7 @@ go tool cover -html=coverage.out    # View coverage report
 **Integration Tests:**
 - Integration tests use the `//go:build integration` build tag
 - All integration test functions must be named with the `TestIntegration` prefix
-- Run integration tests only: `make integration` or `go test -tags=integration -run="^TestIntegration" .`
+- Run integration tests only: `just integration` or `go test -tags=integration -run="^TestIntegration" .`
 - Integration tests use `APITestHarness` which provides real HTTP handlers with mocked external services
 - Located in `api_integration_test.go` alongside unit tests in the same package
 
@@ -43,7 +43,7 @@ go tool cover -html=coverage.out    # View coverage report
 
 ```bash
 go mod tidy             # Tidy dependencies
-make ensure-deps        # Verify dependencies are clean
+just ensure-deps        # Verify dependencies are clean
 ```
 
 ### Local Development Setup
@@ -186,7 +186,7 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 
 ## Before Committing
 
-1. Run the agent make task: `make agent`. this gets dependencies, builds, formats and tests.
+1. Run the agent task: `just agent`. this gets dependencies, builds, formats and tests.
 
 ## When committing
 
