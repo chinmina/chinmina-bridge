@@ -42,7 +42,7 @@ func TestNew_FailsWithInvalidAPIURL(t *testing.T) {
 		},
 	)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "parse GitHub API URL")
+	assert.ErrorContains(t, err, "could not create GitHub client")
 }
 
 func TestNew_SucceedsWithKMSConfig(t *testing.T) {

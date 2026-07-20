@@ -68,10 +68,9 @@ func New(ctx context.Context, cfg appconfig.GithubConfig, config ...ClientOption
 	}
 
 	if cfg.APIURL != "" {
+		// URL validation is performed by github.WithURLs below; any invalid
+		// value surfaces via the github.NewClient error path.
 		apiURL := normalizeAPIURL(cfg.APIURL)
-		if _, err := url.Parse(apiURL); err != nil {
-			return Client{}, fmt.Errorf("parse GitHub API URL %q: %w", cfg.APIURL, err)
-		}
 		clientOpts = append(clientOpts, github.WithURLs(&apiURL, &apiURL))
 	}
 
