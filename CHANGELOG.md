@@ -2,72 +2,9 @@
 
 ## [0.12.0](https://github.com/chinmina/chinmina-bridge/compare/v0.11.0...v0.12.0) (2026-07-20)
 
-
-### ⚠ BREAKING CHANGES
-
-* **deps:** `CreateDeployment` and `CreateDeploymentStatus` now take `DeploymentRequest` and `DeploymentStatusRequest` by value; `DeploymentRequest.Ref` and `DeploymentStatusRequest.State` are now `string`, and `DeploymentRequest.RequiredContexts` is now `[]string`.
-    - refactor!: Pass `HookConfig` by value and rename
-    `EditHookConfiguration` to `UpdateHookConfiguration`
-    ([#&#8203;4360](https://redirect.github.com/google/go-github/issues/4360))
-    `EditHookConfiguration` is renamed to
-    `UpdateHookConfiguration` on `RepositoriesService` and
-    `OrganizationsService`; these methods and `AppsService.UpdateHookConfig`
-    now take `HookConfig` by value.
-    - refactor!: Pass `OIDCSubjectClaimCustomTemplate` by value in the OIDC
-    subject-claim Set methods
-    ([#&#8203;4340](https://redirect.github.com/google/go-github/issues/4340))
-    `SetOrgOIDCSubjectClaimCustomTemplate` and
-    `SetRepoOIDCSubjectClaimCustomTemplate` now take their `body` params by
-    value.
-    - feat!: Refactor actions variables to pass request by value
-    ([#&#8203;4346](https://redirect.github.com/google/go-github/issues/4346))
-    `ActionsService` methods involving variables have new
-    params and return values.
-    - feat!: Replace actions env secret endpoints
-    ([#&#8203;4335](https://redirect.github.com/google/go-github/issues/4335))
-    `ActionsService` methods involving secrets have new
-    params and return values.
-    - refactor!: Pass `CreateJITConfigRequest` by value and rename
-    `Generate*JITConfig` to `Create*JITConfig`
-    ([#&#8203;4337](https://redirect.github.com/google/go-github/issues/4337))
-    the JIT config methods are renamed from
-    `Generate*JITConfig` to `Create*JITConfig`, and they now take
-    `CreateJITConfigRequest` (renamed from `GenerateJITConfigRequest`) by
-    value instead of by pointer.
-    - refactor!: Pass release-notes and asset params by value and rename
-    `EditReleaseAsset` to `UpdateReleaseAsset`
-    ([#&#8203;4336](https://redirect.github.com/google/go-github/issues/4336))
-    `GenerateReleaseNotes` now takes `GenerateNotesRequest`
-    by value (renamed from `GenerateNotesOptions`); `EditReleaseAsset` is
-    renamed to `UpdateReleaseAsset` and takes `UpdateReleaseAssetRequest` by
-    value.
-    - refactor!: Pass release params by value and rename `EditRelease` to
-    `UpdateRelease`
-    ([#&#8203;4329](https://redirect.github.com/google/go-github/issues/4329))
-    `CreateRelease` & `UpdateRelease` now take
-    `RepositoryRelease` by value; `EditRelease` is renamed to
-    `UpdateRelease`.
-    - refactor!: Pass `GistsService` required params by value
-    ([#&#8203;4320](https://redirect.github.com/google/go-github/issues/4320))
-    `GistsService` methods now pass required params
-    by-value instead of by-ref.
-    - fix!: Send request body in SCIM update methods
-    ([#&#8203;4315](https://redirect.github.com/google/go-github/issues/4315))
-    `UpdateProvisionedOrgMembership` and
-    `UpdateAttributeForSCIMUser` params and return values changed.
-    - fix!: Fix `LicenseStatus` response and `Supportkey` type
-    ([#&#8203;4297](https://redirect.github.com/google/go-github/issues/4297))
-    `LicenseStatus.SupportKey` type changed from `*string`
-    to `*bool` and `License` return type is no longer a slice.
-    - fix!: Enterprise App installation repos options structs
-    ([#&#8203;4298](https://redirect.github.com/google/go-github/issues/4298))
-    `SelectedRepositoryIDs []int64` is now `Repositories
-    []string` in `*AppInstallationRepositoriesOptions`.
-
 ### Features
 
 * adopt shared release pipeline toolchain and version config ([#324](https://github.com/chinmina/chinmina-bridge/issues/324)) ([1322dbc](https://github.com/chinmina/chinmina-bridge/commit/1322dbc63fd8054c5360ccdbe49552d3c9b2dada))
-
 
 ### Bug Fixes
 
