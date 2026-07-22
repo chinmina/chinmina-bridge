@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/chinmina/chinmina-bridge/compare/v0.12.0...v0.12.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **deps:** pin GitHub Actions dependencies ([#346](https://github.com/chinmina/chinmina-bridge/issues/346)) ([4160495](https://github.com/chinmina/chinmina-bridge/commit/4160495f4be1d7f2dc309835eaf0f1c7062dd7d6))
+
 ## [0.12.0](https://github.com/chinmina/chinmina-bridge/compare/v0.11.0...v0.12.0) (2026-07-20)
 
 ### Features
