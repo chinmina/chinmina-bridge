@@ -48,20 +48,27 @@ func NewDefaultProfiles() Profiles {
 	return NewProfiles(orgProfiles, pipelineProfileStore, digest, "")
 }
 
-// GetOrganizationProfile retrieves an organization profile in runtime format.
-func (p *ProfileStore) GetOrganizationProfile(name string) (AuthorizedProfile[OrganizationProfileAttr], error) {
+// GetOrganizationProfile retrieves an organization profile in runtime format,
+// together with the digest of the configuration generation it came from. Both
+// values are read under a single lock so a caller cannot combine a profile
+// from one generation with the digest of another.
+func (p *ProfileStore) GetOrganizationProfile(name string) (AuthorizedProfile[OrganizationProfileAttr], string, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	return p.profiles.GetOrgProfile(name)
+	authProfile, err := p.profiles.GetOrgProfile(name)
+	return authProfile, p.profiles.Digest(), err
 }
 
-// GetPipelineProfile retrieves a pipeline profile in runtime format.
-func (p *ProfileStore) GetPipelineProfile(name string) (AuthorizedProfile[PipelineProfileAttr], error) {
+// GetPipelineProfile retrieves a pipeline profile in runtime format, together
+// with the digest of the configuration generation it came from. See
+// GetOrganizationProfile for why the digest is returned alongside.
+func (p *ProfileStore) GetPipelineProfile(name string) (AuthorizedProfile[PipelineProfileAttr], string, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	return p.profiles.GetPipelineProfile(name)
+	authProfile, err := p.profiles.GetPipelineProfile(name)
+	return authProfile, p.profiles.Digest(), err
 }
 
 // Digest returns the content digest of the currently loaded profiles.

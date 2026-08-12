@@ -140,7 +140,7 @@ func TestProfileStore_GetOrganizationProfile_Success(t *testing.T) {
 	store.Update(t.Context(), profiles)
 
 	// Retrieve profile
-	profile, err := store.GetOrganizationProfile("test-profile")
+	profile, _, err := store.GetOrganizationProfile("test-profile")
 	require.NoError(t, err)
 	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	assert.Equal(t, []string{"contents:read", "pull_requests:write", "metadata:read"}, profile.Attrs.Permissions)
@@ -166,7 +166,7 @@ func TestProfileStore_GetOrganizationProfile_NotFound(t *testing.T) {
 	store := NewProfileStore()
 	store.Update(t.Context(), profiles)
 
-	_, err = store.GetOrganizationProfile("nonexistent")
+	_, _, err = store.GetOrganizationProfile("nonexistent")
 	require.Error(t, err)
 
 	var notFoundErr ProfileNotFoundError
@@ -195,7 +195,7 @@ func TestProfileStore_GetOrganizationProfile_Unavailable(t *testing.T) {
 	store := NewProfileStore()
 	store.Update(t.Context(), profiles)
 
-	_, err = store.GetOrganizationProfile("invalid-profile")
+	_, _, err = store.GetOrganizationProfile("invalid-profile")
 	require.Error(t, err)
 
 	var unavailErr ProfileUnavailableError
@@ -234,12 +234,12 @@ pipeline:
 	store.Update(t.Context(), profiles)
 
 	// Retrieve pipeline profile
-	profile, err := store.GetPipelineProfile("high-access")
+	profile, _, err := store.GetPipelineProfile("high-access")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"contents:write", "pull_requests:write", "metadata:read"}, profile.Attrs.Permissions)
 
 	// Also verify "default" profile exists (created from defaults)
-	defaultProfile, err := store.GetPipelineProfile("default")
+	defaultProfile, _, err := store.GetPipelineProfile("default")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"contents:read", "metadata:read"}, defaultProfile.Attrs.Permissions)
 }
@@ -268,7 +268,7 @@ pipeline:
 	store := NewProfileStore()
 	store.Update(t.Context(), profiles)
 
-	_, err = store.GetPipelineProfile("nonexistent")
+	_, _, err = store.GetPipelineProfile("nonexistent")
 	require.Error(t, err)
 
 	var notFoundErr ProfileNotFoundError
@@ -373,7 +373,7 @@ func TestProfileStore_Concurrency(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			profile, err := store.GetOrganizationProfile("test-profile")
+			profile, _, err := store.GetOrganizationProfile("test-profile")
 			if err != nil {
 				return
 			}
@@ -384,7 +384,7 @@ func TestProfileStore_Concurrency(t *testing.T) {
 			}
 
 			// Also exercise GetPipelineProfile and Digest
-			_, _ = store.GetPipelineProfile("default")
+			_, _, _ = store.GetPipelineProfile("default")
 			_ = store.Digest()
 		}()
 	}
@@ -422,7 +422,7 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 	require.NoError(t, err)
 	store.Update(t.Context(), profiles1)
 
-	profile1, err := store.GetOrganizationProfile("profile-v1")
+	profile1, _, err := store.GetOrganizationProfile("profile-v1")
 	require.NoError(t, err)
 	assert.Equal(t, NewSpecificScope("v1"), profile1.Attrs.Scope)
 
@@ -432,11 +432,11 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 	store.Update(t.Context(), profiles2)
 
 	// Old profile should no longer be accessible
-	_, err = store.GetOrganizationProfile("profile-v1")
+	_, _, err = store.GetOrganizationProfile("profile-v1")
 	require.Error(t, err)
 
 	// New profile should be accessible
-	profile2, err := store.GetOrganizationProfile("profile-v2")
+	profile2, _, err := store.GetOrganizationProfile("profile-v2")
 	require.NoError(t, err)
 	assert.Equal(t, NewSpecificScope("v2"), profile2.Attrs.Scope)
 }
@@ -467,7 +467,7 @@ func TestProfileStore_Update_NoChange(t *testing.T) {
 	store.Update(t.Context(), profiles)
 
 	// Verify profile is still accessible
-	profile, err := store.GetOrganizationProfile("profile-v1")
+	profile, _, err := store.GetOrganizationProfile("profile-v1")
 	require.NoError(t, err)
 	assert.Equal(t, NewSpecificScope("v1"), profile.Attrs.Scope)
 }

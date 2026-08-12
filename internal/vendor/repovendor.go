@@ -13,11 +13,9 @@ import (
 // Used by /token and /git-credentials routes.
 // It uses the Buildkite API to find the pipeline's repository and vends
 // tokens for that specific repository.
-func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLookup, tokenVendor TokenVendor) ProfileTokenVendor {
-	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) VendorResult {
-		if err := ref.AssertType(profile.ProfileTypeRepo); err != nil {
-			return NewVendorFailed(err)
-		}
+func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLookup, tokenVendor TokenVendor) ProfileTokenVendor[profile.PipelineProfileAttr] {
+	return func(ctx context.Context, r Resolved[profile.PipelineProfileAttr], requestedRepoURL string) VendorResult {
+		ref := r.Ref
 
 		// Use Buildkite API to find the repository for the pipeline
 		pipelineRepoURL, err := repoLookup(ctx, ref.Organization, ref.PipelineSlug)
@@ -51,7 +49,7 @@ func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLook
 		}
 
 		// Get pipeline profile (simple lookup - "default" is in the map)
-		pipelineProfile, err := profileStore.GetPipelineProfile(ref.Name)
+		pipelineProfile, _, err := profileStore.GetPipelineProfile(ref.Name)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not find pipeline profile %s: %w", ref.Name, err))
 		}

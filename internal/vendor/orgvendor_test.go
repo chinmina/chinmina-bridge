@@ -26,19 +26,6 @@ func createTestClaimsContext() context.Context {
 	return jwt.ContextWithBuildkiteClaims(context.Background(), claims)
 }
 
-func TestOrgVendor_FailsWithWrongProfileType(t *testing.T) {
-	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), nil)
-
-	ref := profile.ProfileRef{
-		Organization: "org",
-		Name:         "default",
-		Type:         profile.ProfileTypeRepo, // Wrong type!
-		PipelineID:   "pipeline-id",
-	}
-	result := v(context.Background(), ref, "repo-url")
-	assertVendorFailure(t, result, "profile type mismatch")
-}
-
 func TestOrgVendor_FailWhenProfileNotFound(t *testing.T) {
 	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), nil)
 
@@ -47,32 +34,34 @@ func TestOrgVendor_FailWhenProfileNotFound(t *testing.T) {
 		Name:         "non-existent-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	result := v(context.Background(), ref, "repo-url")
+	result := v(context.Background(), vendor.Resolved[profile.OrganizationProfileAttr]{Ref: ref}, "repo-url")
 	assertVendorFailure(t, result, "could not find profile")
 }
 
 func TestOrgVendor_FailWhenURLInvalid(t *testing.T) {
-	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), nil)
+	store := profiletest.DefaultTestProfileStore(t)
+	v := vendor.NewOrgVendor(store, nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
 		Name:         "non-default-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	result := v(createTestClaimsContext(), ref, ":/invalid_")
+	result := v(createTestClaimsContext(), resolvedOrg(t, store, ref), ":/invalid_")
 
 	assertVendorFailure(t, result, "could not parse requested repo URL")
 }
 
 func TestOrgVendor_SuccessfulNilOnRepoMismatch(t *testing.T) {
-	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), nil)
+	store := profiletest.DefaultTestProfileStore(t)
+	v := vendor.NewOrgVendor(store, nil)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
 		Name:         "non-default-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	result := v(createTestClaimsContext(), ref, "https://github.com/org/i-dont-exist")
+	result := v(createTestClaimsContext(), resolvedOrg(t, store, ref), "https://github.com/org/i-dont-exist")
 
 	assertVendorUnmatched(t, result)
 }
@@ -82,14 +71,15 @@ func TestOrgVendor_FailWhenTokenVendorFails(t *testing.T) {
 		return "", time.Time{}, errors.New("token vendor failed")
 	})
 
-	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), tokenVendor)
+	store := profiletest.DefaultTestProfileStore(t)
+	v := vendor.NewOrgVendor(store, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
 		Name:         "non-default-profile",
 		Type:         profile.ProfileTypeOrg,
 	}
-	result := v(createTestClaimsContext(), ref, "https://github.com/org/secret-repo")
+	result := v(createTestClaimsContext(), resolvedOrg(t, store, ref), "https://github.com/org/secret-repo")
 
 	assertVendorFailure(t, result, "token vendor failed")
 }
@@ -99,7 +89,8 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
 		return "non-default-token-value", vendedDate, nil
 	})
-	v := vendor.NewOrgVendor(profiletest.DefaultTestProfileStore(t), tokenVendor)
+	store := profiletest.DefaultTestProfileStore(t)
+	v := vendor.NewOrgVendor(store, tokenVendor)
 
 	tests := []struct {
 		name         string
@@ -122,7 +113,7 @@ func TestOrgVendor_SuccessfulTokenProvisioning(t *testing.T) {
 				Name:         "non-default-profile",
 				Type:         profile.ProfileTypeOrg,
 			}
-			result := v(createTestClaimsContext(), ref, tt.requestedURL)
+			result := v(createTestClaimsContext(), resolvedOrg(t, store, ref), tt.requestedURL)
 			assertVendorSuccess(t, result, vendor.ProfileToken{
 				Token:               "non-default-token-value",
 				HashedToken:         vendor.HashToken("non-default-token-value"),
@@ -156,7 +147,8 @@ organization:
 		return "wildcard-token-value", vendedDate, nil
 	})
 
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+	store := profiletest.CreateTestProfileStore(t, profileYAML)
+	v := vendor.NewOrgVendor(store, tokenVendor)
 
 	tests := []struct {
 		name         string
@@ -181,7 +173,7 @@ organization:
 				Name:         "wildcard-profile",
 				Type:         profile.ProfileTypeOrg,
 			}
-			result := v(createTestClaimsContext(), ref, tt.requestedURL)
+			result := v(createTestClaimsContext(), resolvedOrg(t, store, ref), tt.requestedURL)
 
 			// Verify nil was passed to token vendor (indicates all repositories)
 			assert.Nil(t, capturedRepositories)
@@ -220,7 +212,8 @@ organization:
           valuePattern: "agent-workflows.*"
 `
 
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+	store := profiletest.CreateTestProfileStore(t, profileYAML)
+	v := vendor.NewOrgVendor(store, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization:     "organization-slug",
@@ -230,7 +223,7 @@ organization:
 	}
 
 	ctx := createTestClaimsContextWithPipeline("agent-workflows")
-	result := v(ctx, ref, "")
+	result := v(ctx, resolvedOrg(t, store, ref), "")
 
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "scoped-token",
@@ -246,7 +239,7 @@ organization:
 }
 
 func TestOrgVendor_CallerScoped_MissingScopeParameter(t *testing.T) {
-	// Defence-in-depth (resolveRequestScope guard): the builder normally
+	// Defence-in-depth (resolveRequestScope guard): the resolver normally
 	// guarantees a non-empty ScopedRepository for caller-scoped profiles, but the
 	// vendor is exported. If a caller-scoped ref reaches the vendor with an empty
 	// ScopedRepository, the vendor must fail rather than vend a token for the
@@ -267,7 +260,8 @@ organization:
           valuePattern: "agent-workflows.*"
 `
 
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+	store := profiletest.CreateTestProfileStore(t, profileYAML)
+	v := vendor.NewOrgVendor(store, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -277,7 +271,7 @@ organization:
 	}
 
 	ctx := createTestClaimsContextWithPipeline("agent-workflows")
-	result := v(ctx, ref, "")
+	result := v(ctx, resolvedOrg(t, store, ref), "")
 
 	assertVendorFailure(t, result, "requires a non-empty repository scope")
 }
@@ -310,7 +304,8 @@ organization:
           valuePattern: "agent-workflows.*"
 `
 
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+	store := profiletest.CreateTestProfileStore(t, profileYAML)
+	v := vendor.NewOrgVendor(store, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization:     "organization-slug",
@@ -321,7 +316,7 @@ organization:
 
 	// Git-credentials passes requestedRepoURL for repo matching, not scope resolution
 	ctx := createTestClaimsContextWithPipeline("agent-workflows")
-	result := v(ctx, ref, "https://github.com/org/target-repo")
+	result := v(ctx, resolvedOrg(t, store, ref), "https://github.com/org/target-repo")
 
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "scoped-token",
@@ -356,7 +351,8 @@ organization:
           valuePattern: "agent-workflows.*"
 `
 
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+	store := profiletest.CreateTestProfileStore(t, profileYAML)
+	v := vendor.NewOrgVendor(store, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization:     "organization-slug",
@@ -366,7 +362,7 @@ organization:
 	}
 
 	ctx := createTestClaimsContextWithPipeline("agent-workflows")
-	result := v(ctx, ref, "https://github.com/org/target-repo")
+	result := v(ctx, resolvedOrg(t, store, ref), "https://github.com/org/target-repo")
 
 	// Must be a failure, not an unmatched (empty-success).
 	assertVendorFailure(t, result, "GitHub API rejected request")
@@ -385,7 +381,8 @@ organization:
       permissions: [contents:read]
 `
 
-	v := vendor.NewOrgVendor(profiletest.CreateTestProfileStore(t, profileYAML), tokenVendor)
+	store := profiletest.CreateTestProfileStore(t, profileYAML)
+	v := vendor.NewOrgVendor(store, tokenVendor)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -394,7 +391,7 @@ organization:
 	}
 
 	ctx := createTestClaimsContext()
-	result := v(ctx, ref, "https://github.com/org/any-repo")
+	result := v(ctx, resolvedOrg(t, store, ref), "https://github.com/org/any-repo")
 
 	// Must be a failure, not an unmatched (empty-success)
 	assertVendorFailure(t, result, "GitHub API rejected request")

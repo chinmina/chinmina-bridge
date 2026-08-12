@@ -25,18 +25,18 @@ type HTTPStatuser interface {
 	Status() (int, string)
 }
 
-// builderError wraps an error returned by a ProfileRefBuilder so that it
+// resolveError wraps an error returned by a ProfileResolver so that it
 // surfaces a 400 by default. Typed errors that already implement HTTPStatuser
 // (ProfileNotFoundError, RepositoryScopeRequiredError, etc.) retain their
 // declared status via Unwrap — errors.As on the wrapped chain still finds
 // them. Plain parse errors from profile.NewProfileRef stay at 400 rather than
 // inheriting writeJSONError's 500 default, preserving prior handler behaviour
 // for malformed profile path parameters.
-type builderError struct{ err error }
+type resolveError struct{ err error }
 
-func (e builderError) Error() string { return fmt.Sprintf("invalid profile parameter: %v", e.err) }
-func (e builderError) Unwrap() error { return e.err }
-func (e builderError) Status() (int, string) {
+func (e resolveError) Error() string { return fmt.Sprintf("profile resolution failed: %v", e.err) }
+func (e resolveError) Unwrap() error { return e.err }
+func (e resolveError) Status() (int, string) {
 	var statuser HTTPStatuser
 	if errors.As(e.err, &statuser) {
 		return statuser.Status()
@@ -44,32 +44,51 @@ func (e builderError) Status() (int, string) {
 	return http.StatusBadRequest, http.StatusText(http.StatusBadRequest)
 }
 
-// PathValuer abstracts path-parameter extraction so a ProfileRefBuilder can be
+// PathValuer abstracts path-parameter extraction so a ProfileResolver can be
 // exercised without constructing a full *http.Request: test code can pass a
-// trivial stub instead. It decouples the builder from *http.Request, not the
+// trivial stub instead. It decouples the resolver from *http.Request, not the
 // handler (which is inherently HTTP and still holds the concrete request).
 // *http.Request satisfies this implicitly via its PathValue method (Go 1.22+).
 type PathValuer interface {
 	PathValue(name string) string
 }
 
-// ProfileRefBuilder constructs a profile.ProfileRef from request context, a
-// path-parameter source, and two scope signals:
+// ProfileLookup retrieves a named profile together with the digest of the
+// configuration generation it was read from, in one store read.
+//
+// The resolvers take this function rather than a *profile.ProfileStore: the
+// single read is the entire dependency, and expressing it as a function makes
+// "how many times did this request consult configuration?" a directly
+// observable property in tests.
+type ProfileLookup[T any] func(name string) (profile.AuthorizedProfile[T], string, error)
+
+// ProfileResolver resolves a request to the single profile generation that
+// will serve it: the profile reference, the compiled profile, and the digest
+// of the configuration it came from. Every downstream stage — the
+// authorization gate, the cache key, the token mint — reads that value instead
+// of consulting the profile store again, so no request can straddle a profile
+// refresh and mix generations.
+//
+// It takes request context, a path-parameter source, and two scope signals:
 //
 //   - explicitScope is the repository the caller explicitly asked to scope
 //     to (e.g. via ?repository-scope=). When a caller supplies this to a
-//     non-caller-scoped profile, the builder returns
+//     non-caller-scoped profile, the resolver returns
 //     RepositoryScopeUnexpectedError. When absent on a caller-scoped profile
-//     the builder falls back to implicitScope.
+//     the resolver falls back to implicitScope.
 //   - implicitScope is a scope value derived from the request's structure
 //     rather than its explicit intent — specifically, the repository name
 //     parsed from the Git-credentials body URL. It's honoured only on
 //     caller-scoped profiles; non-caller-scoped profiles ignore it silently
 //     because the URL is part of the request format, not a scope request.
 //
-// Validation of scope against profile type is applied inside the builder,
+// Validation of scope against profile type is applied inside the resolver,
 // centralising the authorisation-boundary logic and keeping the handler
 // focused on transport concerns.
+//
+// On failure the returned Resolved still carries Ref whenever the profile
+// parameter itself parsed, so the handler can record the requested profile in
+// the audit log even though the request never reaches the vendor chain.
 //
 // Endpoint asymmetry — why only /organization/token surfaces scope-mismatch
 // errors to the caller: implicitScope is ALWAYS present on a git-credentials
@@ -83,13 +102,11 @@ type PathValuer interface {
 //     /organization/token; at git-credentials it arises solely when the body
 //     URL fails to resolve to a repository (e.g. a non-github.com host) — a
 //     structural failure, not a scope choice.
-type ProfileRefBuilder func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (profile.ProfileRef, error)
+type ProfileResolver[T any] func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[T], error)
 
-// NewProfileRefBuilder returns a ProfileRefBuilder closed over the given
-// profile store and expected profile type. For ProfileTypeOrg the builder
-// consults the store to determine whether the profile accepts caller-supplied
-// scope, enforcing the bidirectional rules below. For ProfileTypeRepo the
-// store is ignored — pipeline profiles are never scoped.
+// NewOrgProfileResolver returns the resolver for the /organization/* routes.
+// It enforces the bidirectional scope rules below, which require the profile's
+// declared scope and so can only be applied once the profile is resolved.
 //
 // Trust model: ScopedRepository narrows within an already-authorised profile;
 // it does not grant access. Match rules gate who may invoke a profile at all,
@@ -105,34 +122,22 @@ type ProfileRefBuilder func(ctx context.Context, pv PathValuer, explicitScope, i
 // controls are the match rules, the granted permissions, and the App's
 // installation scope. Operators should pair caller-scoped profiles with
 // narrow permissions and tight match rules accordingly.
-func NewProfileRefBuilder(store *profile.ProfileStore, expectedType profile.ProfileType) ProfileRefBuilder {
-	return func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (profile.ProfileRef, error) {
-		claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
-		profileStr := pv.PathValue("profile")
-
-		ref, err := profile.NewProfileRef(claims, expectedType, profileStr)
+func NewOrgProfileResolver(lookup ProfileLookup[profile.OrganizationProfileAttr]) ProfileResolver[profile.OrganizationProfileAttr] {
+	return func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[profile.OrganizationProfileAttr], error) {
+		resolved, err := resolveProfile(ctx, pv, lookup, profile.ProfileTypeOrg)
 		if err != nil {
-			return profile.ProfileRef{}, err
+			return resolved, err
 		}
 
-		// Pipeline profiles are never scoped: skip the store lookup entirely.
-		if expectedType != profile.ProfileTypeOrg {
-			return ref, nil
-		}
-
-		authProfile, err := store.GetOrganizationProfile(ref.Name)
-		if err != nil {
-			return profile.ProfileRef{}, err
-		}
-
-		if !authProfile.Attrs.RepositoryScope().IsCallerScoped() {
+		if !resolved.Profile.Attrs.RepositoryScope().IsCallerScoped() {
 			if explicitScope != "" {
-				return profile.ProfileRef{}, profile.RepositoryScopeUnexpectedError{ProfileName: ref.Name}
+				return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: resolved.Ref},
+					profile.RepositoryScopeUnexpectedError{ProfileName: resolved.Ref.Name}
 			}
 			// implicitScope (e.g. the git-credentials URL repo) is part of
 			// the request format, not a scope request, so it's silently
 			// ignored for static-list and all-repositories profiles.
-			return ref, nil
+			return resolved, nil
 		}
 
 		// caller-scoped: explicit takes precedence over the URL fallback.
@@ -141,10 +146,62 @@ func NewProfileRefBuilder(store *profile.ProfileStore, expectedType profile.Prof
 			effective = implicitScope
 		}
 		if effective == "" {
-			return profile.ProfileRef{}, profile.RepositoryScopeRequiredError{ProfileName: ref.Name}
+			return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: resolved.Ref},
+				profile.RepositoryScopeRequiredError{ProfileName: resolved.Ref.Name}
 		}
-		ref.ScopedRepository = effective
-		return ref, nil
+		resolved.Ref.ScopedRepository = effective
+		return resolved, nil
+	}
+}
+
+// NewPipelineProfileResolver returns the resolver for the /token and
+// /git-credentials routes. Pipeline profiles are never scoped, so both scope
+// signals are ignored.
+func NewPipelineProfileResolver(lookup ProfileLookup[profile.PipelineProfileAttr]) ProfileResolver[profile.PipelineProfileAttr] {
+	return func(ctx context.Context, pv PathValuer, _, _ string) (vendor.Resolved[profile.PipelineProfileAttr], error) {
+		return resolveProfile(ctx, pv, lookup, profile.ProfileTypeRepo)
+	}
+}
+
+// resolveProfile parses the profile path parameter and reads the named profile
+// from configuration exactly once. A lookup failure still returns the parsed
+// Ref so callers can audit what was asked for.
+func resolveProfile[T any](ctx context.Context, pv PathValuer, lookup ProfileLookup[T], expectedType profile.ProfileType) (vendor.Resolved[T], error) {
+	claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
+
+	ref, err := profile.NewProfileRef(claims, expectedType, pv.PathValue("profile"))
+	if err != nil {
+		return vendor.Resolved[T]{}, err
+	}
+
+	authProfile, digest, err := lookup(ref.Name)
+	if err != nil {
+		return vendor.Resolved[T]{Ref: ref}, err
+	}
+
+	return vendor.Resolved[T]{Ref: ref, Profile: authProfile, Digest: digest}, nil
+}
+
+// recordResolvedRequest stamps the request's intent on the audit entry once the
+// profile has resolved. The canonical URN is written only for a profile that
+// actually exists: a caller can put '/' in the path parameter (net/http
+// unescapes %2F after routing), so emitting the URN for an unresolved name
+// would let a caller forge a record byte-identical to a successful
+// caller-scoped request. Unresolved names stay as the raw value stamped by
+// recordRequestedName.
+func recordResolvedRequest(ctx context.Context, ref profile.ProfileRef, requestedRepo string) {
+	entry := audit.Log(ctx)
+	entry.RequestedProfile = ref.String()
+	entry.RequestedRepository = requestedRepo
+}
+
+// recordRequestedName stamps the raw profile path parameter before anything can
+// fail, so a request rejected before or during resolution still names the
+// profile it asked for (R13). recordResolvedRequest replaces it with the
+// canonical URN once the profile is known to exist.
+func recordRequestedName(ctx context.Context, pv PathValuer) {
+	if name := pv.PathValue("profile"); name != "" {
+		audit.Log(ctx).RequestedProfile = name
 	}
 }
 
@@ -208,11 +265,12 @@ func extractRepositoryScope(r *http.Request) (string, error) {
 	return scope, nil
 }
 
-func handlePostToken(tokenVendor vendor.ProfileTokenVendor, builder ProfileRefBuilder, expectedType profile.ProfileType) http.Handler {
+func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T], expectedType profile.ProfileType) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
+		recordRequestedName(r.Context(), r)
 
-		// Resolve repository scope first so the builder receives a normalised
+		// Resolve repository scope first so the resolver receives a normalised
 		// value. Pipeline routes (ProfileTypeRepo) are never scoped: skip the
 		// query-parameter read entirely to preserve their current behaviour.
 		var explicitScope string
@@ -225,13 +283,14 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, builder ProfileRefBu
 			}
 		}
 
-		ref, err := builder(r.Context(), r, explicitScope, "")
+		resolved, err := resolve(r.Context(), r, explicitScope, "")
 		if err != nil {
-			writeJSONError(r.Context(), w, builderError{err: err})
+			writeJSONError(r.Context(), w, resolveError{err: err})
 			return
 		}
+		recordResolvedRequest(r.Context(), resolved.Ref, "")
 
-		result := tokenVendor(r.Context(), ref, "")
+		result := tokenVendor(r.Context(), resolved, "")
 
 		switch result.Status() {
 		case vendor.VendStatusFailed:
@@ -263,12 +322,13 @@ func handlePostToken(tokenVendor vendor.ProfileTokenVendor, builder ProfileRefBu
 	})
 }
 
-func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, builder ProfileRefBuilder, expectedType profile.ProfileType) http.Handler {
+func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T], expectedType profile.ProfileType) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
+		recordRequestedName(r.Context(), r)
 
 		// Read and reconstruct the Git-supplied URL first: the org path uses
-		// it to derive repository scope, so the builder receives a normalised
+		// it to derive repository scope, so the resolver receives a normalised
 		// value. Keeping the order consistent across endpoints reads cleanly.
 		requestedRepo, err := credentialhandler.ReadProperties(r.Body)
 		if err != nil {
@@ -283,7 +343,7 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, builder Pro
 		}
 
 		// Derive an implicit scope hint from the Git-supplied URL for org
-		// routes. The builder uses this as a fallback for caller-scoped
+		// routes. The resolver uses this as a fallback for caller-scoped
 		// profiles and ignores it for static-list or all-repositories
 		// profiles — the URL is part of the request format, not a scope
 		// request. Pipeline routes remain unscoped end-to-end.
@@ -292,13 +352,15 @@ func handlePostGitCredentials(tokenVendor vendor.ProfileTokenVendor, builder Pro
 			implicitScope = deriveScopeFromRepoURL(requestedRepoURL)
 		}
 
-		ref, err := builder(r.Context(), r, "", implicitScope)
+		resolved, err := resolve(r.Context(), r, "", implicitScope)
 		if err != nil {
-			writeTextError(r.Context(), w, builderError{err: err})
+			audit.Log(r.Context()).RequestedRepository = requestedRepoURL
+			writeTextError(r.Context(), w, resolveError{err: err})
 			return
 		}
+		recordResolvedRequest(r.Context(), resolved.Ref, requestedRepoURL)
 
-		result := tokenVendor(r.Context(), ref, requestedRepoURL)
+		result := tokenVendor(r.Context(), resolved, requestedRepoURL)
 
 		switch result.Status() {
 		case vendor.VendStatusFailed:

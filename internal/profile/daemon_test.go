@@ -75,7 +75,7 @@ pipeline:
 	assert.Equal(t, 1, gh.calls())
 
 	// Verify store has the profile
-	profile, err := store.GetOrganizationProfile("test-profile")
+	profile, _, err := store.GetOrganizationProfile("test-profile")
 	require.NoError(t, err, "profile should be in store")
 	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 }
@@ -167,7 +167,7 @@ pipeline:
 		// First refresh should have happened
 		assert.Equal(t, 1, gh.calls(), "first refresh should happen immediately")
 
-		profile, err := store.GetOrganizationProfile("immediate")
+		profile, _, err := store.GetOrganizationProfile("immediate")
 		require.NoError(t, err)
 		assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	})
@@ -323,7 +323,7 @@ pipeline:
 		assert.Equal(t, 2, gh.calls(), "loop should continue after panic recovery")
 
 		// Verify profile was loaded on second attempt
-		profile, err := store.GetOrganizationProfile("panic-recovery")
+		profile, _, err := store.GetOrganizationProfile("panic-recovery")
 		require.NoError(t, err)
 		assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	})
@@ -366,7 +366,7 @@ pipeline:
 		assert.Equal(t, 2, gh.calls())
 
 		// Verify the profile was eventually loaded
-		profile, err := store.GetOrganizationProfile("error-recovery")
+		profile, _, err := store.GetOrganizationProfile("error-recovery")
 		require.NoError(t, err)
 		assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 	})

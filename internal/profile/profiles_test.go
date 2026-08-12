@@ -92,6 +92,20 @@ func TestAuthorizedProfile_Match_ValidationError(t *testing.T) {
 	require.ErrorAs(t, result.Err, &valErr)
 }
 
+// TestAuthorizedProfile_Match_UncompiledMatcher checks that a profile carrying
+// no compiled matcher denies rather than panicking. The value is the sole
+// authorization input for a request, so it must fail closed even when a caller
+// hands over a zero value.
+func TestAuthorizedProfile_Match_UncompiledMatcher(t *testing.T) {
+	var uncompiled AuthorizedProfile[OrganizationProfileAttr]
+
+	result := uncompiled.Match(mapClaimLookup{"pipeline_slug": "silk-prod"})
+
+	assert.False(t, result.Matched)
+	assert.Empty(t, result.Matches)
+	require.Error(t, result.Err)
+}
+
 // TestProfileStoreOf tests the generic ProfileStoreOf type
 func TestProfileStoreOf_NewAndGet_OrganizationProfile(t *testing.T) {
 	matcher := ExactMatcher("pipeline_slug", "silk-prod")

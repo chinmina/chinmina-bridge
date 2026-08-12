@@ -13,14 +13,12 @@ import (
 // NewOrgVendor creates a vendor for organization-scoped (org:*) profiles.
 // Used by /organization/token/{profile} and /organization/git-credentials/{profile} routes.
 // It vends tokens for a set of repositories defined in the profile configuration.
-func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) ProfileTokenVendor {
-	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) VendorResult {
-		if err := ref.AssertType(profile.ProfileTypeOrg); err != nil {
-			return NewVendorFailed(err)
-		}
+func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) ProfileTokenVendor[profile.OrganizationProfileAttr] {
+	return func(ctx context.Context, r Resolved[profile.OrganizationProfileAttr], requestedRepoURL string) VendorResult {
+		ref := r.Ref
 
 		// Use the ProfileStore to get the requested profile and validate it
-		authProfile, err := profileStore.GetOrganizationProfile(ref.Name)
+		authProfile, _, err := profileStore.GetOrganizationProfile(ref.Name)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not find profile %s: %w", ref.Name, err))
 		}
@@ -81,11 +79,11 @@ func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) P
 }
 
 // resolveRequestScope determines the effective repository scope for a request.
-// Scope validation happens at the handler boundary (in the ProfileRefBuilder);
+// Scope validation happens at the handler boundary (in NewOrgProfileResolver);
 // here we simply interpret the ref's ScopedRepository against the profile's
 // declared scope. The builder is the single enforcement point, so this function
 // only needs to read the already-validated ref and apply the profile's scope rules.
-// For caller-scoped profiles, ScopedRepository is guaranteed non-empty by the builder.
+// For caller-scoped profiles, ScopedRepository is guaranteed non-empty by the resolver.
 func resolveRequestScope(profileScope profile.RepositoryScope, ref profile.ProfileRef) (profile.RepositoryScope, error) {
 	if profileScope.IsCallerScoped() {
 		// The builder is the enforcement point and guarantees ScopedRepository is

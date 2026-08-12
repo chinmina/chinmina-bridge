@@ -60,7 +60,7 @@ type ProfileRef struct {
 // If profileStr does not contain a colon, it uses expectedType with profileStr as the name.
 //
 // The returned ref never carries a repository scope. ScopedRepository is the
-// sole responsibility of the ProfileRefBuilder at the handler boundary, which
+// sole responsibility of NewOrgProfileResolver at the handler boundary, which
 // resolves and validates caller-supplied scope (profile-type × scope-value
 // rules) before assigning the field. Keeping that logic in one place avoids a
 // second, unvalidated write path through this constructor.
@@ -84,13 +84,6 @@ func NewProfileRef(claims jwt.BuildkiteClaims, expectedType ProfileType, profile
 	}
 
 	return ref, nil
-}
-
-// AssertType succeeds if the ProfileRef's type matches the expected type,
-// otherwise it returns an error. This is used to enforce that a ProfileRef is
-// only used in the context of its intended profile type (repo or org).
-func (pr ProfileRef) AssertType(expected ProfileType) error {
-	return assertProfileType(expected, pr.Type)
 }
 
 func assertProfileType(expectedType ProfileType, parsedType ProfileType) error {

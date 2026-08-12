@@ -8,15 +8,15 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
-// Auditor is a function that wraps a PipelineTokenVendor and records the result
-// of vending a token to the audit log.
-func Auditor(vendor ProfileTokenVendor) ProfileTokenVendor {
-	return func(ctx context.Context, ref profile.ProfileRef, repo string) VendorResult {
+// Auditor wraps a ProfileTokenVendor and records the outcome of vending to the
+// audit log. The request's intent — the requested profile and repository — is
+// stamped at the handler boundary instead, so it survives failures that occur
+// before the chain is reached; Auditor records only what the chain produced.
+func Auditor[T any](vendor ProfileTokenVendor[T]) ProfileTokenVendor[T] {
+	return func(ctx context.Context, r Resolved[T], repo string) VendorResult {
 		entry := audit.Log(ctx)
-		entry.RequestedProfile = ref.String()
-		entry.RequestedRepository = repo
 
-		result := vendor(ctx, ref, repo)
+		result := vendor(ctx, r, repo)
 
 		switch result.Status() {
 		case VendStatusFailed:

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
-	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +14,9 @@ import (
 
 func TestAuditor_Success(t *testing.T) {
 	vendedDate := time.Date(1970, 1, 1, 0, 0, 10, 0, time.UTC)
-	successfulVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+	// Auditor does not read the resolved profile, so the instantiation is
+	// arbitrary: a single one covers refs of both kinds.
+	successfulVendor := func(ctx context.Context, r vendor.Resolved[profile.OrganizationProfileAttr], repo string) vendor.VendorResult {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{
 			Repositories:        profile.NewSpecificScope("https://example.com/repo"),
 			Permissions:         []string{"contents:read", "metadata:read"},
@@ -37,7 +38,7 @@ func TestAuditor_Success(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := auditedVendor(ctx, ref1, repo)
+	result := auditedVendor(ctx, vendor.Resolved[profile.OrganizationProfileAttr]{Ref: ref1}, repo)
 
 	expectedToken := vendor.ProfileToken{
 		Repositories:        profile.NewSpecificScope("https://example.com/repo"),
@@ -71,7 +72,7 @@ func TestAuditor_Success(t *testing.T) {
 		Type:         profile.ProfileTypeOrg,
 		PipelineSlug: "",
 	}
-	result = auditedVendor(ctx, ref2, repo)
+	result = auditedVendor(ctx, vendor.Resolved[profile.OrganizationProfileAttr]{Ref: ref2}, repo)
 
 	assertVendorSuccess(t, result, expectedToken)
 
@@ -94,7 +95,7 @@ func TestAuditor_Success(t *testing.T) {
 }
 
 func TestAuditor_Mismatch(t *testing.T) {
-	unmatchedVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+	unmatchedVendor := func(ctx context.Context, r vendor.Resolved[profile.PipelineProfileAttr], repo string) vendor.VendorResult {
 		return vendor.NewVendorUnmatched()
 	}
 	auditedVendor := vendor.Auditor(unmatchedVendor)
@@ -109,25 +110,23 @@ func TestAuditor_Mismatch(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := auditedVendor(ctx, ref, repo)
+	result := auditedVendor(ctx, vendor.Resolved[profile.PipelineProfileAttr]{Ref: ref}, repo)
 
 	assertVendorUnmatched(t, result)
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
-		Error:               "skipped(success): profile has no credentials for requested repository",
-		Repositories:        nil,
-		Permissions:         nil,
-		ExpirySecs:          0,
-		RequestedProfile:    "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default",
-		RequestedRepository: "example-repo",
-		VendedRepository:    "",
+		Error:            "skipped(success): profile has no credentials for requested repository",
+		Repositories:     nil,
+		Permissions:      nil,
+		ExpirySecs:       0,
+		VendedRepository: "",
 	}
 	assert.Equal(t, expected, *entry)
 }
 
 func TestAuditor_Failure(t *testing.T) {
-	failingVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+	failingVendor := func(ctx context.Context, r vendor.Resolved[profile.PipelineProfileAttr], repo string) vendor.VendorResult {
 		return vendor.NewVendorFailed(errors.New("vendor error"))
 	}
 	auditedVendor := vendor.Auditor(failingVendor)
@@ -142,81 +141,18 @@ func TestAuditor_Failure(t *testing.T) {
 		PipelineID:   "pipeline-id",
 		PipelineSlug: "my-pipeline",
 	}
-	result := auditedVendor(ctx, ref, repo)
+	result := auditedVendor(ctx, vendor.Resolved[profile.PipelineProfileAttr]{Ref: ref}, repo)
 	assertVendorFailure(t, result, "vendor error")
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
-		Error:               "vendor failure: vendor error",
-		Repositories:        nil,
-		Permissions:         nil,
-		ExpirySecs:          0,
-		RequestedProfile:    "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default",
-		RequestedRepository: "example-repo",
-		VendedRepository:    "",
+		Error:            "vendor failure: vendor error",
+		Repositories:     nil,
+		Permissions:      nil,
+		ExpirySecs:       0,
+		VendedRepository: "",
 	}
 	assert.Equal(t, expected, *entry)
-}
-func TestAuditor_ProfileAuditing(t *testing.T) {
-	profileVendor := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
-		return vendor.NewVendorSuccess(vendor.ProfileToken{
-			Repositories:        profile.NewSpecificScope("https://example.com/repo"),
-			Permissions:         []string{"contents:read", "metadata:read"},
-			VendedRepositoryURL: "https://example.com/repo",
-			Profile:             ref.ShortString(),
-			Expiry:              time.Now().Add(1 * time.Hour),
-		})
-	}
-	// Testing auditing over the cache layer as there
-	// are resultant changes to audit objects.
-	tokenCache, err := cache.NewMemory[vendor.ProfileToken](45*time.Minute, 10_000)
-	assert.NoError(t, err)
-	digester := mockDigester{digest: "test-digest"}
-	vendorCache := vendor.Cached(tokenCache, digester)
-
-	auditedVendor := vendor.Auditor(vendorCache(profileVendor))
-
-	ctx, _ := audit.Context(context.Background())
-	repo := "example-repo"
-
-	ref1 := profile.ProfileRef{
-		Organization: "org",
-		Name:         "default",
-		Type:         profile.ProfileTypeRepo,
-		PipelineID:   "pipeline-id",
-		PipelineSlug: "my-pipeline",
-	}
-	// Case 1: Test with default profile - audit log should contain full URN
-	result := auditedVendor(ctx, ref1, repo)
-
-	assert.NotEqual(t, vendor.VendStatusFailed, result.Status())
-
-	entry := audit.Log(ctx)
-	expected := audit.Entry{
-		Error:            "",
-		RequestedProfile: "profile://organization/org/pipeline/pipeline-id/my-pipeline/profile/default",
-	}
-	assert.Equal(t, expected.Error, entry.Error)
-	assert.Equal(t, expected.RequestedProfile, entry.RequestedProfile)
-
-	ref2 := profile.ProfileRef{
-		Organization: "org",
-		Name:         "test-profile",
-		Type:         profile.ProfileTypeOrg,
-		PipelineSlug: "",
-	}
-	// Case 2: Test with specified profile - audit log should contain full URN
-	result = auditedVendor(ctx, ref2, repo)
-
-	assert.NotEqual(t, vendor.VendStatusFailed, result.Status())
-
-	entry = audit.Log(ctx)
-	expected = audit.Entry{
-		Error:            "",
-		RequestedProfile: "profile://organization/org/profile/test-profile",
-	}
-	assert.Equal(t, expected.Error, entry.Error)
-	assert.Equal(t, expected.RequestedProfile, entry.RequestedProfile)
 }
 
 func TestAuditingMatcher_SuccessfulMatch(t *testing.T) {
@@ -379,7 +315,7 @@ func TestAuditor_RecordsScopingMismatchError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			inner := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+			inner := func(ctx context.Context, r vendor.Resolved[profile.OrganizationProfileAttr], repo string) vendor.VendorResult {
 				return vendor.NewVendorFailed(tt.vendorError)
 			}
 
@@ -387,38 +323,10 @@ func TestAuditor_RecordsScopingMismatchError(t *testing.T) {
 
 			ctx, _ := audit.Context(context.Background())
 			ref := profile.ProfileRef{Organization: "org", Name: "test", Type: profile.ProfileTypeOrg}
-			auditor(ctx, ref, "")
+			auditor(ctx, vendor.Resolved[profile.OrganizationProfileAttr]{Ref: ref}, "")
 
 			entry := audit.Log(ctx)
 			assert.Contains(t, entry.Error, tt.expectedAudit)
 		})
 	}
-}
-
-func TestAuditor_RecordsScopedRepositoryInProfileURN(t *testing.T) {
-	// Req 9.1: the audit log includes the scoped repository name. The Auditor
-	// records ref.String() in RequestedProfile, and a caller-scoped org ref's
-	// URN carries the /repository/<repo> suffix. Guards against a future change
-	// to ref.String() that dropped the suffix.
-	inner := func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
-		return vendor.NewVendorSuccess(vendor.ProfileToken{
-			Token:        "scoped-token",
-			Repositories: profile.NewSpecificScope("target-repo"),
-			Permissions:  []string{"contents:read"},
-		})
-	}
-
-	auditor := vendor.Auditor(inner)
-
-	ctx, _ := audit.Context(context.Background())
-	ref := profile.ProfileRef{
-		Organization:     "org",
-		Name:             "scoped-profile",
-		Type:             profile.ProfileTypeOrg,
-		ScopedRepository: "target-repo",
-	}
-	auditor(ctx, ref, "")
-
-	entry := audit.Log(ctx)
-	assert.Contains(t, entry.RequestedProfile, "/repository/target-repo")
 }

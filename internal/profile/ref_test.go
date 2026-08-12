@@ -481,7 +481,7 @@ func TestNewProfileRef_ScopedRepository(t *testing.T) {
 	}
 
 	// NewProfileRef never populates ScopedRepository: caller-supplied scope is
-	// resolved and assigned by the ProfileRefBuilder at the handler boundary,
+	// resolved and assigned by NewOrgProfileResolver at the handler boundary,
 	// not by this constructor.
 	t.Run("org ref leaves ScopedRepository unset", func(t *testing.T) {
 		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages")
@@ -489,7 +489,7 @@ func TestNewProfileRef_ScopedRepository(t *testing.T) {
 		assert.Empty(t, ref.ScopedRepository)
 	})
 
-	t.Run("ScopedRepository is assignable on the ref (as the builder does)", func(t *testing.T) {
+	t.Run("ScopedRepository is assignable on the ref (as the resolver does)", func(t *testing.T) {
 		ref, err := NewProfileRef(claims, ProfileTypeOrg, "write-packages")
 		require.NoError(t, err)
 		ref.ScopedRepository = "repo-a"
