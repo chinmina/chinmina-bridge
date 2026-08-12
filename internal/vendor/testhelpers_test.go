@@ -29,10 +29,15 @@ func newTestCached(t *testing.T, ttl time.Duration) func(vendor.ProfileTokenVend
 	return vendor.Cached[cacheAttr](tokenCache)
 }
 
+// testGeneration stands in for the configuration digest the boundary resolver
+// stamps. Tests that do not care which generation they resolved from share it,
+// so they all address one namespace.
+const testGeneration = "test-generation"
+
 // cacheRequest wraps a ref the way the handler boundary would, for tests that
 // exercise the cache without depending on the resolved profile value.
 func cacheRequest(ref profile.ProfileRef) vendor.Resolved[cacheAttr] {
-	return vendor.Resolved[cacheAttr]{Ref: ref}
+	return cacheRequestAt(ref, testGeneration)
 }
 
 // cacheRequestAt wraps a ref as cacheRequest does, pinning the configuration

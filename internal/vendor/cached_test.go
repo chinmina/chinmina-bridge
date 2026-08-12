@@ -891,3 +891,29 @@ organization:
 	// must be rejected before ever reaching GitHub, not served from cache.
 	assert.Equal(t, 1, callCount)
 }
+
+// TestCachedVendor_UnresolvedGenerationFailsClosed guards the key invariant the
+// decorator rests on. The digest is the only thing separating one configuration
+// generation's entries from another's, so a request that arrives without one
+// would share a single namespace with every other — reintroducing precisely the
+// cross-generation mixing the key exists to prevent. Cached is exported, so it
+// refuses rather than trusting its caller to have resolved the profile.
+func TestCachedVendor_UnresolvedGenerationFailsClosed(t *testing.T) {
+	vended := 0
+	v := newTestCached(t, time.Hour)(func(_ context.Context, _ vendor.Resolved[cacheAttr], _ string) vendor.VendorResult {
+		vended++
+		return vendor.NewVendorSuccess(vendor.ProfileToken{Token: "unreachable"})
+	})
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Type:         profile.ProfileTypeOrg,
+		Name:         "profile",
+	}
+
+	result := v(context.Background(), cacheRequestAt(ref, ""), "")
+
+	require.Equal(t, vendor.VendStatusFailed, result.Status())
+	assert.ErrorContains(t, result.Err(), "no configuration generation resolved")
+	assert.Zero(t, vended, "a request with no generation must not reach the token vendor")
+}

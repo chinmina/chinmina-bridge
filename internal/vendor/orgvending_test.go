@@ -254,13 +254,10 @@ func TestOrgVending_CallerScoped_MissingScopeParameter(t *testing.T) {
 	assertVendorFailure(t, result, "requires a non-empty repository scope")
 }
 
-func TestOrgVending_ScopeProvidedToNonScopedProfile(t *testing.T) {
-	t.Skip("Skipped: Builder (phase 2b) validates scope at handler boundary")
-}
-
-func TestOrgVending_ScopeProvidedToAllReposProfile(t *testing.T) {
-	t.Skip("Skipped: Builder (phase 2b) validates scope at handler boundary")
-}
+// Scope supplied to a profile that does not accept one is rejected at the
+// handler boundary, never here: see TestProfileResolver_OrgStaticList_RejectsScope
+// and TestHandlePostToken_OrgStaticList_RejectsScopeWithSpecificMessage in the
+// root package.
 
 func TestOrgVending_GitCredentials_CallerScoped_DerivesRepoFromURL(t *testing.T) {
 	vendedDate := time.Date(1970, 1, 1, 0, 0, 10, 0, time.UTC)

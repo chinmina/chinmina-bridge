@@ -1046,6 +1046,28 @@ func TestExtractRepositoryScope_Invalid(t *testing.T) {
 	}
 }
 
+// TestHandlePostToken_PipelineRouteIgnoresRepositoryScope pins the one
+// load-bearing use of AcceptsRepositoryScope. A pipeline profile cannot be
+// narrowed by the caller, so ?repository-scope= is not a request the route
+// understands — it is ignored rather than validated. The value below would be
+// a 400 on an organization route; here it must not be read at all, because
+// rejecting it would break every existing caller that passes the parameter
+// indiscriminately.
+func TestHandlePostToken_PipelineRouteIgnoresRepositoryScope(t *testing.T) {
+	tokenVendor := vendor.ProfileTokenVendor[pipelineAttr](func(context.Context, vendor.Resolved[pipelineAttr], string) vendor.VendorResult {
+		return vendor.NewVendorSuccess(vendor.ProfileToken{Token: "pipeline-token"})
+	})
+
+	req, err := http.NewRequestWithContext(claimsContext(), "POST", "/token?repository-scope=owner/repo", nil)
+	require.NoError(t, err)
+	req.SetPathValue("profile", "default")
+
+	rr := httptest.NewRecorder()
+	handlePostToken(tokenVendor, testPipelineResolver()).ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, "a scope parameter the route ignores must not fail the request")
+}
+
 func TestDeriveScopeFromRepoURL(t *testing.T) {
 	tests := []struct {
 		name     string

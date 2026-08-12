@@ -79,7 +79,8 @@ func TestVending_OrgPermissionsComeFromResolvedProfile(t *testing.T) {
 // TestVending_OrgWildcardPassesNilRepositories preserves the documented
 // all-repositories behaviour: GitHub reads a nil repository list as "every
 // repository in the installation", so it must not be normalised to an empty
-// slice.
+// slice. This is also the other half of the empty-scope guard below — the
+// guard rejects an empty repository list, and must not catch a wildcard.
 func TestVending_OrgWildcardPassesNilRepositories(t *testing.T) {
 	tokenVendor, gotRepos, _ := recordingTokenVendor(t)
 	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
@@ -208,20 +209,4 @@ func TestVending_EmptyScopeFailsClosed(t *testing.T) {
 			assert.ErrorContains(t, result.Err(), "no repository scope resolved")
 		})
 	}
-}
-
-// TestVending_WildcardScopeStillVendsTheInstallation is the other half of the
-// empty-scope guard: an explicit wildcard must keep passing a nil repository
-// list, which is how all-repositories profiles work.
-func TestVending_WildcardScopeStillVendsTheInstallation(t *testing.T) {
-	tokenVendor, gotRepos, _ := recordingTokenVendor(t)
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
-
-	ref := profile.ProfileRef{Organization: "organization-slug", Type: profile.ProfileTypeOrg, Name: "all-repos"}
-	attrs := profile.OrganizationProfileAttr{Scope: profile.NewWildcardScope(), Permissions: []string{"contents:read"}}
-
-	result := v(context.Background(), orgResolved(ref, attrs), "")
-
-	require.Equal(t, vendor.VendStatusSuccess, result.Status())
-	assert.Nil(t, *gotRepos)
 }

@@ -57,6 +57,15 @@ func Cached[T any](tokenCache cache.TokenCache[ProfileToken]) func(ProfileTokenV
 			// permissions is never read back by a request resolved from
 			// another. ref.String() embeds ScopedRepository for caller-scoped
 			// profiles.
+			//
+			// Without a digest there is no namespace, and every generation
+			// would share one entry: the exact mixing this decorator exists to
+			// prevent. Cached is exported, so refuse rather than assume the
+			// caller resolved the profile properly.
+			if r.Digest == "" {
+				return NewVendorFailed(fmt.Errorf("no configuration generation resolved for profile %s", r.Ref))
+			}
+
 			key := fmt.Sprintf("%s:%s", r.Digest, r.Ref.String())
 
 			cachedToken, found, err := tokenCache.Get(ctx, key)

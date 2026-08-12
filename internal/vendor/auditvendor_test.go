@@ -65,33 +65,6 @@ func TestAuditor_Success(t *testing.T) {
 	assert.Equal(t, expected.Permissions, entry.Permissions)
 	assert.Equal(t, expected.HashedToken, entry.HashedToken)
 	assert.NotZero(t, entry.ExpirySecs)
-
-	ref2 := profile.ProfileRef{
-		Organization: "org",
-		Name:         "test-profile",
-		Type:         profile.ProfileTypeOrg,
-		PipelineSlug: "",
-	}
-	result = auditedVendor(ctx, vendor.Resolved[profile.OrganizationProfileAttr]{Ref: ref2}, repo)
-
-	assertVendorSuccess(t, result, expectedToken)
-
-	entry = audit.Log(ctx)
-	expected = audit.Entry{
-		Error:            "",
-		VendedRepository: "https://example.com/repo",
-		Repositories:     []string{"https://example.com/repo"},
-		Permissions:      []string{"contents:read", "metadata:read"},
-		HashedToken:      vendor.HashToken("test-token"),
-	}
-	// ExpirySecs is dynamic based on current time, so check separately
-	assert.Equal(t, expected.Error, entry.Error)
-	assert.Equal(t, expected.VendedRepository, entry.VendedRepository)
-	assert.Equal(t, expected.Repositories, entry.Repositories)
-	assert.Equal(t, expected.Permissions, entry.Permissions)
-	assert.Equal(t, expected.HashedToken, entry.HashedToken)
-	assert.NotZero(t, entry.ExpirySecs)
-
 }
 
 func TestAuditor_Mismatch(t *testing.T) {

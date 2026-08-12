@@ -27,11 +27,13 @@ type HTTPStatuser interface {
 
 // resolveError wraps an error returned by a ProfileResolver so that it
 // surfaces a 400 by default. Typed errors that already implement HTTPStatuser
-// (ProfileNotFoundError, RepositoryScopeRequiredError, etc.) retain their
-// declared status via Unwrap — errors.As on the wrapped chain still finds
-// them. Plain parse errors from profile.NewProfileRef stay at 400 rather than
-// inheriting writeJSONError's 500 default, preserving prior handler behaviour
-// for malformed profile path parameters.
+// (ProfileNotFoundError, RepositoryScopeRequiredError, etc.) keep their
+// declared status because Status below probes the *wrapped* error explicitly:
+// errors.As matches outermost-first, and resolveError is itself an
+// HTTPStatuser, so a caller walking the chain from the wrapper would otherwise
+// stop here and see 400. Plain parse errors from profile.NewProfileRef stay at
+// 400 rather than inheriting writeJSONError's 500 default, preserving prior
+// handler behaviour for malformed profile path parameters.
 type resolveError struct{ err error }
 
 func (e resolveError) Error() string { return fmt.Sprintf("profile resolution failed: %v", e.err) }
@@ -69,7 +71,8 @@ type ProfileLookup[T any] func(name string) (profile.AuthorizedProfile[T], strin
 // of consulting the profile store again, so no request can straddle a profile
 // refresh and mix generations.
 //
-// It takes request context, a path-parameter source, and two scope signals:
+// Resolve takes request context, a path-parameter source, and two scope
+// signals:
 //
 //   - explicitScope is the repository the caller explicitly asked to scope
 //     to (e.g. via ?repository-scope=). When a caller supplies this to a
@@ -86,9 +89,10 @@ type ProfileLookup[T any] func(name string) (profile.AuthorizedProfile[T], strin
 // centralising the authorisation-boundary logic and keeping the handler
 // focused on transport concerns.
 //
-// On failure the returned Resolved still carries Ref whenever the profile
-// parameter itself parsed, so the handler can record the requested profile in
-// the audit log even though the request never reaches the vendor chain.
+// On failure the returned Resolved is empty. In particular the requested name
+// is not carried forward: recordRequestedName has already stamped the raw
+// path parameter on the audit entry, and stamping the canonical URN for a name
+// that never resolved would make a rejected request read like a served one.
 //
 // Endpoint asymmetry — why only /organization/token surfaces scope-mismatch
 // errors to the caller: implicitScope is ALWAYS present on a git-credentials
@@ -142,7 +146,7 @@ func NewOrgProfileResolver(lookup ProfileLookup[profile.OrganizationProfileAttr]
 
 			if !resolved.Profile.Attrs.RepositoryScope().IsCallerScoped() {
 				if explicitScope != "" {
-					return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: resolved.Ref},
+					return vendor.Resolved[profile.OrganizationProfileAttr]{},
 						profile.RepositoryScopeUnexpectedError{ProfileName: resolved.Ref.Name}
 				}
 				// implicitScope (e.g. the git-credentials URL repo) is part of
@@ -157,7 +161,7 @@ func NewOrgProfileResolver(lookup ProfileLookup[profile.OrganizationProfileAttr]
 				effective = implicitScope
 			}
 			if effective == "" {
-				return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: resolved.Ref},
+				return vendor.Resolved[profile.OrganizationProfileAttr]{},
 					profile.RepositoryScopeRequiredError{ProfileName: resolved.Ref.Name}
 			}
 			resolved.Ref.ScopedRepository = effective
@@ -178,8 +182,9 @@ func NewPipelineProfileResolver(lookup ProfileLookup[profile.PipelineProfileAttr
 }
 
 // resolveProfile parses the profile path parameter and reads the named profile
-// from configuration exactly once. A lookup failure still returns the parsed
-// Ref so callers can audit what was asked for.
+// from configuration exactly once. Failure returns an empty Resolved: the raw
+// requested name is already on the audit entry, and nothing downstream of a
+// failed resolution may read a half-populated value.
 func resolveProfile[T any](ctx context.Context, pv PathValuer, lookup ProfileLookup[T], expectedType profile.ProfileType) (vendor.Resolved[T], error) {
 	claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
 
@@ -190,7 +195,7 @@ func resolveProfile[T any](ctx context.Context, pv PathValuer, lookup ProfileLoo
 
 	authProfile, digest, err := lookup(ref.Name)
 	if err != nil {
-		return vendor.Resolved[T]{Ref: ref}, err
+		return vendor.Resolved[T]{}, err
 	}
 
 	return vendor.Resolved[T]{Ref: ref, Profile: authProfile, Digest: digest}, nil
@@ -198,11 +203,14 @@ func resolveProfile[T any](ctx context.Context, pv PathValuer, lookup ProfileLoo
 
 // recordResolvedRequest stamps the request's intent on the audit entry once the
 // profile has resolved. The canonical URN is written only for a profile that
-// actually exists: a caller can put '/' in the path parameter (net/http
-// unescapes %2F after routing), so emitting the URN for an unresolved name
-// would let a caller forge a record byte-identical to a successful
-// caller-scoped request. Unresolved names stay as the raw value stamped by
+// actually exists, so its presence means "this name resolved" rather than
+// "this name was asked for". Unresolved names stay as the raw value stamped by
 // recordRequestedName.
+//
+// The converse does not hold: a caller can put '/' in the path parameter
+// (net/http unescapes %2F after routing), so a raw name can itself be
+// URN-shaped. A reader distinguishing a served request from a rejected one
+// must use the entry's error field, never the shape of requestedProfile.
 func recordResolvedRequest(ctx context.Context, ref profile.ProfileRef, requestedRepo string) {
 	entry := audit.Log(ctx)
 	entry.RequestedProfile = ref.String()
