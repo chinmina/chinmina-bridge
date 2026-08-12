@@ -102,7 +102,16 @@ type ProfileLookup[T any] func(name string) (profile.AuthorizedProfile[T], strin
 //     /organization/token; at git-credentials it arises solely when the body
 //     URL fails to resolve to a repository (e.g. a non-github.com host) — a
 //     structural failure, not a scope choice.
-type ProfileResolver[T any] func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[T], error)
+type ProfileResolver[T any] struct {
+	// AcceptsRepositoryScope reports whether this family's profiles can be
+	// narrowed to a caller-supplied repository. It travels with the resolver
+	// rather than being passed alongside it, so a handler cannot be wired with
+	// one family's resolver and another family's scope policy.
+	AcceptsRepositoryScope bool
+
+	// Resolve reads the named profile from configuration exactly once.
+	Resolve func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[T], error)
+}
 
 // NewOrgProfileResolver returns the resolver for the /organization/* routes.
 // It enforces the bidirectional scope rules below, which require the profile's
@@ -123,34 +132,37 @@ type ProfileResolver[T any] func(ctx context.Context, pv PathValuer, explicitSco
 // installation scope. Operators should pair caller-scoped profiles with
 // narrow permissions and tight match rules accordingly.
 func NewOrgProfileResolver(lookup ProfileLookup[profile.OrganizationProfileAttr]) ProfileResolver[profile.OrganizationProfileAttr] {
-	return func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[profile.OrganizationProfileAttr], error) {
-		resolved, err := resolveProfile(ctx, pv, lookup, profile.ProfileTypeOrg)
-		if err != nil {
-			return resolved, err
-		}
-
-		if !resolved.Profile.Attrs.RepositoryScope().IsCallerScoped() {
-			if explicitScope != "" {
-				return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: resolved.Ref},
-					profile.RepositoryScopeUnexpectedError{ProfileName: resolved.Ref.Name}
+	return ProfileResolver[profile.OrganizationProfileAttr]{
+		AcceptsRepositoryScope: true,
+		Resolve: func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[profile.OrganizationProfileAttr], error) {
+			resolved, err := resolveProfile(ctx, pv, lookup, profile.ProfileTypeOrg)
+			if err != nil {
+				return resolved, err
 			}
-			// implicitScope (e.g. the git-credentials URL repo) is part of
-			// the request format, not a scope request, so it's silently
-			// ignored for static-list and all-repositories profiles.
-			return resolved, nil
-		}
 
-		// caller-scoped: explicit takes precedence over the URL fallback.
-		effective := explicitScope
-		if effective == "" {
-			effective = implicitScope
-		}
-		if effective == "" {
-			return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: resolved.Ref},
-				profile.RepositoryScopeRequiredError{ProfileName: resolved.Ref.Name}
-		}
-		resolved.Ref.ScopedRepository = effective
-		return resolved, nil
+			if !resolved.Profile.Attrs.RepositoryScope().IsCallerScoped() {
+				if explicitScope != "" {
+					return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: resolved.Ref},
+						profile.RepositoryScopeUnexpectedError{ProfileName: resolved.Ref.Name}
+				}
+				// implicitScope (e.g. the git-credentials URL repo) is part of
+				// the request format, not a scope request, so it's silently
+				// ignored for static-list and all-repositories profiles.
+				return resolved, nil
+			}
+
+			// caller-scoped: explicit takes precedence over the URL fallback.
+			effective := explicitScope
+			if effective == "" {
+				effective = implicitScope
+			}
+			if effective == "" {
+				return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: resolved.Ref},
+					profile.RepositoryScopeRequiredError{ProfileName: resolved.Ref.Name}
+			}
+			resolved.Ref.ScopedRepository = effective
+			return resolved, nil
+		},
 	}
 }
 
@@ -158,8 +170,10 @@ func NewOrgProfileResolver(lookup ProfileLookup[profile.OrganizationProfileAttr]
 // /git-credentials routes. Pipeline profiles are never scoped, so both scope
 // signals are ignored.
 func NewPipelineProfileResolver(lookup ProfileLookup[profile.PipelineProfileAttr]) ProfileResolver[profile.PipelineProfileAttr] {
-	return func(ctx context.Context, pv PathValuer, _, _ string) (vendor.Resolved[profile.PipelineProfileAttr], error) {
-		return resolveProfile(ctx, pv, lookup, profile.ProfileTypeRepo)
+	return ProfileResolver[profile.PipelineProfileAttr]{
+		Resolve: func(ctx context.Context, pv PathValuer, _, _ string) (vendor.Resolved[profile.PipelineProfileAttr], error) {
+			return resolveProfile(ctx, pv, lookup, profile.ProfileTypeRepo)
+		},
 	}
 }
 
@@ -265,7 +279,7 @@ func extractRepositoryScope(r *http.Request) (string, error) {
 	return scope, nil
 }
 
-func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T], expectedType profile.ProfileType) http.Handler {
+func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T]) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 		recordRequestedName(r.Context(), r)
@@ -274,7 +288,7 @@ func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve Pr
 		// value. Pipeline routes (ProfileTypeRepo) are never scoped: skip the
 		// query-parameter read entirely to preserve their current behaviour.
 		var explicitScope string
-		if expectedType == profile.ProfileTypeOrg {
+		if resolve.AcceptsRepositoryScope {
 			var err error
 			explicitScope, err = extractRepositoryScope(r)
 			if err != nil {
@@ -283,7 +297,7 @@ func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve Pr
 			}
 		}
 
-		resolved, err := resolve(r.Context(), r, explicitScope, "")
+		resolved, err := resolve.Resolve(r.Context(), r, explicitScope, "")
 		if err != nil {
 			writeJSONError(r.Context(), w, resolveError{err: err})
 			return
@@ -322,7 +336,7 @@ func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve Pr
 	})
 }
 
-func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T], expectedType profile.ProfileType) http.Handler {
+func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T]) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 		recordRequestedName(r.Context(), r)
@@ -348,11 +362,11 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 		// profiles — the URL is part of the request format, not a scope
 		// request. Pipeline routes remain unscoped end-to-end.
 		var implicitScope string
-		if expectedType == profile.ProfileTypeOrg {
+		if resolve.AcceptsRepositoryScope {
 			implicitScope = deriveScopeFromRepoURL(requestedRepoURL)
 		}
 
-		resolved, err := resolve(r.Context(), r, "", implicitScope)
+		resolved, err := resolve.Resolve(r.Context(), r, "", implicitScope)
 		if err != nil {
 			audit.Log(r.Context()).RequestedRepository = requestedRepoURL
 			writeTextError(r.Context(), w, resolveError{err: err})

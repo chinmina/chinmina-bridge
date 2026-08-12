@@ -3,9 +3,13 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -514,26 +518,26 @@ func TestIntegrationCache_CacheHit(t *testing.T) {
 			// a miss in the consistency window would re-mint and cache the new
 			// token, from which the cache could never converge back to the original.
 			require.Eventually(t, func() bool {
-				before := harness.GitHubMock.RequestCount
+				before := harness.GitHubMock.RequestCount()
 				result, err := harness.Client().Token(token, "")
 				if err != nil {
 					return false
 				}
-				return result.Token == "ghs_firsttoken" && harness.GitHubMock.RequestCount == before
+				return result.Token == "ghs_firsttoken" && harness.GitHubMock.RequestCount() == before
 			}, 5*time.Second, 20*time.Millisecond, "cache should warm and serve the token without re-minting")
 
 			// Now that the cache is warm, change the upstream. A genuine cache hit
 			// must ignore this and keep returning the cached token.
 			harness.GitHubMock.Token = "ghs_differenttoken"
 
-			mintsBeforeHit := harness.GitHubMock.RequestCount
+			mintsBeforeHit := harness.GitHubMock.RequestCount()
 
 			result2, err := harness.Client().Token(token, "")
 			require.NoError(t, err)
 
 			// Should still be the original token from cache, with no new mint.
 			assert.Equal(t, "ghs_firsttoken", result2.Token, "expected cached token, not new token from GitHub")
-			assert.Equal(t, mintsBeforeHit, harness.GitHubMock.RequestCount, "expected a cache hit with no additional GitHub token mint")
+			assert.Equal(t, mintsBeforeHit, harness.GitHubMock.RequestCount(), "expected a cache hit with no additional GitHub token mint")
 		})
 	}
 }
@@ -564,7 +568,7 @@ func TestIntegrationCache_CacheInvalidationOnProfileChange(t *testing.T) {
 			// First request - cache the token
 			_, err = harness.Client().Token(token, "")
 			require.NoError(t, err)
-			assert.Equal(t, 1, harness.GitHubMock.RequestCount, "expected GitHub to be called once for initial cache miss")
+			assert.Equal(t, 1, harness.GitHubMock.RequestCount(), "expected GitHub to be called once for initial cache miss")
 
 			// Load modified profile configuration - this changes the digest
 			yamlContent, err = os.ReadFile("testdata/pipeline-profiles-extended.yaml")
@@ -586,7 +590,7 @@ func TestIntegrationCache_CacheInvalidationOnProfileChange(t *testing.T) {
 
 			// Should get the new token because digest changed, requiring a second GitHub call
 			assert.Equal(t, "ghs_token2", result2.Token, "expected new token after profile change")
-			assert.Equal(t, 2, harness.GitHubMock.RequestCount, "expected GitHub to be called again after cache invalidation")
+			assert.Equal(t, 2, harness.GitHubMock.RequestCount(), "expected GitHub to be called again after cache invalidation")
 		})
 	}
 }
@@ -633,7 +637,7 @@ func TestIntegrationValkey_DecryptionFailureAsCacheMiss(t *testing.T) {
 	result1, err := harness.Client().Token(token, "")
 	require.NoError(t, err)
 	assert.Equal(t, "ghs_firsttoken", result1.Token)
-	assert.Equal(t, 1, harness.GitHubMock.RequestCount, "expected GitHub to be called once")
+	assert.Equal(t, 1, harness.GitHubMock.RequestCount(), "expected GitHub to be called once")
 
 	// Get direct Valkey access to corrupt the cached value
 	valkeyClient := harness.newTestValkeyClient(t)
@@ -663,7 +667,7 @@ func TestIntegrationValkey_DecryptionFailureAsCacheMiss(t *testing.T) {
 	result2, err := harness.Client().Token(token, "")
 	require.NoError(t, err)
 	assert.Equal(t, "ghs_secondtoken", result2.Token, "expected new token after decryption failure")
-	assert.Equal(t, 2, harness.GitHubMock.RequestCount, "expected GitHub to be called twice (decryption failure = cache miss)")
+	assert.Equal(t, 2, harness.GitHubMock.RequestCount(), "expected GitHub to be called twice (decryption failure = cache miss)")
 }
 
 // TestIntegrationBasePath verifies that a configured base path prefix is
@@ -831,4 +835,170 @@ func TestIntegrationOrganizationGitCredentials_AllRepos_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "ghs_allrepos_creds", props.Get("password"))
+}
+
+// generationA and generationB are two configurations of the same profile name
+// that disagree about everything a response can reveal: who may vend it, what
+// repositories it covers, and what may be done to them. A response that pairs
+// one generation's authorization with the other's permissions is therefore
+// visible, which is what the consistency assertion below looks for.
+const (
+	generationA = `organization:
+  profiles:
+    - name: rotating-profile
+      match:
+        - claim: pipeline_slug
+          value: pipeline-a
+      repositories:
+        - repo-a
+      permissions:
+        - contents:read
+
+pipeline:
+  defaults:
+    permissions:
+      - contents:read
+`
+
+	generationB = `organization:
+  profiles:
+    - name: rotating-profile
+      match:
+        - claim: pipeline_slug
+          value: pipeline-b
+      repositories:
+        - repo-b
+      permissions:
+        - contents:write
+
+pipeline:
+  defaults:
+    permissions:
+      - contents:read
+`
+)
+
+// TestIntegrationProfileRefresh_ServesNoMixedGeneration is the standing
+// evidence for the property the whole refactor exists to produce: a request is
+// authorized against, and vended from, exactly one configuration generation.
+//
+// Profiles are replaced wholesale, so a request that read the store more than
+// once could match against one generation and take its permissions from the
+// next. Here generation A admits only pipeline-a and grants contents:read on
+// repo-a, while generation B admits only pipeline-b and grants contents:write
+// on repo-b. Each caller therefore has exactly two acceptable outcomes: a token
+// carrying its own generation's repository AND permissions, or a 403 because
+// the other generation was live when it resolved. Any other pairing — most
+// sharply, pipeline-a holding contents:write — is a split-generation response.
+//
+// Run under -race, which `just ci-unit` does.
+func TestIntegrationProfileRefresh_ServesNoMixedGeneration(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	harness.GitHubMock.Token = "ghs_rotating"
+
+	compile := func(yaml string) profile.Profiles {
+		profiles, err := profiletest.CompileFromYAML(yaml)
+		require.NoError(t, err)
+		return profiles
+	}
+	generations := []profile.Profiles{compile(generationA), compile(generationB)}
+	harness.ProfileStore.Update(t.Context(), generations[0])
+
+	// Each generation admits exactly one pipeline slug and grants exactly one
+	// repository and permission set. A caller is therefore only ever admitted
+	// by the generation named below, so a token vended to it must carry that
+	// generation's repository and permissions. Anything else means the match
+	// decision and the token came from different generations.
+	type generation struct {
+		slug         string
+		repositories []string
+		permissions  []string
+	}
+	authorized := []generation{
+		{slug: "pipeline-a", repositories: []string{"repo-a"}, permissions: []string{"contents:read", "metadata:read"}},
+		{slug: "pipeline-b", repositories: []string{"repo-b"}, permissions: []string{"contents:write", "metadata:read"}},
+	}
+
+	const (
+		callers         = 8
+		requestsPerCall = 40
+		refreshInterval = 200 * time.Microsecond
+	)
+
+	var (
+		callersDone sync.WaitGroup
+		refresher   sync.WaitGroup
+		mu          sync.Mutex
+		mixed       []string
+		vended      int
+		denied      int
+		refreshes   atomic.Int64
+		stopping    = make(chan struct{})
+	)
+
+	// Replace the configuration underneath the callers for the whole run.
+	refresher.Add(1)
+	go func() {
+		defer refresher.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stopping:
+				return
+			default:
+			}
+			harness.ProfileStore.Update(context.Background(), generations[i%2])
+			refreshes.Add(1)
+			time.Sleep(refreshInterval)
+		}
+	}()
+
+	for c := range callers {
+		// Half the callers present each generation's authorized slug, so
+		// whichever generation is live, some callers are admitted.
+		want := authorized[c%2]
+
+		callersDone.Add(1)
+		go func() {
+			defer callersDone.Done()
+			jwt := harness.PipelineToken(WithPipeline(want.slug, "pipeline-id"))
+
+			for range requestsPerCall {
+				token, err := harness.Client().OrganizationToken(jwt, "rotating-profile")
+
+				mu.Lock()
+				switch {
+				case err != nil:
+					var apiErr *APIError
+					if assert.ErrorAs(t, err, &apiErr) {
+						assert.Equal(t, http.StatusForbidden, apiErr.StatusCode,
+							"the only acceptable failure is a match denial")
+					}
+					denied++
+				case !assert.ObjectsAreEqual(want.repositories, token.Repositories.Names),
+					!assert.ObjectsAreEqual(want.permissions, token.Permissions):
+					// Admitted by this caller's generation, but vended from
+					// another one.
+					mixed = append(mixed, fmt.Sprintf(
+						"%s was admitted, so it must receive repositories %v with permissions %v; got %v with %v",
+						want.slug, want.repositories, want.permissions,
+						token.Repositories.Names, token.Permissions))
+				default:
+					vended++
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+
+	callersDone.Wait()
+	close(stopping)
+	refresher.Wait()
+
+	assert.Empty(t, mixed, "every response must belong to a single configuration generation")
+
+	// The test is only evidence if it actually raced: requests must have been
+	// served on both sides of at least one refresh, and both outcomes seen.
+	require.Greater(t, refreshes.Load(), int64(1), "the configuration must have been replaced during the run")
+	require.Positive(t, vended, "some caller must have been admitted")
+	require.Positive(t, denied, "some caller must have been denied by the other generation")
 }

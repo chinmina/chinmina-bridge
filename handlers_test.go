@@ -66,12 +66,12 @@ func TestHandlers_RequireClaims(t *testing.T) {
 	}{
 		{
 			name:    "postToken",
-			handler: handlePostToken(nil, testPipelineResolver(), profile.ProfileTypeRepo),
+			handler: handlePostToken(nil, testPipelineResolver()),
 			body:    nil,
 		},
 		{
 			name:    "postGitCredentials",
-			handler: handlePostGitCredentials(nil, testPipelineResolver(), profile.ProfileTypeRepo),
+			handler: handlePostGitCredentials(nil, testPipelineResolver()),
 			body:    validGitCredsBody(),
 		},
 	}
@@ -100,7 +100,7 @@ func TestHandlePostToken_ReturnsTokenOnSuccess(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostToken(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+	handler := handlePostToken(tokenVendor, testPipelineResolver())
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -128,7 +128,7 @@ func TestHandlePostToken_ReturnsFailureOnVendorFailure(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostToken(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+	handler := handlePostToken(tokenVendor, testPipelineResolver())
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -172,7 +172,7 @@ func TestHandlePostTokenWithProfile_ReturnsTokenOnSuccess(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// act
-			handler := handlePostToken(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+			handler := handlePostToken(tokenVendor, testPipelineResolver())
 			handler.ServeHTTP(rr, req)
 
 			// assert
@@ -209,7 +209,7 @@ func TestHandlePostGitCredentials_ReturnsTokenOnSuccess(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver())
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -239,7 +239,7 @@ func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver())
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -263,7 +263,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnInvalidRequest(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver())
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -292,7 +292,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnReadFailure(t *testing.T) {
 	// act
 	handler := maxRequestSize(1)(
 		// use the request size limit to force an error in the credentials handler
-		handlePostGitCredentials(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo),
+		handlePostGitCredentials(tokenVendor, testPipelineResolver()),
 	)
 	handler.ServeHTTP(rr, req)
 
@@ -319,7 +319,7 @@ func TestHandlePostGitCredentials_ReturnsFailureOnVendorFailure(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver())
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -367,7 +367,7 @@ func TestHandlePostGitCredentialsWithRepoProfile_ReturnsTokenOnSuccess(t *testin
 			rr := httptest.NewRecorder()
 
 			// act
-			handler := handlePostGitCredentials(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+			handler := handlePostGitCredentials(tokenVendor, testPipelineResolver())
 			handler.ServeHTTP(rr, req)
 
 			// assert
@@ -434,7 +434,7 @@ func TestHandlePostGitCredentialsWithProfile_ReturnsTokenOnSuccess(t *testing.T)
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, resolve, profile.ProfileTypeOrg)
+	handler := handlePostGitCredentials(tokenVendor, resolve)
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -545,7 +545,7 @@ func TestHandlePostToken_ProfileErrors(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			// act
-			handler := handlePostToken(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+			handler := handlePostToken(tokenVendor, testPipelineResolver())
 			handler.ServeHTTP(rr, req)
 
 			// assert
@@ -574,7 +574,7 @@ func TestHandlePostToken_ClaimValidationError(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostToken(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+	handler := handlePostToken(tokenVendor, testPipelineResolver())
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -604,7 +604,7 @@ func TestHandlePostGitCredentials_ClaimValidationError(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// act
-	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver(), profile.ProfileTypeRepo)
+	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver())
 	handler.ServeHTTP(rr, req)
 
 	// assert
@@ -748,7 +748,7 @@ func TestProfileResolver_OrgProfile(t *testing.T) {
 	ctx := claimsContext()
 	pv := mapPathValuer{"profile": "static-profile"}
 
-	resolved, err := resolve(ctx, pv, "", "")
+	resolved, err := resolve.Resolve(ctx, pv, "", "")
 	require.NoError(t, err)
 
 	assert.Equal(t, profile.ProfileRef{
@@ -764,7 +764,7 @@ func TestProfileResolver_RepoProfileDefault(t *testing.T) {
 	ctx := claimsContext()
 	pv := mapPathValuer{} // no path parameter — repo profiles default to "default"
 
-	resolved, err := resolve(ctx, pv, "", "")
+	resolved, err := resolve.Resolve(ctx, pv, "", "")
 	require.NoError(t, err)
 
 	assert.Equal(t, profile.ProfileRef{
@@ -814,7 +814,7 @@ func TestProfileResolver_OrgCallerScoped_MissingScopeReturnsRequiredError(t *tes
 	ctx := claimsContext()
 	pv := mapPathValuer{"profile": "caller-scoped-profile"}
 
-	_, err := resolve(ctx, pv, "", "")
+	_, err := resolve.Resolve(ctx, pv, "", "")
 
 	var scopeErr profile.RepositoryScopeRequiredError
 	require.ErrorAs(t, err, &scopeErr)
@@ -831,7 +831,7 @@ func TestProfileResolver_OrgStaticList_RejectsScope(t *testing.T) {
 	ctx := claimsContext()
 	pv := mapPathValuer{"profile": "static-profile"}
 
-	_, err := resolve(ctx, pv, "unexpected-scope", "")
+	_, err := resolve.Resolve(ctx, pv, "unexpected-scope", "")
 
 	var scopeErr profile.RepositoryScopeUnexpectedError
 	require.ErrorAs(t, err, &scopeErr)
@@ -848,7 +848,7 @@ func TestProfileResolver_OrgCallerScoped_PopulatesScopedRepository(t *testing.T)
 	ctx := claimsContext()
 	pv := mapPathValuer{"profile": "caller-scoped-profile"}
 
-	resolved, err := resolve(ctx, pv, "target-repo", "")
+	resolved, err := resolve.Resolve(ctx, pv, "target-repo", "")
 	require.NoError(t, err)
 
 	assert.Equal(t, profile.ProfileRef{
@@ -870,7 +870,7 @@ func TestProfileResolver_OrgCallerScoped_UsesImplicitScopeWhenExplicitEmpty(t *t
 	ctx := claimsContext()
 	pv := mapPathValuer{"profile": "caller-scoped-profile"}
 
-	resolved, err := resolve(ctx, pv, "", "url-derived-repo")
+	resolved, err := resolve.Resolve(ctx, pv, "", "url-derived-repo")
 	require.NoError(t, err)
 
 	assert.Equal(t, "url-derived-repo", resolved.Ref.ScopedRepository)
@@ -884,7 +884,7 @@ func TestProfileResolver_RepoProfile_IgnoresScopeArgs(t *testing.T) {
 	ctx := claimsContext()
 	pv := mapPathValuer{}
 
-	resolved, err := resolve(ctx, pv, "explicit-ignored", "implicit-ignored")
+	resolved, err := resolve.Resolve(ctx, pv, "explicit-ignored", "implicit-ignored")
 	require.NoError(t, err)
 	assert.Empty(t, resolved.Ref.ScopedRepository)
 }
@@ -899,7 +899,7 @@ func TestProfileResolver_OrgProfileNotFound_SurfacesLookupError(t *testing.T) {
 	ctx := claimsContext()
 	pv := mapPathValuer{"profile": "no-such-profile"}
 
-	_, err := resolve(ctx, pv, "", "")
+	_, err := resolve.Resolve(ctx, pv, "", "")
 
 	var notFound profile.ProfileNotFoundError
 	require.ErrorAs(t, err, &notFound)
@@ -923,7 +923,7 @@ func TestHandlePostToken_PipelineProfileNotFoundAnswers404(t *testing.T) {
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
-	handlePostToken(tokenVendor, resolve, profile.ProfileTypeRepo).ServeHTTP(rr, req)
+	handlePostToken(tokenVendor, resolve).ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 	assert.False(t, vended, "no token may be vended for a profile that does not exist")
@@ -943,7 +943,7 @@ func TestProfileResolver_OrgNonCallerScoped_IgnoresImplicitScope(t *testing.T) {
 			ctx := claimsContext()
 			pv := mapPathValuer{"profile": profileName}
 
-			resolved, err := resolve(ctx, pv, "", "url-derived-repo")
+			resolved, err := resolve.Resolve(ctx, pv, "", "url-derived-repo")
 			require.NoError(t, err)
 
 			assert.Empty(t, resolved.Ref.ScopedRepository)
@@ -965,7 +965,7 @@ func TestHandlePostToken_OrgStaticList_RejectsScopeWithSpecificMessage(t *testin
 	req.SetPathValue("profile", "static-profile")
 	rr := httptest.NewRecorder()
 
-	handler := handlePostToken(tv[orgAttr]("unused"), resolve, profile.ProfileTypeOrg)
+	handler := handlePostToken(tv[orgAttr]("unused"), resolve)
 	handler.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
@@ -985,7 +985,7 @@ func TestHandlePostToken_OrgCallerScoped_MissingScopeReturnsSpecificMessage(t *t
 	req.SetPathValue("profile", "caller-scoped-profile")
 	rr := httptest.NewRecorder()
 
-	handler := handlePostToken(tv[orgAttr]("unused"), resolve, profile.ProfileTypeOrg)
+	handler := handlePostToken(tv[orgAttr]("unused"), resolve)
 	handler.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
@@ -1189,13 +1189,13 @@ func TestHandlers_RecordRequestedProfileWhenResolutionFails(t *testing.T) {
 		{
 			name: "postToken",
 			handler: func(r ProfileResolver[orgAttr]) http.Handler {
-				return handlePostToken(tv[orgAttr]("unused"), r, profile.ProfileTypeOrg)
+				return handlePostToken(tv[orgAttr]("unused"), r)
 			},
 		},
 		{
 			name: "postGitCredentials",
 			handler: func(r ProfileResolver[orgAttr]) http.Handler {
-				return handlePostGitCredentials(tv[orgAttr]("unused"), r, profile.ProfileTypeOrg)
+				return handlePostGitCredentials(tv[orgAttr]("unused"), r)
 			},
 			body: gitCredentialsBody(t, "org", "repo1"),
 		},
@@ -1233,7 +1233,7 @@ func TestHandlers_UnresolvedProfileIsNotAuditedAsCanonicalURN(t *testing.T) {
 	req.SetPathValue("profile", forged)
 
 	rr := httptest.NewRecorder()
-	handlePostToken(tv[orgAttr]("unused"), NewOrgProfileResolver(store.GetOrganizationProfile), profile.ProfileTypeOrg).ServeHTTP(rr, req)
+	handlePostToken(tv[orgAttr]("unused"), NewOrgProfileResolver(store.GetOrganizationProfile)).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	assert.Equal(t, forged, entry.RequestedProfile, "an unresolved name must be recorded verbatim, never as a URN")
@@ -1254,7 +1254,7 @@ func TestHandlePostToken_RecordsScopedRepositoryInAuditedProfile(t *testing.T) {
 	req.SetPathValue("profile", "caller-scoped-profile")
 
 	rr := httptest.NewRecorder()
-	handlePostToken(tv[orgAttr]("token-value"), resolve, profile.ProfileTypeOrg).ServeHTTP(rr, req)
+	handlePostToken(tv[orgAttr]("token-value"), resolve).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, "profile://organization/organization-slug/profile/caller-scoped-profile/repository/target-repo", entry.RequestedProfile)
@@ -1274,7 +1274,7 @@ func TestHandlePostToken_RecordsRequestedProfileWhenScopeRejected(t *testing.T) 
 	req.SetPathValue("profile", "static-profile")
 
 	rr := httptest.NewRecorder()
-	handlePostToken(tv[orgAttr]("unused"), resolve, profile.ProfileTypeOrg).ServeHTTP(rr, req)
+	handlePostToken(tv[orgAttr]("unused"), resolve).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "static-profile", entry.RequestedProfile)
@@ -1315,7 +1315,7 @@ pipeline:
 		{
 			name: "organization token",
 			handler: func(store *profile.ProfileStore, reads *int, tokenVendor vendor.TokenVendor) http.Handler {
-				return handlePostToken(orgChain(t, tokenVendor), countingOrgResolver(store, reads), profile.ProfileTypeOrg)
+				return handlePostToken(orgChain(t, tokenVendor), countingOrgResolver(store, reads))
 			},
 			target:  "/organization/token/static-profile",
 			profile: "static-profile",
@@ -1323,7 +1323,7 @@ pipeline:
 		{
 			name: "organization git-credentials",
 			handler: func(store *profile.ProfileStore, reads *int, tokenVendor vendor.TokenVendor) http.Handler {
-				return handlePostGitCredentials(orgChain(t, tokenVendor), countingOrgResolver(store, reads), profile.ProfileTypeOrg)
+				return handlePostGitCredentials(orgChain(t, tokenVendor), countingOrgResolver(store, reads))
 			},
 			target:  "/organization/git-credentials/static-profile",
 			profile: "static-profile",
@@ -1332,14 +1332,14 @@ pipeline:
 		{
 			name: "pipeline token",
 			handler: func(store *profile.ProfileStore, reads *int, tokenVendor vendor.TokenVendor) http.Handler {
-				return handlePostToken(pipelineChain(t, repoLookup, tokenVendor), countingPipelineResolver(store, reads), profile.ProfileTypeRepo)
+				return handlePostToken(pipelineChain(t, repoLookup, tokenVendor), countingPipelineResolver(store, reads))
 			},
 			target: "/token",
 		},
 		{
 			name: "pipeline git-credentials",
 			handler: func(store *profile.ProfileStore, reads *int, tokenVendor vendor.TokenVendor) http.Handler {
-				return handlePostGitCredentials(pipelineChain(t, repoLookup, tokenVendor), countingPipelineResolver(store, reads), profile.ProfileTypeRepo)
+				return handlePostGitCredentials(pipelineChain(t, repoLookup, tokenVendor), countingPipelineResolver(store, reads))
 			},
 			target: "/git-credentials",
 			body:   func() io.Reader { return gitCredentialsBody(t, "organization-slug", "repo1") },

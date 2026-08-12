@@ -20,10 +20,3 @@ type TokenCache[T any] interface {
 	// Close releases any resources held by the cache.
 	Close() error
 }
-
-// Digester provides a content digest for cache key namespacing.
-// When configuration changes, the digest changes, effectively
-// invalidating all cached tokens from the old configuration.
-type Digester interface {
-	Digest() string
-}
