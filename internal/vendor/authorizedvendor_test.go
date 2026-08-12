@@ -2,6 +2,7 @@ package vendor_test
 
 import (
 	"context"
+	_ "embed"
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
@@ -12,6 +13,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// pipelineProfilesYAML is the pipeline configuration the authorization tests
+// match against. Authorization is the last stage that reads the profile store;
+// vending downstream of it takes permissions from the resolved profile.
+//
+//go:embed testdata/pipeline-profiles.yaml
+var pipelineProfilesYAML string
 
 const orgMatchYAML = `
 organization:

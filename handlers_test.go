@@ -15,6 +15,7 @@ import (
 
 	"github.com/auth0/go-jwt-middleware/v3/validator"
 	"github.com/chinmina/chinmina-bridge/internal/audit"
+	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
@@ -904,6 +905,30 @@ func TestProfileResolver_OrgProfileNotFound_SurfacesLookupError(t *testing.T) {
 	require.ErrorAs(t, err, &notFound)
 }
 
+// TestHandlePostToken_PipelineProfileNotFoundAnswers404 covers the pipeline
+// half of profile-not-found. It used to be a vendor test, but the vendor no
+// longer reads the store: an unloaded or incomplete configuration must now be
+// caught at the boundary, before anything is vended.
+func TestHandlePostToken_PipelineProfileNotFoundAnswers404(t *testing.T) {
+	vended := false
+	tokenVendor := vendor.ProfileTokenVendor[pipelineAttr](func(context.Context, vendor.Resolved[pipelineAttr], string) vendor.VendorResult {
+		vended = true
+		return vendor.NewVendorFailed(errors.New("must not be reached"))
+	})
+
+	// An unloaded store answers ProfileNotFoundError for every name.
+	resolve := NewPipelineProfileResolver(profile.NewProfileStore().GetPipelineProfile)
+
+	req, err := http.NewRequestWithContext(claimsContext(), "POST", "/token", nil)
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	handlePostToken(tokenVendor, resolve, profile.ProfileTypeRepo).ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.False(t, vended, "no token may be vended for a profile that does not exist")
+}
+
 func TestProfileResolver_OrgNonCallerScoped_IgnoresImplicitScope(t *testing.T) {
 	// Static-list and all-repositories profiles must not reject a
 	// git-credentials request just because the URL yielded a repo name.
@@ -1253,6 +1278,153 @@ func TestHandlePostToken_RecordsRequestedProfileWhenScopeRejected(t *testing.T) 
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "static-profile", entry.RequestedProfile)
+}
+
+// TestRoutes_ReadTheProfileStoreExactlyOncePerRequest is the acceptance
+// observable for resolving once per request. A request that reads the store
+// twice can be authorized against one configuration generation and vended from
+// another, because profiles are replaced wholesale every five minutes. The
+// count must hold on a cache miss and on a cache hit alike: the authorization
+// gate runs outside the cache, so a warm entry does not skip a resolution.
+func TestRoutes_ReadTheProfileStoreExactlyOncePerRequest(t *testing.T) {
+	const profilesYAML = `organization:
+  profiles:
+    - name: static-profile
+      repositories:
+        - repo1
+      permissions:
+        - contents:read
+
+pipeline:
+  defaults:
+    permissions:
+      - contents:read
+`
+
+	repoLookup := vendor.RepositoryLookup(func(context.Context, string, string) (string, error) {
+		return "https://github.com/organization-slug/repo1", nil
+	})
+
+	cases := []struct {
+		name    string
+		handler func(*profile.ProfileStore, *int, vendor.TokenVendor) http.Handler
+		target  string
+		profile string
+		body    func() io.Reader
+	}{
+		{
+			name: "organization token",
+			handler: func(store *profile.ProfileStore, reads *int, tokenVendor vendor.TokenVendor) http.Handler {
+				return handlePostToken(orgChain(t, tokenVendor), countingOrgResolver(store, reads), profile.ProfileTypeOrg)
+			},
+			target:  "/organization/token/static-profile",
+			profile: "static-profile",
+		},
+		{
+			name: "organization git-credentials",
+			handler: func(store *profile.ProfileStore, reads *int, tokenVendor vendor.TokenVendor) http.Handler {
+				return handlePostGitCredentials(orgChain(t, tokenVendor), countingOrgResolver(store, reads), profile.ProfileTypeOrg)
+			},
+			target:  "/organization/git-credentials/static-profile",
+			profile: "static-profile",
+			body:    func() io.Reader { return gitCredentialsBody(t, "organization-slug", "repo1") },
+		},
+		{
+			name: "pipeline token",
+			handler: func(store *profile.ProfileStore, reads *int, tokenVendor vendor.TokenVendor) http.Handler {
+				return handlePostToken(pipelineChain(t, repoLookup, tokenVendor), countingPipelineResolver(store, reads), profile.ProfileTypeRepo)
+			},
+			target: "/token",
+		},
+		{
+			name: "pipeline git-credentials",
+			handler: func(store *profile.ProfileStore, reads *int, tokenVendor vendor.TokenVendor) http.Handler {
+				return handlePostGitCredentials(pipelineChain(t, repoLookup, tokenVendor), countingPipelineResolver(store, reads), profile.ProfileTypeRepo)
+			},
+			target: "/git-credentials",
+			body:   func() io.Reader { return gitCredentialsBody(t, "organization-slug", "repo1") },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := profiletest.CreateTestProfileStore(t, profilesYAML)
+			reads, vends := 0, 0
+			tokenVendor := vendor.TokenVendor(func(context.Context, []string, []string) (string, time.Time, error) {
+				vends++
+				return "minted-token", defaultExpiry, nil
+			})
+			handler := tc.handler(store, &reads, tokenVendor)
+
+			serve := func() int {
+				var body io.Reader
+				if tc.body != nil {
+					body = tc.body()
+				}
+				ctx, _ := audit.Context(claimsContext())
+				req, err := http.NewRequestWithContext(ctx, "POST", tc.target, body)
+				require.NoError(t, err)
+				if tc.profile != "" {
+					req.SetPathValue("profile", tc.profile)
+				}
+				rr := httptest.NewRecorder()
+				handler.ServeHTTP(rr, req)
+				return rr.Code
+			}
+
+			require.Equal(t, http.StatusOK, serve(), "cache miss")
+			assert.Equal(t, 1, reads, "a cache miss must read the profile store exactly once")
+			require.Equal(t, 1, vends, "a cache miss must mint a token")
+
+			require.Equal(t, http.StatusOK, serve(), "cache hit")
+			assert.Equal(t, 2, reads, "a cache hit must still resolve, and still only once")
+			require.Equal(t, 1, vends, "the second request must be served from the cache, not re-minted")
+		})
+	}
+}
+
+// orgChain builds the production organization vendor chain over a shared cache.
+func orgChain(t *testing.T, tokenVendor vendor.TokenVendor) vendor.ProfileTokenVendor[orgAttr] {
+	t.Helper()
+
+	return vendor.Auditor(vendor.Authorized(vendor.Cached[orgAttr](testTokenCache(t))(
+		vendor.Vending(vendor.OrgRepositories, tokenVendor),
+	)))
+}
+
+// pipelineChain builds the production pipeline vendor chain over a shared cache.
+func pipelineChain(t *testing.T, repoLookup vendor.RepositoryLookup, tokenVendor vendor.TokenVendor) vendor.ProfileTokenVendor[pipelineAttr] {
+	t.Helper()
+
+	return vendor.Auditor(vendor.Authorized(vendor.Cached[pipelineAttr](testTokenCache(t))(
+		vendor.Vending(vendor.PipelineRepositories(repoLookup), tokenVendor),
+	)))
+}
+
+// testTokenCache builds the in-memory token cache with production TTL.
+func testTokenCache(t *testing.T) cache.TokenCache[vendor.ProfileToken] {
+	t.Helper()
+
+	tokenCache, err := cache.NewMemory[vendor.ProfileToken](45*time.Minute, 10_000)
+	require.NoError(t, err)
+
+	return tokenCache
+}
+
+// countingOrgResolver counts the store reads a request performs.
+func countingOrgResolver(store *profile.ProfileStore, reads *int) ProfileResolver[orgAttr] {
+	return NewOrgProfileResolver(func(name string) (profile.AuthorizedProfile[orgAttr], string, error) {
+		*reads++
+		return store.GetOrganizationProfile(name)
+	})
+}
+
+// countingPipelineResolver counts the store reads a request performs.
+func countingPipelineResolver(store *profile.ProfileStore, reads *int) ProfileResolver[pipelineAttr] {
+	return NewPipelineProfileResolver(func(name string) (profile.AuthorizedProfile[pipelineAttr], string, error) {
+		*reads++
+		return store.GetPipelineProfile(name)
+	})
 }
 
 // gitCredentialsBody renders a minimal git-credentials request body for the

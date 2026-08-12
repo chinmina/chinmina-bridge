@@ -201,9 +201,42 @@ func TestIntegrationPipelineToken_ProfileNotFound(t *testing.T) {
 	assert.Equal(t, "profile not found", apiErr.Message)
 }
 
-// Note: 403 Forbidden testing requires custom profiles with match conditions.
-// The default profile has no conditions, so claim validation isn't triggered.
-// This scenario is adequately covered by unit tests in handlers_test.go
+// TestIntegrationOrganizationToken_MatchRulesDenyThroughTheRealWiring pins the
+// authorization gate to the production chain built by configureServerRoutes.
+// Since the vendors stopped reading the profile store, match evaluation lives
+// in exactly one place — the Authorized decorator composed in main.go — and
+// the unit tests build their own chains, so they would stay green if that
+// composition were lost. This test would not.
+//
+// It also covers the cache-hit case, which is where authorization was
+// historically bypassed: an authorized caller warms the entry, and the denied
+// caller must still be refused.
+func TestIntegrationOrganizationToken_MatchRulesDenyThroughTheRealWiring(t *testing.T) {
+	harness := NewAPITestHarness(t)
+
+	yamlContent, err := os.ReadFile("testdata/org-profiles-matched.yaml")
+	require.NoError(t, err)
+
+	profiles, err := profiletest.CompileFromYAML(string(yamlContent))
+	require.NoError(t, err)
+	harness.ProfileStore.Update(t.Context(), profiles)
+
+	harness.GitHubMock.Token = "ghs_releasetoken123"
+
+	// The pipeline the profile names is authorized, and warms the cache.
+	allowed, err := harness.Client().OrganizationToken(
+		harness.PipelineToken(WithPipeline("release-pipeline", "pipeline-id")), "release-only-profile")
+	require.NoError(t, err)
+	assert.Equal(t, "ghs_releasetoken123", allowed.Token)
+
+	// Any other pipeline is refused, warm entry notwithstanding.
+	_, err = harness.Client().OrganizationToken(harness.PipelineToken(), "release-only-profile")
+	require.Error(t, err)
+
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusForbidden, apiErr.StatusCode)
+}
 
 // TestOrganizationToken_Success tests successful organization token vending
 func TestIntegrationOrganizationToken_Success(t *testing.T) {

@@ -101,7 +101,7 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	repoVendor := vendor.Auditor(
 		vendor.Authorized(
 			vendor.Cached[profile.PipelineProfileAttr](tokenCache)(
-				vendor.NewRepoVendor(orgProfile, bk.RepositoryLookup, gh.CreateAccessToken),
+				vendor.Vending(vendor.PipelineRepositories(bk.RepositoryLookup), gh.CreateAccessToken),
 			),
 		),
 	)
@@ -120,7 +120,7 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	orgVendor := vendor.Auditor(
 		vendor.Authorized(
 			vendor.Cached[profile.OrganizationProfileAttr](tokenCache)(
-				vendor.NewOrgVendor(orgProfile, gh.CreateAccessToken),
+				vendor.Vending(vendor.OrgRepositories, gh.CreateAccessToken),
 			),
 		),
 	)
