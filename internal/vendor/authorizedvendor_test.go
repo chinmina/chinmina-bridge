@@ -162,7 +162,7 @@ func TestAuthorized_ValidationError(t *testing.T) {
 func TestAuthorized_DeniesOnWarmCacheEntry(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, orgMatchYAML)
 	inner, calls := recordingOrgVendor()
-	chain := vendor.Authorized(newTestCached(t, defaultTTL, "test-digest")(inner))
+	chain := vendor.Authorized(newTestCached(t, defaultTTL)(inner))
 
 	r := resolvedOrg(t, store, profile.ProfileRef{
 		Organization: "organization-slug",

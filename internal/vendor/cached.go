@@ -49,12 +49,15 @@ func recordOutcome(ctx context.Context, result string) {
 // cause multiple token requests, In this case, the last one returned wins. In
 // this use case, given that concurrent calls are likely to be less common, the
 // additional tokens issued are worth gains made skipping locking.
-func Cached[T any](tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) func(ProfileTokenVendor[T]) ProfileTokenVendor[T] {
+func Cached[T any](tokenCache cache.TokenCache[ProfileToken]) func(ProfileTokenVendor[T]) ProfileTokenVendor[T] {
 	return func(v ProfileTokenVendor[T]) ProfileTokenVendor[T] {
 		return func(ctx context.Context, r Resolved[T], requestedRepository string) VendorResult {
-			// Cache key includes digest prefix for config version namespacing
-			// and ref.String() which embeds ScopedRepository for caller-scoped profiles.
-			key := fmt.Sprintf("%s:%s", digester.Digest(), r.Ref.String())
+			// The key namespaces the entry by the configuration generation the
+			// request resolved from, so a token minted under one generation's
+			// permissions is never read back by a request resolved from
+			// another. ref.String() embeds ScopedRepository for caller-scoped
+			// profiles.
+			key := fmt.Sprintf("%s:%s", r.Digest, r.Ref.String())
 
 			cachedToken, found, err := tokenCache.Get(ctx, key)
 			if err != nil {

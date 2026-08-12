@@ -13,34 +13,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockDigester returns a fixed digest for testing
-type mockDigester struct {
-	digest string
-}
-
-func (m mockDigester) Digest() string {
-	return m.digest
-}
-
 // cacheAttr is the profile attribute type the cache tests instantiate the
 // chain with. Cached is agnostic to it — the organization/pipeline branch
 // reads Resolved.Ref.Type, not T — so a single instantiation covers every
 // path.
 type cacheAttr = profile.OrganizationProfileAttr
 
-// newTestCached creates a Cached vendor with the specified TTL and digest
-func newTestCached(t *testing.T, ttl time.Duration, digest string) func(vendor.ProfileTokenVendor[cacheAttr]) vendor.ProfileTokenVendor[cacheAttr] {
+// newTestCached creates a Cached vendor with the specified TTL. The
+// configuration generation comes from each request's Resolved value, so it is
+// chosen per call by cacheRequest / cacheRequestAt, not here.
+func newTestCached(t *testing.T, ttl time.Duration) func(vendor.ProfileTokenVendor[cacheAttr]) vendor.ProfileTokenVendor[cacheAttr] {
 	t.Helper()
 	tokenCache, err := cache.NewMemory[vendor.ProfileToken](ttl, 10_000)
 	require.NoError(t, err)
-	digester := mockDigester{digest: digest}
-	return vendor.Cached[cacheAttr](tokenCache, digester)
+	return vendor.Cached[cacheAttr](tokenCache)
 }
 
 // cacheRequest wraps a ref the way the handler boundary would, for tests that
 // exercise the cache without depending on the resolved profile value.
 func cacheRequest(ref profile.ProfileRef) vendor.Resolved[cacheAttr] {
 	return vendor.Resolved[cacheAttr]{Ref: ref}
+}
+
+// cacheRequestAt wraps a ref as cacheRequest does, pinning the configuration
+// generation the request was resolved from.
+func cacheRequestAt(ref profile.ProfileRef, digest string) vendor.Resolved[cacheAttr] {
+	return vendor.Resolved[cacheAttr]{Ref: ref, Digest: digest}
 }
 
 // resolvedOrg builds the Resolved value the organization boundary resolver
