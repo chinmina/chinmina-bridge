@@ -7,7 +7,6 @@ import (
 	"net/url"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
-	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
@@ -16,35 +15,14 @@ import (
 // It vends tokens for a set of repositories defined in the profile configuration.
 func NewOrgVendor(profileStore *profile.ProfileStore, tokenVendor TokenVendor) ProfileTokenVendor {
 	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) VendorResult {
-		// Validate that this is an org-scoped profile
-		if ref.Type != profile.ProfileTypeOrg {
-			return NewVendorFailed(fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeOrg.String(), ref.Type.String()))
+		if err := ref.AssertType(profile.ProfileTypeOrg); err != nil {
+			return NewVendorFailed(err)
 		}
 
 		// Use the ProfileStore to get the requested profile and validate it
 		authProfile, err := profileStore.GetOrganizationProfile(ref.Name)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not find profile %s: %w", ref.Name, err))
-		}
-
-		profileMatcher := AuditingMatcher(ctx, authProfile.Match)
-
-		// Evaluate match conditions against JWT claims, validating as we go
-		claims := profile.NewValidatingLookup(
-			jwt.RequireBuildkiteClaimsFromContext(ctx),
-		)
-		result := profileMatcher(claims)
-
-		// TODO: this needs to be double-checked: it seems pretty clunky. We need to
-		// make sure that the way this is dealt with is correct, and probably change
-		// the MatchResult so the API shows its meaning by how it's structured.
-		if result.Err != nil {
-			// Return validation errors or other errors directly
-			return NewVendorFailed(fmt.Errorf("profile match evaluation failed: %w", result.Err))
-		}
-		if !result.Matched {
-			// Match conditions not met
-			return NewVendorFailed(profile.ProfileMatchFailedError{Name: ref.Name})
 		}
 
 		// --- Bidirectional scoping validation ---

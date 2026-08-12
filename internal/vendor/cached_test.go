@@ -10,6 +10,7 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/cache"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
+	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -359,8 +360,6 @@ func TestOrgProfileMismatchDoesNotInvalidateCache(t *testing.T) {
 	})
 }
 
-// calls wrapped when value expires
-// returns error from wrapped on miss
 func TestReturnsErrorForWrapperError(t *testing.T) {
 	wrapped := sequenceVendor(E{"failed"})
 
@@ -418,7 +417,6 @@ func (e E) Error() string {
 	return e.M
 }
 
-// Test error handling in cache operations
 func TestCacheGetError(t *testing.T) {
 	wrapped := sequenceVendor("first-call")
 	errorCache := &errorReturningCache{
@@ -621,7 +619,7 @@ func (m *mutableDigester) Digest() string {
 
 // TestCacheCallerScoped_DifferentReposAreSeparateEntries verifies that different
 // repositories under the same caller-scoped profile get separate cache entries.
-// Distinctness comes from ref.String() which embeds ScopedRepository (Phase 1),
+// Distinctness comes from ref.String(), which embeds ScopedRepository,
 // not from the repositoryScope parameter.
 func TestCacheCallerScoped_DifferentReposAreSeparateEntries(t *testing.T) {
 	wrapped := sequenceVendor("token-for-repo-a", "token-for-repo-b", "token-for-repo-a")
@@ -854,4 +852,56 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 			return vendor.NewVendorFailed(errors.New("invalid call type"))
 		}
 	})
+}
+
+// TestCachedVendor_MatchRulesEvaluatedOnCacheHit guards against a regression of
+// the bypass this composition was built to close: Cached returns a cached token
+// before the wrapped vendor's match-rule evaluation runs, so without Matched
+// outside it, any caller who can construct a ProfileRef another caller warmed
+// receives that profile's token for the cache lifetime, regardless of match
+// rules.
+func TestCachedVendor_MatchRulesEvaluatedOnCacheHit(t *testing.T) {
+	const bypassYAML = `
+organization:
+  profiles:
+    - name: privileged
+      match:
+        - claim: pipeline_slug
+          value: authorized-pipeline
+      repositories:
+        - widget
+      permissions:
+        - contents:write
+`
+	store := profiletest.CreateTestProfileStore(t, bypassYAML)
+
+	callCount := 0
+	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
+		callCount++
+		return "PRIVILEGED-TOKEN", time.Now(), nil
+	})
+
+	c := newTestCached(t, defaultTTL, "digest-1")
+	m := vendor.Matched(vendor.OrgMatcherLookup(store))
+	v := vendor.Auditor(m(c(vendor.NewOrgVendor(store, tokenVendor))))
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Type:         profile.ProfileTypeOrg,
+		Name:         "privileged",
+	}
+
+	// 1. Authorized caller warms the cache.
+	warm := v(createTestClaimsContextWithPipeline("authorized-pipeline"), ref, "")
+	assertVendorTokenValue(t, warm, "PRIVILEGED-TOKEN")
+
+	// 2. Unauthorized caller — fails the pipeline_slug rule. On a correctly
+	// authorized system this must be rejected even though the cache holds a
+	// token for the same ProfileRef.
+	result := v(createTestClaimsContextWithPipeline("attacker-pipeline"), ref, "")
+	assertVendorFailure(t, result, "match conditions not met")
+
+	// The underlying token vendor is called exactly once: the second request
+	// must be rejected before ever reaching GitHub, not served from cache.
+	assert.Equal(t, 1, callCount)
 }

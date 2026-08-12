@@ -83,15 +83,26 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 
 	vendorCache := vendor.Cached(tokenCache, orgProfile)
 
-	// One ProfileRefBuilder per route type, closed over the store and the
-	// expected profile type. The store is captured for Phase 2b scope
-	// validation; the expected type drives profile-string resolution.
-	pipelineBuilder := NewProfileRefBuilder(orgProfile, profile.ProfileTypeRepo)
-	orgBuilder := NewProfileRefBuilder(orgProfile, profile.ProfileTypeOrg)
+	// Pipeline and organization routes are deliberately separate, with very
+	// different authorization and match rules. This allows for simpler controls
+	// on the request path, as the types are differentiated by construction
+	// instead of runtime checks.
+	//
+	// Within their type, each has the same request flow:
+	//   JWT Auth -> Audit -> Match Profile -> Cache -> Token Vendor
 
-	// Pipeline routes use repoVendor (defaults to "default" profile)
-	// The bare (non-profile) routes are for backward compatibility
-	repoVendor := vendor.Auditor(vendorCache(vendor.NewRepoVendor(orgProfile, bk.RepositoryLookup, gh.CreateAccessToken)))
+	// Pipeline (repo) routes
+
+	repoProfileMatch := vendor.Matched(vendor.RepoMatcherLookup(orgProfile))
+	repoVendor := vendor.Auditor(
+		repoProfileMatch(
+			vendorCache(
+				vendor.NewRepoVendor(orgProfile, bk.RepositoryLookup, gh.CreateAccessToken),
+			),
+		),
+	)
+
+	pipelineBuilder := NewProfileRefBuilder(orgProfile, profile.ProfileTypeRepo)
 	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, pipelineBuilder, profile.ProfileTypeRepo))
 	mux.Handle("POST /token", pipelineTokenHandler)
 	mux.Handle("POST /token/{profile}", pipelineTokenHandler)
@@ -100,9 +111,18 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	mux.Handle("POST /git-credentials", pipelineGitCredentialsHandler)
 	mux.Handle("POST /git-credentials/{profile}", pipelineGitCredentialsHandler)
 
-	// Organization routes use orgVendor (profile specified in path)
-	orgVendor := vendor.Auditor(vendorCache(vendor.NewOrgVendor(orgProfile, gh.CreateAccessToken)))
+	// Organization routes
 
+	orgProfileMatch := vendor.Matched(vendor.OrgMatcherLookup(orgProfile))
+	orgVendor := vendor.Auditor(
+		orgProfileMatch(
+			vendorCache(
+				vendor.NewOrgVendor(orgProfile, gh.CreateAccessToken),
+			),
+		),
+	)
+
+	orgBuilder := NewProfileRefBuilder(orgProfile, profile.ProfileTypeOrg)
 	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, orgBuilder, profile.ProfileTypeOrg)))
 	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, orgBuilder, profile.ProfileTypeOrg)))
 

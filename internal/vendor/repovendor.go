@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"github.com/chinmina/chinmina-bridge/internal/github"
-	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
@@ -16,9 +15,8 @@ import (
 // tokens for that specific repository.
 func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLookup, tokenVendor TokenVendor) ProfileTokenVendor {
 	return func(ctx context.Context, ref profile.ProfileRef, requestedRepoURL string) VendorResult {
-		// Validate that this is a repo-scoped profile
-		if ref.Type != profile.ProfileTypeRepo {
-			return NewVendorFailed(fmt.Errorf("profile type mismatch: expected %s, got %s", profile.ProfileTypeRepo.String(), ref.Type.String()))
+		if err := ref.AssertType(profile.ProfileTypeRepo); err != nil {
+			return NewVendorFailed(err)
 		}
 
 		// Use Buildkite API to find the repository for the pipeline
@@ -56,21 +54,6 @@ func NewRepoVendor(profileStore *profile.ProfileStore, repoLookup RepositoryLook
 		pipelineProfile, err := profileStore.GetPipelineProfile(ref.Name)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not find pipeline profile %s: %w", ref.Name, err))
-		}
-
-		// Match claims (default profile always matches via empty matcher)
-		claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
-		validatingClaims := profile.NewValidatingLookup(claims)
-		profileMatcher := AuditingMatcher(ctx, pipelineProfile.Match)
-
-		matchResult := profileMatcher(validatingClaims)
-		if matchResult.Err != nil {
-			// Return validation errors or other errors directly
-			return NewVendorFailed(fmt.Errorf("pipeline profile match evaluation failed: %w", matchResult.Err))
-		}
-		if !matchResult.Matched {
-			// Match conditions not met
-			return NewVendorFailed(profile.ProfileMatchFailedError{Name: ref.Name})
 		}
 
 		permissions := pipelineProfile.Attrs.Permissions

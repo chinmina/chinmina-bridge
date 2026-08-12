@@ -86,6 +86,20 @@ func NewProfileRef(claims jwt.BuildkiteClaims, expectedType ProfileType, profile
 	return ref, nil
 }
 
+// AssertType succeeds if the ProfileRef's type matches the expected type,
+// otherwise it returns an error. This is used to enforce that a ProfileRef is
+// only used in the context of its intended profile type (repo or org).
+func (pr ProfileRef) AssertType(expected ProfileType) error {
+	return assertProfileType(expected, pr.Type)
+}
+
+func assertProfileType(expectedType ProfileType, parsedType ProfileType) error {
+	if parsedType != expectedType {
+		return fmt.Errorf("profile type mismatch: expected %q but got %q", expectedType, parsedType)
+	}
+	return nil
+}
+
 // resolveProfileTypeAndName determines the profile type and name from the input parameters.
 // Returns the resolved type, name, and any error encountered during resolution.
 func resolveProfileTypeAndName(expectedType ProfileType, profileStr string) (ProfileType, string, error) {
@@ -107,8 +121,8 @@ func resolveProfileTypeAndName(expectedType ProfileType, profileStr string) (Pro
 		return 0, "", err
 	}
 
-	if parsedType != expectedType {
-		return 0, "", fmt.Errorf("profile type mismatch: expected '%s' but got '%s'", expectedType.String(), parsedType.String())
+	if err := assertProfileType(expectedType, parsedType); err != nil {
+		return 0, "", err
 	}
 
 	return parsedType, name, nil

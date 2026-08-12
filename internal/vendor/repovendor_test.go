@@ -355,61 +355,6 @@ func TestRepoVendor_NamedProfileLookupSuccess(t *testing.T) {
 	assert.Equal(t, []string{"contents:write", "pull_requests:write", "metadata:read"}, capturedPermissions)
 }
 
-func TestRepoVendor_ProfileMatchSuccess(t *testing.T) {
-	vendedDate := time.Date(1995, 01, 01, 0, 0, 0, 0, time.UTC)
-
-	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
-		return "https://github.com/org/repo-url", nil
-	})
-
-	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repoNames []string, permissions []string) (string, time.Time, error) {
-		return "vended-token-value", vendedDate, nil
-	})
-
-	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, pipelineProfilesYAML), repoLookup, tokenVendor)
-
-	ref := profile.ProfileRef{
-		Organization: "organization-slug",
-		Name:         "with-match-rules",
-		Type:         profile.ProfileTypeRepo,
-		PipelineID:   "pipeline-id",
-		PipelineSlug: "security-scanner", // Matches "^security-.*"
-	}
-
-	// Pipeline slug matches the pattern "^security-.*"
-	result := v(createTestClaimsContextWithPipeline("security-scanner"), ref, "")
-	assertVendorSuccess(t, result, vendor.ProfileToken{
-		Token:               "vended-token-value",
-		HashedToken:         vendor.HashToken("vended-token-value"),
-		Repositories:        profile.NewSpecificScope("repo-url"),
-		Permissions:         []string{"contents:read", "security_events:write", "metadata:read"},
-		Profile:             "repo:with-match-rules",
-		Expiry:              vendedDate,
-		OrganizationSlug:    "organization-slug",
-		VendedRepositoryURL: "https://github.com/org/repo-url",
-	})
-}
-
-func TestRepoVendor_ProfileMatchFailure(t *testing.T) {
-	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
-		return "https://github.com/org/repo-url", nil
-	})
-
-	v := vendor.NewRepoVendor(profiletest.CreateTestProfileStore(t, pipelineProfilesYAML), repoLookup, nil)
-
-	ref := profile.ProfileRef{
-		Organization: "organization-slug",
-		Name:         "with-match-rules",
-		Type:         profile.ProfileTypeRepo,
-		PipelineID:   "pipeline-id",
-		PipelineSlug: "normal-pipeline", // Does NOT match "^security-.*"
-	}
-
-	// Pipeline slug does not match the pattern
-	result := v(createTestClaimsContextWithPipeline("normal-pipeline"), ref, "")
-	assertVendorFailure(t, result, "match conditions not met")
-}
-
 func TestRepoVendor_ProfileNotFound(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(ctx context.Context, org string, pipeline string) (string, error) {
 		return "https://github.com/org/repo-url", nil
