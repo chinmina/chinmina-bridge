@@ -62,7 +62,7 @@ func Vending[T any](resolve RepositoryResolver[T], tokenVendor TokenVendor) Prof
 		// list on a non-wildcard scope is therefore a resolver defect, and
 		// vending it would grant the whole installation, so fail instead.
 		// Vending is exported and RepositoryResolver is an extension point.
-		if !target.Scope.IsWildcard() && len(target.Scope.Names) == 0 {
+		if target.Scope.IsEmpty() {
 			return NewVendorFailed(fmt.Errorf("no repository scope resolved for profile %s", r.Ref))
 		}
 

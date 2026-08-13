@@ -87,6 +87,29 @@ func TestRepositoryScope_Contains(t *testing.T) {
 	}
 }
 
+// TestRepositoryScope_IsEmpty pins the one case that separates IsEmpty from
+// IsZero: a caller-scoped scope names nothing, so vending it would ask GitHub
+// for the whole installation, but it is not the zero value — it declares that
+// the request supplies the name.
+func TestRepositoryScope_IsEmpty(t *testing.T) {
+	tests := []struct {
+		name     string
+		scope    RepositoryScope
+		expected bool
+	}{
+		{"zero value", RepositoryScope{}, true},
+		{"wildcard scope", NewWildcardScope(), false},
+		{"specific scope with names", NewSpecificScope("repo-a"), false},
+		{"specific scope with empty names", NewSpecificScope(), true},
+		{"unresolved caller-scoped scope", NewCallerScopedScope(), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.scope.IsEmpty())
+		})
+	}
+}
+
 func TestRepositoryScope_IsZero(t *testing.T) {
 	tests := []struct {
 		name     string

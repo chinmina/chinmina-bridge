@@ -44,6 +44,18 @@ func (rs RepositoryScope) IsWildcard() bool {
 	return rs.Wildcard
 }
 
+// IsEmpty reports whether this scope covers no repositories. The wildcard is
+// not empty: it deliberately covers every repository in the installation, and
+// carries no names because that is how GitHub is asked for it.
+//
+// A caller-scoped value is empty until it is resolved against the request. It
+// is reported as empty rather than excused, because a caller-scoped scope that
+// still names nothing at vend time has been narrowed to nothing, and sending
+// it to GitHub would ask for the whole installation.
+func (rs RepositoryScope) IsEmpty() bool {
+	return !rs.Wildcard && len(rs.Names) == 0
+}
+
 // IsCallerScoped reports whether the repository is supplied at request time.
 func (rs RepositoryScope) IsCallerScoped() bool {
 	return rs.CallerScoped
@@ -61,9 +73,11 @@ func (rs RepositoryScope) Contains(repo string) bool {
 	return slices.Contains(rs.Names, repo)
 }
 
-// IsZero reports whether this scope is the zero value (no repositories, not wildcard, not caller-scoped).
+// IsZero reports whether this scope is the zero value: empty, and without
+// either explicit state that would explain why. A caller-scoped scope is
+// empty but not zero — it declares that the request will supply the name.
 func (rs RepositoryScope) IsZero() bool {
-	return !rs.Wildcard && !rs.CallerScoped && len(rs.Names) == 0
+	return rs.IsEmpty() && !rs.CallerScoped
 }
 
 // NamesForDisplay returns a human-readable representation of the scope.
