@@ -10,7 +10,7 @@ require (
 	github.com/buildkite/go-buildkite/v5 v5.7.0
 	github.com/chinmina/iamcacheauth v1.0.0
 	github.com/gkampitakis/go-snaps v0.5.23
-	github.com/go-logr/logr v1.4.3
+	github.com/go-logr/logr v1.4.4
 	github.com/google/go-github/v89 v89.0.0
 	github.com/grafana/otel-profiling-go v0.6.0
 	github.com/grafana/pyroscope-go v1.4.1
