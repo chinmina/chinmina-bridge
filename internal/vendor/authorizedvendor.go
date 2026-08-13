@@ -9,15 +9,9 @@ import (
 )
 
 // Authorized decorates a vendor so that the profile's match rules are
-// evaluated against the caller's claims on every call, cache hit or miss.
-// It must be composed outside Cached: Cached short-circuits and returns a
-// cached token before the wrapped vendor ever runs, so a gate placed inside
-// it would let any caller who could name a warmed profile receive that
-// profile's token regardless of match rules.
-//
-// The rules come from the profile resolved at the request boundary, so the
-// decision is made against the same configuration generation that determines
-// the cache key and the token's permissions.
+// evaluated on every call, cache hit or miss. It must be composed outside
+// Cached, which short-circuits on a hit before the wrapped vendor runs;
+// placed inside, a warmed cache entry would bypass the match rules entirely.
 func Authorized[T any](v ProfileTokenVendor[T]) ProfileTokenVendor[T] {
 	return func(ctx context.Context, r Resolved[T], repo string) VendorResult {
 		claims := profile.NewValidatingLookup(
