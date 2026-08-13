@@ -52,12 +52,9 @@ func recordOutcome(ctx context.Context, result string) {
 func Cached[T any](tokenCache cache.TokenCache[ProfileToken]) func(ProfileTokenVendor[T]) ProfileTokenVendor[T] {
 	return func(v ProfileTokenVendor[T]) ProfileTokenVendor[T] {
 		return func(ctx context.Context, r Resolved[T], requestedRepository string) VendorResult {
-			// The key namespaces the entry by the configuration generation the
-			// request resolved from, so a token minted under one generation's
-			// permissions is never read back by a request resolved from
-			// another; ref.String() embeds ScopedRepository for caller-scoped
-			// profiles. Cached is exported, so an unresolved digest is refused
-			// rather than trusted to have come from a properly resolved profile.
+			// Namespace the key by configuration generation so entries from
+			// different generations never collide; refuse rather than assume
+			// an unresolved digest.
 			if r.Digest == "" {
 				return NewVendorFailed(fmt.Errorf("no configuration generation resolved for profile %s", r.Ref))
 			}
