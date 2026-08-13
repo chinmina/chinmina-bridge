@@ -26,14 +26,13 @@ type HTTPStatuser interface {
 }
 
 // resolveError wraps an error returned by a ProfileResolver so that it
-// surfaces a 400 by default. Typed errors that already implement HTTPStatuser
-// (ProfileNotFoundError, RepositoryScopeRequiredError, etc.) keep their
-// declared status because Status below probes the *wrapped* error
-// explicitly: errors.As matches outermost-first, and resolveError is itself
-// an HTTPStatuser, so a caller walking the chain from the wrapper would
-// otherwise stop here and see 400. Plain parse errors from
-// profile.NewProfileRef stay at 400 rather than inheriting writeJSONError's
-// 500 default.
+// surfaces a 400 by default. Typed errors that already implement
+// HTTPStatuser (ProfileNotFoundError, RepositoryScopeRequiredError, etc.)
+// keep their declared status: Status below probes the *wrapped* error
+// explicitly, because errors.As matches outermost-first and resolveError is
+// itself an HTTPStatuser — walking the chain from the wrapper would
+// otherwise stop here at 400. Plain parse errors from profile.NewProfileRef
+// stay at 400 rather than inheriting writeJSONError's 500 default.
 type resolveError struct{ err error }
 
 func (e resolveError) Error() string { return fmt.Sprintf("profile resolution failed: %v", e.err) }
@@ -47,10 +46,10 @@ func (e resolveError) Status() (int, string) {
 }
 
 // PathValuer abstracts path-parameter extraction so a ProfileResolver can be
-// exercised without constructing a full *http.Request: test code can pass a
-// trivial stub instead. It decouples the resolver from *http.Request, not the
-// handler (which is inherently HTTP and still holds the concrete request).
-// *http.Request satisfies this implicitly via its PathValue method (Go 1.22+).
+// exercised without a full *http.Request — test code passes a trivial stub
+// instead. Only the resolver is decoupled this way; the handler is
+// inherently HTTP and keeps the concrete request. *http.Request satisfies
+// PathValuer implicitly via its PathValue method (Go 1.22+).
 type PathValuer interface {
 	PathValue(name string) string
 }
@@ -84,9 +83,6 @@ type ProfileLookup[T any] func(name string) (profile.AuthorizedProfile[T], strin
 //     ignore it silently, since the URL is part of the request format, not a
 //     scope request.
 //
-// Scope-vs-profile-type validation happens inside the resolver, keeping the
-// handler focused on transport concerns.
-//
 // On failure the returned Resolved is empty; the requested name is not
 // carried forward — recordRequestedName has already stamped the raw path
 // parameter on the audit entry, and stamping a canonical URN for a name that
@@ -111,24 +107,23 @@ type ProfileResolver[T any] struct {
 	Resolve func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[T], error)
 }
 
-// NewOrgProfileResolver returns the resolver for the /organization/* routes.
-// It enforces the bidirectional scope rules below, which require the profile's
-// declared scope and so can only be applied once the profile is resolved.
+// NewOrgProfileResolver returns the resolver for the /organization/* routes,
+// enforcing the bidirectional scope rules below; they require the profile's
+// declared scope, so they can only run once the profile is resolved.
 //
-// Trust model: ScopedRepository narrows within an already-authorised profile;
-// it does not grant access. Match rules gate who may invoke a profile at all,
-// and GitHub is the final enforcement boundary for which repositories a
-// token can actually reach. Honouring caller-supplied scope without cross-
-// checking it against a separate list is therefore safe — the caller already
-// has some legitimate claim on the profile by virtue of matching it.
+// Trust model: ScopedRepository narrows within an already-authorised
+// profile, it does not grant access. Match rules gate who may invoke a
+// profile at all, and GitHub is the final boundary for which repositories a
+// token can actually reach. Honouring caller-supplied scope without
+// cross-checking a separate list is therefore safe — the caller already has
+// a legitimate claim on the profile by matching it.
 //
-// Note the blast radius this implies: a caller-scoped profile lets any caller
-// that matches it obtain a token for *any single repository the App
-// installation can reach*, with that profile's permissions. There is no
-// per-repository allow-list for caller-scoped profiles by design; the only
-// controls are the match rules, the granted permissions, and the App's
-// installation scope. Operators should pair caller-scoped profiles with
-// narrow permissions and tight match rules accordingly.
+// Blast radius: a caller-scoped profile lets any caller that matches it
+// obtain a token for *any single repository the App installation can
+// reach*, with that profile's permissions. There is no per-repository
+// allow-list by design; the only controls are the match rules, the granted
+// permissions, and the App's installation scope. Pair caller-scoped
+// profiles with narrow permissions and tight match rules.
 func NewOrgProfileResolver(lookup ProfileLookup[profile.OrganizationProfileAttr]) ProfileResolver[profile.OrganizationProfileAttr] {
 	return ProfileResolver[profile.OrganizationProfileAttr]{
 		AcceptsRepositoryScope: true,

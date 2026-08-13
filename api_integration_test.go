@@ -205,13 +205,12 @@ func TestIntegrationPipelineToken_ProfileNotFound(t *testing.T) {
 	assert.Equal(t, "profile not found", apiErr.Message)
 }
 
-// TestIntegrationOrganizationToken_MatchRulesDenyThroughTheRealWiring pins the
-// authorization gate to the production chain built by configureServerRoutes.
-// Match evaluation lives in exactly one place, the Authorized decorator
-// composed in main.go; unit tests build their own chains and would stay green
-// if that composition broke. This test also covers the cache-hit case: an
-// authorized caller warms the entry, and a denied caller must still be
-// refused.
+// TestIntegrationOrganizationToken_MatchRulesDenyThroughTheRealWiring exercises
+// the chain configureServerRoutes actually builds. Match evaluation lives in
+// one place, the Authorized decorator in main.go; unit tests wire their own
+// chains and would stay green if that composition broke. It also covers the
+// cache-hit case: an authorized caller warms the entry, and a denied caller
+// must still be refused.
 func TestIntegrationOrganizationToken_MatchRulesDenyThroughTheRealWiring(t *testing.T) {
 	harness := NewAPITestHarness(t)
 
@@ -834,11 +833,11 @@ func TestIntegrationOrganizationGitCredentials_AllRepos_Success(t *testing.T) {
 	assert.Equal(t, "ghs_allrepos_creds", props.Get("password"))
 }
 
-// generationA and generationB are two configurations of the same profile name
-// that disagree about everything a response can reveal: who may vend it, what
-// repositories it covers, and what may be done to them. A response that pairs
+// generationA and generationB configure the same profile name so they
+// disagree about everything a response can reveal: who may vend it, which
+// repositories it covers, and what may be done to them. A response mixing
 // one generation's authorization with the other's permissions is therefore
-// visible, which is what the consistency assertion below looks for.
+// detectable by the assertion below.
 const (
 	generationA = `organization:
   profiles:
