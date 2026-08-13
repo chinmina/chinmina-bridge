@@ -214,11 +214,11 @@ func TestPipelineVending_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 	})
 }
 
-// TestPipelineVending_IssuesTheResolvedProfilesPermissions is the pipeline
-// half of the Phase 3 contract: whatever permission set arrives on the
-// resolved profile is what the token is minted with and what the response
-// reports. Vending performs no lookup of its own, so the profile name is
-// incidental — only the permissions it carried matter.
+// TestPipelineVending_IssuesTheResolvedProfilesPermissions checks that
+// whatever permission set arrives on the resolved profile is what the token
+// is minted with and what the response reports. Vending performs no lookup
+// of its own, so the profile name is incidental — only the permissions it
+// carried matter.
 func TestPipelineVending_IssuesTheResolvedProfilesPermissions(t *testing.T) {
 	vendedDate := time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
 

@@ -57,11 +57,11 @@ func FuzzValidateRepositories(f *testing.F) {
 			t.Errorf("special literal %q with %d entries should be rejected but wasn't", entry, count)
 		}
 
-		// Property 3: If validation passes, resolveRepositoryScope must not produce a zero scope
+		// Property 3: If validation passes, resolveRepositoryScope must not produce an absent scope
 		if err == nil && count > 0 {
 			scope := resolveRepositoryScope(repos)
-			if scope.IsZero() {
-				t.Errorf("resolveRepositoryScope returned zero scope for valid input %v", repos)
+			if scope.IsAbsent() {
+				t.Errorf("resolveRepositoryScope returned an absent scope for valid input %v", repos)
 			}
 		}
 

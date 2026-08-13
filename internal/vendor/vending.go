@@ -54,15 +54,13 @@ func Vending[T any](resolve RepositoryResolver[T], tokenVendor TokenVendor) Prof
 			return NewVendorUnmatched()
 		}
 
-		// GitHub omits an empty repository list from the request, and reads its
-		// absence as every repository in the installation. Only a wildcard may
-		// ask for that, and it says so explicitly: every other scope kind is
-		// resolved to concrete names before it gets here — caller-scoped
-		// included, which is narrowed to the requested repository. An empty
-		// list on a non-wildcard scope is therefore a resolver defect, and
-		// vending it would grant the whole installation, so fail instead.
-		// Vending is exported and RepositoryResolver is an extension point.
-		if target.Scope.IsEmpty() {
+		// Every scope kind is resolved to something askable before it gets
+		// here, caller-scoped included. Reaching this with nothing resolved is
+		// a resolver defect, and GitHub reads a request carrying no
+		// repositories as a request for all of them, so fail rather than
+		// escalate. Vending is exported and RepositoryResolver is an
+		// extension point.
+		if target.Scope.IsUnresolved() {
 			return NewVendorFailed(fmt.Errorf("no repository scope resolved for profile %s", r.Ref))
 		}
 

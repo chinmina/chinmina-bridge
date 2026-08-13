@@ -87,11 +87,11 @@ func TestRepositoryScope_Contains(t *testing.T) {
 	}
 }
 
-// TestRepositoryScope_IsEmpty pins the one case that separates IsEmpty from
-// IsZero: a caller-scoped scope names nothing, so vending it would ask GitHub
-// for the whole installation, but it is not the zero value — it declares that
+// TestRepositoryScope_IsUnresolved pins the one case that separates the two
+// predicates: a caller-scoped scope names nothing, so vending it would ask
+// GitHub for the whole installation, but it is not absent — it declares that
 // the request supplies the name.
-func TestRepositoryScope_IsEmpty(t *testing.T) {
+func TestRepositoryScope_IsUnresolved(t *testing.T) {
 	tests := []struct {
 		name     string
 		scope    RepositoryScope
@@ -105,12 +105,12 @@ func TestRepositoryScope_IsEmpty(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.scope.IsEmpty())
+			assert.Equal(t, tt.expected, tt.scope.IsUnresolved())
 		})
 	}
 }
 
-func TestRepositoryScope_IsZero(t *testing.T) {
+func TestRepositoryScope_IsAbsent(t *testing.T) {
 	tests := []struct {
 		name     string
 		scope    RepositoryScope
@@ -124,7 +124,7 @@ func TestRepositoryScope_IsZero(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.scope.IsZero())
+			assert.Equal(t, tt.expected, tt.scope.IsAbsent())
 		})
 	}
 }

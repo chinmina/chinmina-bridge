@@ -44,15 +44,16 @@ func (rs RepositoryScope) IsWildcard() bool {
 	return rs.Wildcard
 }
 
-// IsEmpty reports whether this scope covers no repositories. The wildcard is
-// not empty: it deliberately covers every repository in the installation, and
-// carries no names because that is how GitHub is asked for it.
+// IsUnresolved reports whether this scope resolved to nothing that can be
+// asked for. A wildcard is resolved — it covers every repository in the
+// installation, and carries no names because that is how GitHub is asked for
+// it. A named set is resolved once it holds a name.
 //
-// A caller-scoped value is empty until it is resolved against the request. It
-// is reported as empty rather than excused, because a caller-scoped scope that
-// still names nothing at vend time has been narrowed to nothing, and sending
-// it to GitHub would ask for the whole installation.
-func (rs RepositoryScope) IsEmpty() bool {
+// A caller-scoped value is unresolved until narrowed against the request, and
+// is reported as such rather than excused: one that still names nothing at
+// vend time was narrowed to nothing, and GitHub reads a request carrying no
+// repositories as a request for all of them.
+func (rs RepositoryScope) IsUnresolved() bool {
 	return !rs.Wildcard && len(rs.Names) == 0
 }
 
@@ -73,11 +74,13 @@ func (rs RepositoryScope) Contains(repo string) bool {
 	return slices.Contains(rs.Names, repo)
 }
 
-// IsZero reports whether this scope is the zero value: empty, and without
-// either explicit state that would explain why. A caller-scoped scope is
-// empty but not zero — it declares that the request will supply the name.
-func (rs RepositoryScope) IsZero() bool {
-	return rs.IsEmpty() && !rs.CallerScoped
+// IsAbsent reports whether no scope was declared at all: the zero value, which
+// is neither of the two explicit forms nor a named set. Distinct from
+// IsUnresolved, which a caller-scoped value also satisfies until the request
+// narrows it — that value declares where its repository will come from,
+// whereas this one declares nothing.
+func (rs RepositoryScope) IsAbsent() bool {
+	return rs.IsUnresolved() && !rs.CallerScoped
 }
 
 // NamesForDisplay returns a human-readable representation of the scope.

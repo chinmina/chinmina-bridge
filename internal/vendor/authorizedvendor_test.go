@@ -163,10 +163,9 @@ func TestAuthorized_ValidationError(t *testing.T) {
 	assert.Equal(t, 0, *calls)
 }
 
-// TestAuthorized_DeniesOnWarmCacheEntry is the regression guard for the
-// cache-hit authorization bypass: an unauthorized caller must be refused even
-// when the profile's token is already cached, because Authorized is composed
-// outside Cached and evaluates the rules on every call.
+// TestAuthorized_DeniesOnWarmCacheEntry checks that an unauthorized caller is
+// refused even when the profile's token is already cached: Authorized is
+// composed outside Cached and evaluates the rules on every call.
 func TestAuthorized_DeniesOnWarmCacheEntry(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, orgMatchYAML)
 	inner, calls := recordingOrgVendor()

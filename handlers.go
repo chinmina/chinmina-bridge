@@ -28,12 +28,12 @@ type HTTPStatuser interface {
 // resolveError wraps an error returned by a ProfileResolver so that it
 // surfaces a 400 by default. Typed errors that already implement HTTPStatuser
 // (ProfileNotFoundError, RepositoryScopeRequiredError, etc.) keep their
-// declared status because Status below probes the *wrapped* error explicitly:
-// errors.As matches outermost-first, and resolveError is itself an
-// HTTPStatuser, so a caller walking the chain from the wrapper would otherwise
-// stop here and see 400. Plain parse errors from profile.NewProfileRef stay at
-// 400 rather than inheriting writeJSONError's 500 default, preserving prior
-// handler behaviour for malformed profile path parameters.
+// declared status because Status below probes the *wrapped* error
+// explicitly: errors.As matches outermost-first, and resolveError is itself
+// an HTTPStatuser, so a caller walking the chain from the wrapper would
+// otherwise stop here and see 400. Plain parse errors from
+// profile.NewProfileRef stay at 400 rather than inheriting writeJSONError's
+// 500 default.
 type resolveError struct{ err error }
 
 func (e resolveError) Error() string { return fmt.Sprintf("profile resolution failed: %v", e.err) }
@@ -67,45 +67,39 @@ type ProfileLookup[T any] func(name string) (profile.AuthorizedProfile[T], strin
 // ProfileResolver resolves a request to the single profile generation that
 // will serve it: the profile reference, the compiled profile, and the digest
 // of the configuration it came from. Every downstream stage — the
-// authorization gate, the cache key, the token mint — reads that value instead
-// of consulting the profile store again, so no request can straddle a profile
-// refresh and mix generations.
+// authorization gate, the cache key, the token mint — reads that value
+// instead of consulting the profile store again, so no request can straddle
+// a profile refresh and mix generations.
 //
 // Resolve takes request context, a path-parameter source, and two scope
 // signals:
 //
 //   - explicitScope is the repository the caller explicitly asked to scope
-//     to (e.g. via ?repository-scope=). When a caller supplies this to a
-//     non-caller-scoped profile, the resolver returns
-//     RepositoryScopeUnexpectedError. When absent on a caller-scoped profile
-//     the resolver falls back to implicitScope.
-//   - implicitScope is a scope value derived from the request's structure
-//     rather than its explicit intent — specifically, the repository name
-//     parsed from the Git-credentials body URL. It's honoured only on
-//     caller-scoped profiles; non-caller-scoped profiles ignore it silently
-//     because the URL is part of the request format, not a scope request.
+//     to (e.g. via ?repository-scope=). Supplying it to a non-caller-scoped
+//     profile returns RepositoryScopeUnexpectedError; if absent on a
+//     caller-scoped profile, the resolver falls back to implicitScope.
+//   - implicitScope is derived from the request's structure rather than
+//     explicit intent — the repository name parsed from the Git-credentials
+//     body URL. It's honoured only on caller-scoped profiles; other profiles
+//     ignore it silently, since the URL is part of the request format, not a
+//     scope request.
 //
-// Validation of scope against profile type is applied inside the resolver,
-// centralising the authorisation-boundary logic and keeping the handler
-// focused on transport concerns.
+// Scope-vs-profile-type validation happens inside the resolver, keeping the
+// handler focused on transport concerns.
 //
-// On failure the returned Resolved is empty. In particular the requested name
-// is not carried forward: recordRequestedName has already stamped the raw
-// path parameter on the audit entry, and stamping the canonical URN for a name
-// that never resolved would make a rejected request read like a served one.
+// On failure the returned Resolved is empty; the requested name is not
+// carried forward — recordRequestedName has already stamped the raw path
+// parameter on the audit entry, and stamping a canonical URN for a name that
+// never resolved would make a rejected request read like a served one.
 //
-// Endpoint asymmetry — why only /organization/token surfaces scope-mismatch
-// errors to the caller: implicitScope is ALWAYS present on a git-credentials
-// request (Git always sends the repository URL), so it carries no caller
-// intent — it cannot be "absent" by choice, and it is never read as an
-// explicit scope request. Consequently:
+// Only /organization/token surfaces scope-mismatch errors to the caller:
+// implicitScope is always present on a git-credentials request, so it never
+// represents an explicit choice.
 //   - RepositoryScopeUnexpectedError (Reqs 2.2/5.2) can only originate from
-//     explicitScope, i.e. only at /organization/token. git-credentials silently
-//     ignores the body URL for non-caller-scoped profiles.
-//   - RepositoryScopeRequiredError (Req 2.3) is a caller-facing signal only at
-//     /organization/token; at git-credentials it arises solely when the body
-//     URL fails to resolve to a repository (e.g. a non-github.com host) — a
-//     structural failure, not a scope choice.
+//     explicitScope, i.e. only at /organization/token.
+//   - RepositoryScopeRequiredError (Req 2.3) is caller-facing only at
+//     /organization/token; at git-credentials it arises only when the body
+//     URL fails to resolve to a repository at all.
 type ProfileResolver[T any] struct {
 	// AcceptsRepositoryScope reports whether this family's profiles can be
 	// narrowed to a caller-supplied repository. It travels with the resolver
@@ -201,16 +195,16 @@ func resolveProfile[T any](ctx context.Context, pv PathValuer, lookup ProfileLoo
 	return vendor.Resolved[T]{Ref: ref, Profile: authProfile, Digest: digest}, nil
 }
 
-// recordResolvedRequest stamps the request's intent on the audit entry once the
-// profile has resolved. The canonical URN is written only for a profile that
-// actually exists, so its presence means "this name resolved" rather than
-// "this name was asked for". Unresolved names stay as the raw value stamped by
-// recordRequestedName.
+// recordResolvedRequest stamps the request's intent on the audit entry once
+// the profile has resolved. The canonical URN is written only for a profile
+// that actually exists, so its presence means "this name resolved" rather
+// than "this name was asked for"; unresolved names stay as the raw value
+// stamped by recordRequestedName.
 //
-// The converse does not hold: a caller can put '/' in the path parameter
-// (net/http unescapes %2F after routing), so a raw name can itself be
-// URN-shaped. A reader distinguishing a served request from a rejected one
-// must use the entry's error field, never the shape of requestedProfile.
+// The converse does not hold: net/http unescapes %2F after routing, so a raw
+// name can itself be URN-shaped. Distinguish a served request from a
+// rejected one via the entry's error field, never the shape of
+// requestedProfile.
 func recordResolvedRequest(ctx context.Context, ref profile.ProfileRef, requestedRepo string) {
 	entry := audit.Log(ctx)
 	entry.RequestedProfile = ref.String()

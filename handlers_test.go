@@ -906,9 +906,8 @@ func TestProfileResolver_OrgProfileNotFound_SurfacesLookupError(t *testing.T) {
 }
 
 // TestHandlePostToken_PipelineProfileNotFoundAnswers404 covers the pipeline
-// half of profile-not-found. It used to be a vendor test, but the vendor no
-// longer reads the store: an unloaded or incomplete configuration must now be
-// caught at the boundary, before anything is vended.
+// half of profile-not-found: an unloaded or incomplete configuration must be
+// caught at the resolver boundary, before anything is vended.
 func TestHandlePostToken_PipelineProfileNotFoundAnswers404(t *testing.T) {
 	vended := false
 	tokenVendor := vendor.ProfileTokenVendor[pipelineAttr](func(context.Context, vendor.Resolved[pipelineAttr], string) vendor.VendorResult {

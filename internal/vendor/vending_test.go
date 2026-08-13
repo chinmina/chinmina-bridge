@@ -42,10 +42,10 @@ func pipelineResolved(ref profile.ProfileRef, attrs profile.PipelineProfileAttr)
 	}
 }
 
-// TestVending_OrgPermissionsComeFromResolvedProfile is the Phase 3 contract:
-// the vendor issues the permissions carried by the request's resolved profile.
-// Reading them from the store again would let a refresh between authorization
-// and vending mint a token the authorized generation never described.
+// TestVending_OrgPermissionsComeFromResolvedProfile checks that the vendor
+// issues the permissions carried by the request's resolved profile. Reading
+// them from the store again would let a refresh between authorization and
+// vending mint a token the authorized generation never described.
 func TestVending_OrgPermissionsComeFromResolvedProfile(t *testing.T) {
 	tokenVendor, gotRepos, gotPermissions := recordingTokenVendor(t)
 	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
@@ -122,8 +122,9 @@ func TestVending_OrgCallerScopedNarrowsToRequestedRepository(t *testing.T) {
 	assert.Equal(t, profile.NewSpecificScope("target-repo"), result.Token().Repositories)
 }
 
-// TestVending_PipelinePermissionsComeFromResolvedProfile is the pipeline half
-// of the Phase 3 contract.
+// TestVending_PipelinePermissionsComeFromResolvedProfile is the pipeline
+// analogue: the vendor issues the permissions carried by the resolved
+// profile, not a fresh store read.
 func TestVending_PipelinePermissionsComeFromResolvedProfile(t *testing.T) {
 	tokenVendor, gotRepos, gotPermissions := recordingTokenVendor(t)
 	repoLookup := vendor.RepositoryLookup(func(context.Context, string, string) (string, error) {

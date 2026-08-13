@@ -207,14 +207,11 @@ func TestIntegrationPipelineToken_ProfileNotFound(t *testing.T) {
 
 // TestIntegrationOrganizationToken_MatchRulesDenyThroughTheRealWiring pins the
 // authorization gate to the production chain built by configureServerRoutes.
-// Since the vendors stopped reading the profile store, match evaluation lives
-// in exactly one place — the Authorized decorator composed in main.go — and
-// the unit tests build their own chains, so they would stay green if that
-// composition were lost. This test would not.
-//
-// It also covers the cache-hit case, which is where authorization was
-// historically bypassed: an authorized caller warms the entry, and the denied
-// caller must still be refused.
+// Match evaluation lives in exactly one place, the Authorized decorator
+// composed in main.go; unit tests build their own chains and would stay green
+// if that composition broke. This test also covers the cache-hit case: an
+// authorized caller warms the entry, and a denied caller must still be
+// refused.
 func TestIntegrationOrganizationToken_MatchRulesDenyThroughTheRealWiring(t *testing.T) {
 	harness := NewAPITestHarness(t)
 
@@ -878,18 +875,18 @@ pipeline:
 `
 )
 
-// TestIntegrationProfileRefresh_ServesNoMixedGeneration is the standing
-// evidence for the property the whole refactor exists to produce: a request is
+// TestIntegrationProfileRefresh_ServesNoMixedGeneration proves a request is
 // authorized against, and vended from, exactly one configuration generation.
+// Profiles are replaced wholesale, so a request that reads the store more
+// than once could match against one generation and take its permissions from
+// another.
 //
-// Profiles are replaced wholesale, so a request that read the store more than
-// once could match against one generation and take its permissions from the
-// next. Here generation A admits only pipeline-a and grants contents:read on
-// repo-a, while generation B admits only pipeline-b and grants contents:write
-// on repo-b. Each caller therefore has exactly two acceptable outcomes: a token
-// carrying its own generation's repository AND permissions, or a 403 because
-// the other generation was live when it resolved. Any other pairing — most
-// sharply, pipeline-a holding contents:write — is a split-generation response.
+// Generation A admits only pipeline-a and grants contents:read on repo-a;
+// generation B admits only pipeline-b and grants contents:write on repo-b.
+// Each caller has exactly two acceptable outcomes: a token carrying its own
+// generation's repository and permissions, or a 403 because the other
+// generation was live when it resolved. Any other pairing — most sharply,
+// pipeline-a holding contents:write — is a split-generation response.
 //
 // Run under -race, which `just ci-unit` does.
 func TestIntegrationProfileRefresh_ServesNoMixedGeneration(t *testing.T) {

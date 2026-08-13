@@ -892,12 +892,11 @@ organization:
 	assert.Equal(t, 1, callCount)
 }
 
-// TestCachedVendor_UnresolvedGenerationFailsClosed guards the key invariant the
-// decorator rests on. The digest is the only thing separating one configuration
-// generation's entries from another's, so a request that arrives without one
-// would share a single namespace with every other — reintroducing precisely the
-// cross-generation mixing the key exists to prevent. Cached is exported, so it
-// refuses rather than trusting its caller to have resolved the profile.
+// TestCachedVendor_UnresolvedGenerationFailsClosed guards the key invariant
+// the decorator rests on: the digest is the only thing separating one
+// configuration generation's entries from another's, so a request without
+// one must be refused rather than sharing a single namespace with everything
+// else.
 func TestCachedVendor_UnresolvedGenerationFailsClosed(t *testing.T) {
 	vended := 0
 	v := newTestCached(t, time.Hour)(func(_ context.Context, _ vendor.Resolved[cacheAttr], _ string) vendor.VendorResult {
