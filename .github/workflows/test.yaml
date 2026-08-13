@@ -42,7 +42,7 @@ jobs:
       # mise is the single version authority; install only just from
       # mise.toml, matching the lint job's approach for golangci-lint. Only
       # write the tool cache from main pushes so PRs don't pollute it.
-      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
           install_args: just
           cache_save: ${{ github.event_name != 'pull_request' }}
@@ -73,7 +73,7 @@ jobs:
       # mise.toml (the lint job needs nothing else) and let the lint action use
       # that binary (install-mode: none).
       # Only write the tool cache from main pushes so PRs don't pollute it.
-      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
           install_args: golangci-lint
           cache_save: ${{ github.event_name != 'pull_request' }}
