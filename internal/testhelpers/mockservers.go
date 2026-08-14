@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,12 +14,18 @@ import (
 )
 
 // MockGitHubServer provides a configurable mock GitHub API server for testing.
+// The request counter is atomic: tests may drive the server concurrently.
 type MockGitHubServer struct {
 	Server       *httptest.Server
 	Token        string    // Token to return from CreateAccessToken
 	Expiry       time.Time // Expiry time for the token
 	StatusCode   int       // HTTP status code to return (200 if not set)
-	RequestCount int       // Number of requests received
+	requestCount atomic.Int64
+}
+
+// RequestCount reports how many requests the server has received.
+func (m *MockGitHubServer) RequestCount() int {
+	return int(m.requestCount.Load())
 }
 
 // SetupMockGitHubServer creates a mock GitHub API server that handles token creation requests.
@@ -34,7 +42,7 @@ func SetupMockGitHubServer(t *testing.T) *MockGitHubServer {
 	router := http.NewServeMux()
 
 	router.HandleFunc("/app/installations/{installationID}/access_tokens", func(w http.ResponseWriter, r *http.Request) {
-		mock.RequestCount++
+		mock.requestCount.Add(1)
 
 		if mock.StatusCode != http.StatusOK {
 			w.WriteHeader(mock.StatusCode)
@@ -59,13 +67,30 @@ func (m *MockGitHubServer) Close() {
 	m.Server.Close()
 }
 
-// MockBuildkiteServer provides a configurable mock Buildkite API server for testing.
+// MockBuildkiteServer provides a configurable mock Buildkite API server for
+// testing. The request counter and captured header are guarded: tests may
+// drive the server concurrently.
 type MockBuildkiteServer struct {
-	Server         *httptest.Server
-	RepositoryURL  string // Repository URL to return from pipeline lookup
-	StatusCode     int    // HTTP status code to return (200 if not set)
-	RequestCount   int    // Number of requests received
-	LastAuthHeader string // Captured Authorization header from last request
+	Server        *httptest.Server
+	RepositoryURL string // Repository URL to return from pipeline lookup
+	StatusCode    int    // HTTP status code to return (200 if not set)
+	requestCount  atomic.Int64
+
+	mu             sync.Mutex
+	lastAuthHeader string // Captured Authorization header from last request
+}
+
+// RequestCount reports how many requests the server has received.
+func (m *MockBuildkiteServer) RequestCount() int {
+	return int(m.requestCount.Load())
+}
+
+// LastAuthHeader reports the Authorization header of the most recent request.
+func (m *MockBuildkiteServer) LastAuthHeader() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.lastAuthHeader
 }
 
 // SetupMockBuildkiteServer creates a mock Buildkite API server that handles pipeline lookups.
@@ -81,8 +106,11 @@ func SetupMockBuildkiteServer(t *testing.T) *MockBuildkiteServer {
 	router := http.NewServeMux()
 
 	router.HandleFunc("/v2/organizations/{organization}/pipelines/{pipeline}", func(w http.ResponseWriter, r *http.Request) {
-		mock.RequestCount++
-		mock.LastAuthHeader = r.Header.Get("Authorization")
+		mock.requestCount.Add(1)
+
+		mock.mu.Lock()
+		mock.lastAuthHeader = r.Header.Get("Authorization")
+		mock.mu.Unlock()
 
 		if mock.StatusCode != http.StatusOK {
 			w.WriteHeader(mock.StatusCode)

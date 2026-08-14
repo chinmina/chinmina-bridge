@@ -19,7 +19,7 @@ import (
 func TestCacheMissOnFirstRequest(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -28,7 +28,7 @@ func TestCacheMissOnFirstRequest(t *testing.T) {
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
 	}
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -40,7 +40,7 @@ func TestCacheMissOnFirstRequest(t *testing.T) {
 func TestCacheMissWithNilResponse(t *testing.T) {
 	wrapped := sequenceVendor("first-call", nil)
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -50,7 +50,7 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 		PipelineID:   "pipeline-id",
 	}
 	// first call misses cache
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -65,14 +65,14 @@ func TestCacheMissWithNilResponse(t *testing.T) {
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id-not-recognized",
 	}
-	result = v(context.Background(), ref2, "https://github.com/test-org/any-repo.git")
+	result = v(context.Background(), cacheRequest(ref2), "https://github.com/test-org/any-repo.git")
 	assertVendorUnmatched(t, result)
 }
 
 func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -81,7 +81,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 		Type:         profile.ProfileTypeOrg,
 	}
 	// first call misses cache
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -91,7 +91,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 	})
 
 	// second call hits (even though it's for a different pipeline), return first value
-	result = v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result = v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -104,7 +104,7 @@ func TestCacheHitWithOrgProfileAndDifferentRepo(t *testing.T) {
 func TestCacheHitOnSecondRequest(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -114,7 +114,7 @@ func TestCacheHitOnSecondRequest(t *testing.T) {
 		PipelineID:   "pipeline-id",
 	}
 	// first call misses cache
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -123,7 +123,7 @@ func TestCacheHitOnSecondRequest(t *testing.T) {
 	})
 
 	// second call hits, return first value
-	result = v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result = v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -137,7 +137,7 @@ var defaultTTL = 60 * time.Minute
 func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -147,7 +147,7 @@ func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 		PipelineID:   "pipeline-id",
 	}
 	// first call misses cache, vends with repository
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -157,7 +157,7 @@ func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 
 	// second call hits with empty repo parameter (non-Git credentials request)
 	// should return cached token even though it was vended for a specific repo
-	result = v(context.Background(), ref, "")
+	result = v(context.Background(), cacheRequest(ref), "")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -169,7 +169,7 @@ func TestCacheHitWithEmptyRepoParameter(t *testing.T) {
 func TestCacheMissWithRepoChange(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -179,7 +179,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 		PipelineID:   "pipeline-id",
 	}
 	// first call misses cache
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -188,7 +188,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	})
 
 	// second call hits, but repo changes so causes a miss
-	result = v(context.Background(), ref, "https://github.com/test-org/different-repo.git")
+	result = v(context.Background(), cacheRequest(ref), "https://github.com/test-org/different-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/different-repo.git",
@@ -197,7 +197,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 	})
 
 	// third call hits, returns second result after cache reset
-	result = v(context.Background(), ref, "https://github.com/test-org/different-repo.git")
+	result = v(context.Background(), cacheRequest(ref), "https://github.com/test-org/different-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/different-repo.git",
@@ -209,7 +209,7 @@ func TestCacheMissWithRepoChange(t *testing.T) {
 func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref1 := profile.ProfileRef{
@@ -219,7 +219,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 		PipelineID:   "pipeline-id",
 	}
 	// first call misses cache
-	result := v(context.Background(), ref1, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref1), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -234,7 +234,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 		PipelineID:   "second-pipeline-id",
 	}
 	// second call misses as it's for a different pipeline (cache key)
-	result = v(context.Background(), ref2, "https://github.com/test-org/any-repo.git")
+	result = v(context.Background(), cacheRequest(ref2), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -243,7 +243,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 	})
 
 	// third call hits, returns second result after cache reset
-	result = v(context.Background(), ref2, "https://github.com/test-org/any-repo.git")
+	result = v(context.Background(), cacheRequest(ref2), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -255,7 +255,7 @@ func TestCacheMissWithPipelineIDChange(t *testing.T) {
 func TestCacheMissWithExpiredItem(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c := newTestCached(t, time.Nanosecond, "test-digest") // near instant expiration
+	c := newTestCached(t, time.Nanosecond) // near instant expiration
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -265,7 +265,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 		PipelineID:   "pipeline-id",
 	}
 	// first call misses cache
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -277,7 +277,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 
 	// second call misses as it's expired
-	result = v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result = v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -289,7 +289,7 @@ func TestCacheMissWithExpiredItem(t *testing.T) {
 func TestCacheProfileWithDifferentRepo(t *testing.T) {
 	wrapped := sequenceVendor("first-call")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -298,7 +298,7 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 		Type:         profile.ProfileTypeOrg,
 	}
 	// first call misses cache
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -307,7 +307,7 @@ func TestCacheProfileWithDifferentRepo(t *testing.T) {
 		Permissions:         []string{"read", "write"},
 	})
 	// second call hits, but repo changes, so token content is the same but repo is different
-	result = v(context.Background(), ref, "https://github.com/test-org/different-repo.git")
+	result = v(context.Background(), cacheRequest(ref), "https://github.com/test-org/different-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/different-repo.git",
@@ -325,7 +325,7 @@ func TestOrgProfileMismatchDoesNotInvalidateCache(t *testing.T) {
 	// If a third vendor call occurs it returns an error, which would fail the test.
 	wrapped := sequenceVendor("first-call", nil)
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -335,7 +335,7 @@ func TestOrgProfileMismatchDoesNotInvalidateCache(t *testing.T) {
 	}
 
 	// Call 1: cache miss → vend token covering [any-repo, other-repo]
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -346,11 +346,11 @@ func TestOrgProfileMismatchDoesNotInvalidateCache(t *testing.T) {
 
 	// Call 2: request for unconfigured-repo → mismatch → vendor called → Unmatched
 	// The cache entry for [any-repo, other-repo] must NOT be invalidated.
-	result = v(context.Background(), ref, "https://github.com/test-org/unconfigured-repo.git")
+	result = v(context.Background(), cacheRequest(ref), "https://github.com/test-org/unconfigured-repo.git")
 	assertVendorUnmatched(t, result)
 
 	// Call 3: request for any-repo again → must be a cache HIT (no vendor call)
-	result = v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result = v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -363,7 +363,7 @@ func TestOrgProfileMismatchDoesNotInvalidateCache(t *testing.T) {
 func TestReturnsErrorForWrapperError(t *testing.T) {
 	wrapped := sequenceVendor(E{"failed"})
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -373,14 +373,14 @@ func TestReturnsErrorForWrapperError(t *testing.T) {
 		PipelineID:   "pipeline-id",
 	}
 	// first call misses cache and returns error from wrapped
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorFailure(t, result, "failed")
 }
 
 func TestCacheMissWithNilVendorResponse(t *testing.T) {
 	wrapped := sequenceVendor(nil, "second-call")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -392,12 +392,12 @@ func TestCacheMissWithNilVendorResponse(t *testing.T) {
 	}
 
 	// First call returns nil from the wrapped vendor
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorUnmatched(t, result)
 
 	// Second call should not be served from cache; it should invoke the wrapped vendor again
 	// and return the second token value. This verifies that nil results are not cached.
-	result = v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result = v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -423,7 +423,7 @@ func TestCacheGetError(t *testing.T) {
 		getError: errors.New("cache get failed"),
 	}
 
-	c := vendor.Cached(errorCache, mockDigester{digest: "test-digest"})
+	c := vendor.Cached[cacheAttr](errorCache)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -434,7 +434,7 @@ func TestCacheGetError(t *testing.T) {
 	}
 
 	// Should log warning but proceed to fetch from vendor
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -449,7 +449,7 @@ func TestCacheSetError(t *testing.T) {
 		setError: errors.New("cache set failed"),
 	}
 
-	c := vendor.Cached(errorCache, mockDigester{digest: "test-digest"})
+	c := vendor.Cached[cacheAttr](errorCache)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -460,7 +460,7 @@ func TestCacheSetError(t *testing.T) {
 	}
 
 	// Should log warning but return successful result
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -481,7 +481,7 @@ func TestCacheInvalidateError(t *testing.T) {
 		},
 	}
 
-	c := vendor.Cached(errorCache, mockDigester{digest: "test-digest"})
+	c := vendor.Cached[cacheAttr](errorCache)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -492,7 +492,7 @@ func TestCacheInvalidateError(t *testing.T) {
 	}
 
 	// First call hits cache but repo mismatches, tries to invalidate (fails), then fetches
-	result := v(context.Background(), ref, "https://github.com/test-org/different-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/different-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/different-repo.git",
@@ -504,7 +504,7 @@ func TestCacheInvalidateError(t *testing.T) {
 func TestCacheInvalidRepositoryURL(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -515,7 +515,7 @@ func TestCacheInvalidRepositoryURL(t *testing.T) {
 	}
 
 	// First call with valid repo
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
+	result := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "first-call",
 		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
@@ -524,7 +524,7 @@ func TestCacheInvalidRepositoryURL(t *testing.T) {
 	})
 
 	// Second call with invalid repo URL (should trigger repo mismatch and fetch)
-	result = v(context.Background(), ref, "not-a-valid-url")
+	result = v(context.Background(), cacheRequest(ref), "not-a-valid-url")
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "second-call",
 		VendedRepositoryURL: "not-a-valid-url",
@@ -533,15 +533,18 @@ func TestCacheInvalidRepositoryURL(t *testing.T) {
 	})
 }
 
-func TestCacheDigestChange(t *testing.T) {
+// TestCacheKeyUsesResolvedDigest checks that the configuration generation in
+// the cache key comes from the request's resolved profile, not from a live
+// read of the store. A refresh landing between resolution and the cache write
+// would otherwise file a token minted from one generation's permissions under
+// the key of another.
+func TestCacheKeyUsesResolvedDigest(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "second-call")
 
-	digester := &mutableDigester{digest: "digest-v1"}
 	tokenCache, err := cache.NewMemory[vendor.ProfileToken](defaultTTL, 10_000)
 	require.NoError(t, err)
 
-	c := vendor.Cached(tokenCache, digester)
-	v := c(wrapped)
+	v := vendor.Cached[cacheAttr](tokenCache)(wrapped)
 
 	ref := profile.ProfileRef{
 		Organization: "org",
@@ -549,27 +552,19 @@ func TestCacheDigestChange(t *testing.T) {
 		Type:         profile.ProfileTypeRepo,
 		PipelineID:   "pipeline-id",
 	}
+	repo := "https://github.com/test-org/any-repo.git"
 
-	// First call misses cache
-	result := v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
-	assertVendorSuccess(t, result, vendor.ProfileToken{
-		Token:               "first-call",
-		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        profile.NewSpecificScope("any-repo"),
-		Profile:             "repo:default",
-	})
+	result := v(context.Background(), cacheRequestAt(ref, "digest-v1"), repo)
+	assertVendorTokenValue(t, result, "first-call")
 
-	// Change digest (simulates config change)
-	digester.digest = "digest-v2"
+	// the same request resolved from a later generation must not read the
+	// earlier generation's token
+	result = v(context.Background(), cacheRequestAt(ref, "digest-v2"), repo)
+	assertVendorTokenValue(t, result, "second-call")
 
-	// Second call misses cache due to different digest in key
-	result = v(context.Background(), ref, "https://github.com/test-org/any-repo.git")
-	assertVendorSuccess(t, result, vendor.ProfileToken{
-		Token:               "second-call",
-		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
-		Repositories:        profile.NewSpecificScope("any-repo"),
-		Profile:             "repo:default",
-	})
+	// and the earlier generation's entry is still its own
+	result = v(context.Background(), cacheRequestAt(ref, "digest-v1"), repo)
+	assertVendorTokenValue(t, result, "first-call")
 }
 
 // errorReturningCache is a mock cache that can return errors for testing
@@ -608,15 +603,6 @@ func (e *errorReturningCache) Close() error {
 	return nil
 }
 
-// mutableDigester allows digest to be changed during tests
-type mutableDigester struct {
-	digest string
-}
-
-func (m *mutableDigester) Digest() string {
-	return m.digest
-}
-
 // TestCacheCallerScoped_DifferentReposAreSeparateEntries verifies that different
 // repositories under the same caller-scoped profile get separate cache entries.
 // Distinctness comes from ref.String(), which embeds ScopedRepository,
@@ -624,7 +610,7 @@ func (m *mutableDigester) Digest() string {
 func TestCacheCallerScoped_DifferentReposAreSeparateEntries(t *testing.T) {
 	wrapped := sequenceVendor("token-for-repo-a", "token-for-repo-b", "token-for-repo-a")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	refA := profile.ProfileRef{
@@ -642,7 +628,7 @@ func TestCacheCallerScoped_DifferentReposAreSeparateEntries(t *testing.T) {
 	}
 
 	// First call with repo-a scoped ref: cache miss
-	result := v(context.Background(), refA, "")
+	result := v(context.Background(), cacheRequest(refA), "")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token := result.Token()
 	assert.Equal(t, "token-for-repo-a", token.Token)
@@ -650,14 +636,14 @@ func TestCacheCallerScoped_DifferentReposAreSeparateEntries(t *testing.T) {
 	assert.Equal(t, profile.NewSpecificScope("repo-a"), token.Repositories)
 
 	// Second call with repo-b scoped ref: must also miss (different cache key from ref.String())
-	result = v(context.Background(), refB, "")
+	result = v(context.Background(), cacheRequest(refB), "")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token = result.Token()
 	assert.Equal(t, "token-for-repo-b", token.Token)
 	assert.Equal(t, profile.NewSpecificScope("repo-b"), token.Repositories)
 
 	// Third call with repo-a scoped ref again: cache hit (returns first token)
-	result = v(context.Background(), refA, "")
+	result = v(context.Background(), cacheRequest(refA), "")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token = result.Token()
 	assert.Equal(t, "token-for-repo-a", token.Token)
@@ -668,7 +654,7 @@ func TestCacheCallerScoped_DifferentReposAreSeparateEntries(t *testing.T) {
 func TestCacheCallerScoped_GitCredentialsPath_DistinctCacheEntries(t *testing.T) {
 	wrapped := sequenceVendor("git-token-repo-a", "git-token-repo-b", "git-token-repo-a")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	refA := profile.ProfileRef{
@@ -686,19 +672,19 @@ func TestCacheCallerScoped_GitCredentialsPath_DistinctCacheEntries(t *testing.T)
 	}
 
 	// First git-credentials call for repo-a: cache miss
-	result := v(context.Background(), refA, "https://github.com/test-org/repo-a.git")
+	result := v(context.Background(), cacheRequest(refA), "https://github.com/test-org/repo-a.git")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token := result.Token()
 	assert.Equal(t, "git-token-repo-a", token.Token)
 
 	// Second git-credentials call for repo-b: must also miss (different cache key from ref.String())
-	result = v(context.Background(), refB, "https://github.com/test-org/repo-b.git")
+	result = v(context.Background(), cacheRequest(refB), "https://github.com/test-org/repo-b.git")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token = result.Token()
 	assert.Equal(t, "git-token-repo-b", token.Token)
 
 	// Third git-credentials call for repo-a again: cache hit (returns first token)
-	result = v(context.Background(), refA, "https://github.com/test-org/repo-a.git")
+	result = v(context.Background(), cacheRequest(refA), "https://github.com/test-org/repo-a.git")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token = result.Token()
 	assert.Equal(t, "git-token-repo-a", token.Token)
@@ -709,7 +695,7 @@ func TestCacheCallerScoped_GitCredentialsPath_DistinctCacheEntries(t *testing.T)
 func TestCacheCallerScoped_SameScopeIsCacheHit(t *testing.T) {
 	wrapped := sequenceVendor("cached-token", "should-not-be-called")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -720,14 +706,14 @@ func TestCacheCallerScoped_SameScopeIsCacheHit(t *testing.T) {
 	}
 
 	// First call: cache miss, vends token
-	result := v(context.Background(), ref, "")
+	result := v(context.Background(), cacheRequest(ref), "")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token := result.Token()
 	assert.Equal(t, "cached-token", token.Token)
 
 	// Second call with identical ref: cache hit, returns same token
 	// If the wrapped vendor were called, it would return "should-not-be-called" and fail
-	result = v(context.Background(), ref, "")
+	result = v(context.Background(), cacheRequest(ref), "")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token = result.Token()
 	assert.Equal(t, "cached-token", token.Token)
@@ -742,7 +728,7 @@ func TestCacheCallerScoped_SameScopeIsCacheHit(t *testing.T) {
 func TestCacheAllRepositories_SameCallGetsCacheHit(t *testing.T) {
 	wrapped := sequenceVendor("first-call", "should-not-be-called")
 
-	c := newTestCached(t, defaultTTL, "test-digest")
+	c := newTestCached(t, defaultTTL)
 	v := c(wrapped)
 
 	ref := profile.ProfileRef{
@@ -752,20 +738,20 @@ func TestCacheAllRepositories_SameCallGetsCacheHit(t *testing.T) {
 	}
 
 	// First call: cache miss
-	result := v(context.Background(), ref, "")
+	result := v(context.Background(), cacheRequest(ref), "")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token := result.Token()
 	assert.Equal(t, "first-call", token.Token)
 
 	// Second call: cache hit (same key, no repository scope component)
-	result = v(context.Background(), ref, "")
+	result = v(context.Background(), cacheRequest(ref), "")
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token = result.Token()
 	assert.Equal(t, "first-call", token.Token)
 }
 
 // sequenceVendor returns each of the calls in sequence, either a token or an error
-func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
+func sequenceVendor(calls ...any) vendor.ProfileTokenVendor[cacheAttr] {
 	callIndex := 0
 
 	// Profile data for test fixtures
@@ -795,7 +781,7 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 		},
 	}
 
-	return vendor.ProfileTokenVendor(func(ctx context.Context, ref profile.ProfileRef, repo string) vendor.VendorResult {
+	return vendor.ProfileTokenVendor[cacheAttr](func(ctx context.Context, r vendor.Resolved[cacheAttr], repo string) vendor.VendorResult {
 		if len(calls) <= callIndex {
 			return vendor.NewVendorFailed(errors.New("unregistered call"))
 		}
@@ -808,7 +794,7 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 			// unmatched return
 			return vendor.NewVendorUnmatched()
 		case string:
-			if ref.Name == "default" {
+			if r.Ref.Name == "default" {
 				repoNames, _ := github.GetRepoNames([]string{repo})
 				repoName := repo
 				if len(repoNames) > 0 {
@@ -818,14 +804,14 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 					Token:               v,
 					VendedRepositoryURL: repo,
 					Repositories:        profile.NewSpecificScope(repoName),
-					Profile:             ref.ShortString(),
+					Profile:             r.Ref.ShortString(),
 				})
 			} else {
 				// For scoped profiles, extract base profile name for lookup
-				profileKey := ref.ShortString()
-				if ref.ScopedRepository != "" {
+				profileKey := r.Ref.ShortString()
+				if r.Ref.ScopedRepository != "" {
 					// ShortString returns "org:name/repo", extract just "org:name"
-					profileKey = fmt.Sprintf("%s:%s", ref.Type.String(), ref.Name)
+					profileKey = fmt.Sprintf("%s:%s", r.Ref.Type.String(), r.Ref.Name)
 				}
 				data, ok := profileData[profileKey]
 				if !ok {
@@ -835,15 +821,15 @@ func sequenceVendor(calls ...any) vendor.ProfileTokenVendor {
 				// token to the single requested repository; reflect that here so
 				// cache tests can assert the token carries the narrow scope.
 				repositories := data.repositories
-				if ref.ScopedRepository != "" {
-					repositories = profile.NewSpecificScope(ref.ScopedRepository)
+				if r.Ref.ScopedRepository != "" {
+					repositories = profile.NewSpecificScope(r.Ref.ScopedRepository)
 				}
 				return vendor.NewVendorSuccess(vendor.ProfileToken{
 					Token:               v,
 					Repositories:        repositories,
 					Permissions:         data.permissions,
 					VendedRepositoryURL: repo,
-					Profile:             ref.ShortString(),
+					Profile:             r.Ref.ShortString(),
 				})
 			}
 		case error:
@@ -881,9 +867,9 @@ organization:
 		return "PRIVILEGED-TOKEN", time.Now(), nil
 	})
 
-	c := newTestCached(t, defaultTTL, "digest-1")
-	m := vendor.Matched(vendor.OrgMatcherLookup(store))
-	v := vendor.Auditor(m(c(vendor.NewOrgVendor(store, tokenVendor))))
+	c := newTestCached(t, defaultTTL)
+	m := vendor.Authorized(c(vendor.Vending(vendor.OrgRepositories, tokenVendor)))
+	v := vendor.Auditor(m)
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -892,16 +878,41 @@ organization:
 	}
 
 	// 1. Authorized caller warms the cache.
-	warm := v(createTestClaimsContextWithPipeline("authorized-pipeline"), ref, "")
+	warm := v(createTestClaimsContextWithPipeline("authorized-pipeline"), resolvedOrg(t, store, ref), "")
 	assertVendorTokenValue(t, warm, "PRIVILEGED-TOKEN")
 
 	// 2. Unauthorized caller — fails the pipeline_slug rule. On a correctly
 	// authorized system this must be rejected even though the cache holds a
 	// token for the same ProfileRef.
-	result := v(createTestClaimsContextWithPipeline("attacker-pipeline"), ref, "")
+	result := v(createTestClaimsContextWithPipeline("attacker-pipeline"), resolvedOrg(t, store, ref), "")
 	assertVendorFailure(t, result, "match conditions not met")
 
 	// The underlying token vendor is called exactly once: the second request
 	// must be rejected before ever reaching GitHub, not served from cache.
 	assert.Equal(t, 1, callCount)
+}
+
+// TestCachedVendor_UnresolvedGenerationFailsClosed guards the key invariant
+// the decorator rests on: the digest is the only thing separating one
+// configuration generation's entries from another's, so a request without
+// one must be refused rather than sharing a single namespace with everything
+// else.
+func TestCachedVendor_UnresolvedGenerationFailsClosed(t *testing.T) {
+	vended := 0
+	v := newTestCached(t, time.Hour)(func(_ context.Context, _ vendor.Resolved[cacheAttr], _ string) vendor.VendorResult {
+		vended++
+		return vendor.NewVendorSuccess(vendor.ProfileToken{Token: "unreachable"})
+	})
+
+	ref := profile.ProfileRef{
+		Organization: "organization-slug",
+		Type:         profile.ProfileTypeOrg,
+		Name:         "profile",
+	}
+
+	result := v(context.Background(), cacheRequestAt(ref, ""), "")
+
+	require.Equal(t, vendor.VendStatusFailed, result.Status())
+	assert.ErrorContains(t, result.Err(), "no configuration generation resolved")
+	assert.Zero(t, vended, "a request with no generation must not reach the token vendor")
 }

@@ -44,6 +44,18 @@ func (rs RepositoryScope) IsWildcard() bool {
 	return rs.Wildcard
 }
 
+// IsUnresolved reports whether this scope resolved to nothing that can be
+// asked for. A wildcard is resolved: it covers every repository and carries
+// no names because that is how GitHub is asked for it. A named set is
+// resolved once it holds a name.
+//
+// A caller-scoped value is unresolved until narrowed against the request. A
+// value that still names nothing at vend time was narrowed to nothing, and
+// GitHub reads an empty repository list as a request for every repository.
+func (rs RepositoryScope) IsUnresolved() bool {
+	return !rs.Wildcard && len(rs.Names) == 0
+}
+
 // IsCallerScoped reports whether the repository is supplied at request time.
 func (rs RepositoryScope) IsCallerScoped() bool {
 	return rs.CallerScoped
@@ -61,9 +73,12 @@ func (rs RepositoryScope) Contains(repo string) bool {
 	return slices.Contains(rs.Names, repo)
 }
 
-// IsZero reports whether this scope is the zero value (no repositories, not wildcard, not caller-scoped).
-func (rs RepositoryScope) IsZero() bool {
-	return !rs.Wildcard && !rs.CallerScoped && len(rs.Names) == 0
+// IsAbsent reports whether no scope was declared at all: the zero value.
+// Distinct from IsUnresolved, which a caller-scoped value also satisfies
+// until the request narrows it — that value declares where its repository
+// will come from; this one declares nothing.
+func (rs RepositoryScope) IsAbsent() bool {
+	return rs.IsUnresolved() && !rs.CallerScoped
 }
 
 // NamesForDisplay returns a human-readable representation of the scope.

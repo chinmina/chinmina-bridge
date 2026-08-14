@@ -87,7 +87,30 @@ func TestRepositoryScope_Contains(t *testing.T) {
 	}
 }
 
-func TestRepositoryScope_IsZero(t *testing.T) {
+// TestRepositoryScope_IsUnresolved pins the one case that separates the two
+// predicates: a caller-scoped scope names nothing, so vending it would ask
+// GitHub for the whole installation, but it is not absent — it declares that
+// the request supplies the name.
+func TestRepositoryScope_IsUnresolved(t *testing.T) {
+	tests := []struct {
+		name     string
+		scope    RepositoryScope
+		expected bool
+	}{
+		{"zero value", RepositoryScope{}, true},
+		{"wildcard scope", NewWildcardScope(), false},
+		{"specific scope with names", NewSpecificScope("repo-a"), false},
+		{"specific scope with empty names", NewSpecificScope(), true},
+		{"unresolved caller-scoped scope", NewCallerScopedScope(), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.scope.IsUnresolved())
+		})
+	}
+}
+
+func TestRepositoryScope_IsAbsent(t *testing.T) {
 	tests := []struct {
 		name     string
 		scope    RepositoryScope
@@ -101,7 +124,7 @@ func TestRepositoryScope_IsZero(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.scope.IsZero())
+			assert.Equal(t, tt.expected, tt.scope.IsAbsent())
 		})
 	}
 }

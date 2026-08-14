@@ -81,50 +81,50 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 
 	hooks.Add("cache", tokenCache.Close)
 
-	vendorCache := vendor.Cached(tokenCache, orgProfile)
-
 	// Pipeline and organization routes are deliberately separate, with very
 	// different authorization and match rules. This allows for simpler controls
 	// on the request path, as the types are differentiated by construction
 	// instead of runtime checks.
 	//
-	// Within their type, each has the same request flow:
-	//   JWT Auth -> Audit -> Match Profile -> Cache -> Token Vendor
+	// Within their type, each vendor chain has the same flow:
+	//   Audit -> Resolve Profile -> Authorize -> Cache -> Token Vendor
+	//
+	// The profile is resolved once, at the handler boundary, and the resolved
+	// value is carried through the chain. The underlying cache is
+	// shared by both vendor chains, sharing contents, TTL and capacity.
 
 	// Pipeline (repo) routes
 
-	repoProfileMatch := vendor.Matched(vendor.RepoMatcherLookup(orgProfile))
 	repoVendor := vendor.Auditor(
-		repoProfileMatch(
-			vendorCache(
-				vendor.NewRepoVendor(orgProfile, bk.RepositoryLookup, gh.CreateAccessToken),
+		vendor.Authorized(
+			vendor.Cached[profile.PipelineProfileAttr](tokenCache)(
+				vendor.Vending(vendor.PipelineRepositories(bk.RepositoryLookup), gh.CreateAccessToken),
 			),
 		),
 	)
 
-	pipelineBuilder := NewProfileRefBuilder(orgProfile, profile.ProfileTypeRepo)
-	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, pipelineBuilder, profile.ProfileTypeRepo))
+	pipelineResolver := NewPipelineProfileResolver(orgProfile.GetPipelineProfile)
+	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, pipelineResolver))
 	mux.Handle("POST /token", pipelineTokenHandler)
 	mux.Handle("POST /token/{profile}", pipelineTokenHandler)
 
-	pipelineGitCredentialsHandler := authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, pipelineBuilder, profile.ProfileTypeRepo))
+	pipelineGitCredentialsHandler := authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, pipelineResolver))
 	mux.Handle("POST /git-credentials", pipelineGitCredentialsHandler)
 	mux.Handle("POST /git-credentials/{profile}", pipelineGitCredentialsHandler)
 
 	// Organization routes
 
-	orgProfileMatch := vendor.Matched(vendor.OrgMatcherLookup(orgProfile))
 	orgVendor := vendor.Auditor(
-		orgProfileMatch(
-			vendorCache(
-				vendor.NewOrgVendor(orgProfile, gh.CreateAccessToken),
+		vendor.Authorized(
+			vendor.Cached[profile.OrganizationProfileAttr](tokenCache)(
+				vendor.Vending(vendor.OrgRepositories, gh.CreateAccessToken),
 			),
 		),
 	)
 
-	orgBuilder := NewProfileRefBuilder(orgProfile, profile.ProfileTypeOrg)
-	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, orgBuilder, profile.ProfileTypeOrg)))
-	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, orgBuilder, profile.ProfileTypeOrg)))
+	orgResolver := NewOrgProfileResolver(orgProfile.GetOrganizationProfile)
+	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, orgResolver)))
+	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, orgResolver)))
 
 	// healthchecks are not included in telemetry or authorization
 	muxWithoutTelemetry.Handle("GET /healthcheck", standardRouteMiddleware.Then(handleHealthCheck()))

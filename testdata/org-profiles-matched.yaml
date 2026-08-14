@@ -1,0 +1,18 @@
+organization:
+  profiles:
+    # Only the release pipeline may vend this profile. The integration harness
+    # signs its JWTs with pipeline_slug "test-pipeline", so a default harness
+    # token must be denied.
+    - name: release-only-profile
+      match:
+        - claim: pipeline_slug
+          value: release-pipeline
+      repositories:
+        - repo1
+      permissions:
+        - contents:write
+
+pipeline:
+  defaults:
+    permissions:
+      - contents:read

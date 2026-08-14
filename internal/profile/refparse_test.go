@@ -11,7 +11,7 @@ import (
 // compiled into the production binary and cannot become a load-bearing part of
 // the package's public API. Its sole purpose is to verify that ProfileRef.String()
 // round-trips. Production code never reconstructs a ProfileRef from its URN; refs
-// are always built from request inputs via NewProfileRef / the ProfileRefBuilder.
+// are always built from request inputs via NewProfileRef / the boundary resolvers.
 //
 // Supports both new format (with pipeline-slug and /profile/ segment) and old
 // format (backward compatibility).

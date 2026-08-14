@@ -11,7 +11,29 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
-type ProfileTokenVendor func(ctx context.Context, ref profile.ProfileRef, repo string) VendorResult
+// Resolved is the single profile generation a request is served from. It is
+// built once, at the handler boundary, and carried through every stage of the
+// vendor chain: the authorization gate, the cache key and the token mint all
+// read it rather than consulting the profile store again. Because
+// ProfileStore.Update swaps the whole configuration under a write lock,
+// independent reads within one request can straddle a refresh and combine one
+// generation's match rules with another's permissions. Carrying the resolved
+// value makes that impossible by construction.
+//
+// T is the profile's attribute type: each route family serves exactly one
+// (profile.OrganizationProfileAttr or profile.PipelineProfileAttr), so the
+// parameter is fixed at wiring time and no stage needs a runtime type switch.
+type Resolved[T any] struct {
+	// Ref identifies the profile the caller asked for, including any
+	// caller-supplied repository scope.
+	Ref profile.ProfileRef
+	// Profile is the compiled profile: its match rules and its attributes.
+	Profile profile.AuthorizedProfile[T]
+	// Digest identifies the configuration generation Profile was read from.
+	Digest string
+}
+
+type ProfileTokenVendor[T any] func(ctx context.Context, r Resolved[T], repo string) VendorResult
 
 // RepositoryLookup given a pipeline, returns the https version of the repository URL.
 type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug string) (string, error)

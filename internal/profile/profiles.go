@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"errors"
 	"maps"
 )
 
@@ -46,7 +47,15 @@ type AuthorizedProfile[T any] struct {
 // - Success: Matched=true, Matches populated
 // - Pattern mismatch: Matched=false, Attempt populated
 // - Validation error: Err populated
+//
+// A zero AuthorizedProfile carries no compiled matcher. Since this value is the
+// sole authorization input for a request, an uncompiled one denies rather than
+// panicking: the authorization decision must never depend on a caller having
+// constructed the profile correctly.
 func (ap AuthorizedProfile[T]) Match(claims ClaimValueLookup) MatchResult {
+	if ap.matcher == nil {
+		return MatchResult{Err: errors.New("profile carries no compiled match rules")}
+	}
 	return ap.matcher(claims)
 }
 

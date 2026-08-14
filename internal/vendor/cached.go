@@ -49,12 +49,17 @@ func recordOutcome(ctx context.Context, result string) {
 // cause multiple token requests, In this case, the last one returned wins. In
 // this use case, given that concurrent calls are likely to be less common, the
 // additional tokens issued are worth gains made skipping locking.
-func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) func(ProfileTokenVendor) ProfileTokenVendor {
-	return func(v ProfileTokenVendor) ProfileTokenVendor {
-		return func(ctx context.Context, ref profile.ProfileRef, requestedRepository string) VendorResult {
-			// Cache key includes digest prefix for config version namespacing
-			// and ref.String() which embeds ScopedRepository for caller-scoped profiles.
-			key := fmt.Sprintf("%s:%s", digester.Digest(), ref.String())
+func Cached[T any](tokenCache cache.TokenCache[ProfileToken]) func(ProfileTokenVendor[T]) ProfileTokenVendor[T] {
+	return func(v ProfileTokenVendor[T]) ProfileTokenVendor[T] {
+		return func(ctx context.Context, r Resolved[T], requestedRepository string) VendorResult {
+			// Namespace the key by configuration generation so entries from
+			// different generations never collide; refuse rather than assume
+			// an unresolved digest.
+			if r.Digest == "" {
+				return NewVendorFailed(fmt.Errorf("no configuration generation resolved for profile %s", r.Ref))
+			}
+
+			key := fmt.Sprintf("%s:%s", r.Digest, r.Ref.String())
 
 			cachedToken, found, err := tokenCache.Get(ctx, key)
 			if err != nil {
@@ -68,7 +73,7 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 			} else if token, ok := checkTokenRepository(cachedToken, requestedRepository); !ok {
 				recordOutcome(ctx, "mismatch")
 
-				if ref.Type == profile.ProfileTypeOrg {
+				if r.Ref.Type == profile.ProfileTypeOrg {
 					// For org profiles, a mismatch means the request is for a repo not
 					// in the profile's configured list. The cached token is still valid
 					// for other repos — don't invalidate it. The vendor will return
@@ -101,7 +106,7 @@ func Cached(tokenCache cache.TokenCache[ProfileToken], digester cache.Digester) 
 			}
 
 			// cache miss: request and cache
-			result := v(ctx, ref, requestedRepository)
+			result := v(ctx, r, requestedRepository)
 
 			// Only cache successful results
 			if result.Status() == VendStatusSuccess {
