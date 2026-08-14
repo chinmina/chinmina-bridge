@@ -13,7 +13,7 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/go-github/v89 v89.0.0
 	github.com/grafana/otel-profiling-go v0.6.0
-	github.com/grafana/pyroscope-go v1.4.1
+	github.com/grafana/pyroscope-go v1.4.2
 	github.com/jferrl/go-githubauth v1.7.0
 	github.com/justinas/alice v1.2.0
 	github.com/lestrrat-go/jwx/v3 v3.1.1
@@ -76,7 +76,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.11 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
