@@ -86,15 +86,12 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 	// on the request path, as the types are differentiated by construction
 	// instead of runtime checks.
 	//
-	// Within their type, each has the same request flow:
-	//   JWT Auth -> Audit -> Resolve Profile -> Authorize -> Cache -> Token Vendor
+	// Within their type, each vendor chain has the same flow:
+	//   Audit -> Resolve Profile -> Authorize -> Cache -> Token Vendor
 	//
 	// The profile is resolved once, at the handler boundary, and the resolved
-	// value is carried through the chain. Cached is the one stage needing an
-	// explicit type argument: its type parameter appears only in its return
-	// type, so there is nothing to infer it from. The underlying cache is
-	// shared by both families, so contents, TTL and capacity are unaffected by
-	// having two instantiations.
+	// value is carried through the chain. The underlying cache is
+	// shared by both vendor chains, sharing contents, TTL and capacity.
 
 	// Pipeline (repo) routes
 
