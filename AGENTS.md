@@ -156,12 +156,14 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 **Test Organization:**
 - **Use table-driven tests** when multiple tests follow the same pattern with different parameters
   - Consolidate tests that differ only in input/output values
+  - The test assertions vary only in their arguments
   - Use descriptive test case names with `t.Run(tt.name, ...)`
   - Keep success and failure test cases in separate table-driven tests
   - Example: See `internal/profile/ref_test.go` for well-structured table-driven tests
 - **Individual test functions** are appropriate when:
   - Each test has unique setup or teardown requirements
   - Tests include timing operations or complex state management
+  - The set of assertions to execute differs across test cases.
   - Test logic differs significantly between cases
 
 **Test Structure:**
