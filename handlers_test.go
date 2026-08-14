@@ -807,7 +807,7 @@ pipeline:
 func TestProfileResolver_OrgCallerScoped_MissingScopeReturnsRequiredError(t *testing.T) {
 	// A caller-scoped profile without a caller-supplied scope must surface
 	// RepositoryScopeRequiredError so the handler can respond with 400 and
-	// a specific message. This is Req 2.3 enforced at the resolver boundary.
+	// a specific message identifying the required scope.
 	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
 	resolve := NewOrgProfileResolver(store.GetOrganizationProfile)
 
@@ -822,7 +822,7 @@ func TestProfileResolver_OrgCallerScoped_MissingScopeReturnsRequiredError(t *tes
 }
 
 func TestProfileResolver_OrgStaticList_RejectsScope(t *testing.T) {
-	// A static-list profile must reject caller-supplied scope (Req 2.2).
+	// A static-list profile must reject caller-supplied scope.
 	// RepositoryScopeUnexpectedError carries a 400 status, allowing the
 	// handler to surface a specific message via writeJSONError/writeTextError.
 	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
@@ -951,10 +951,10 @@ func TestProfileResolver_OrgNonCallerScoped_IgnoresImplicitScope(t *testing.T) {
 }
 
 func TestHandlePostToken_OrgStaticList_RejectsScopeWithSpecificMessage(t *testing.T) {
-	// Req 2.2 — the client must receive a message identifying *why* the
-	// scope was rejected, not a generic "Bad Request". The handler routes
-	// resolver errors through writeJSONError so HTTPStatuser types carry
-	// their declared message.
+	// The client must receive a message identifying *why* the scope was
+	// rejected, not a generic "Bad Request". The handler routes resolver
+	// errors through writeJSONError so HTTPStatuser types carry their
+	// declared message.
 	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
 	resolve := NewOrgProfileResolver(store.GetOrganizationProfile)
 
@@ -974,7 +974,7 @@ func TestHandlePostToken_OrgStaticList_RejectsScopeWithSpecificMessage(t *testin
 }
 
 func TestHandlePostToken_OrgCallerScoped_MissingScopeReturnsSpecificMessage(t *testing.T) {
-	// Req 2.3 — the caller must learn that the profile requires a scope.
+	// The caller must learn that the profile requires a scope.
 	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
 	resolve := NewOrgProfileResolver(store.GetOrganizationProfile)
 
@@ -1194,8 +1194,8 @@ func TestStripPrefix(t *testing.T) {
 	})
 }
 
-// TestHandlers_RecordRequestedProfileWhenResolutionFails covers R13: a request
-// that fails before the vendor chain runs must still say which profile was
+// TestHandlers_RecordRequestedProfileWhenResolutionFails: a request that
+// fails before the vendor chain runs must still say which profile was
 // asked for. Without it, an operator seeing a 404 in the audit log cannot tell
 // which profile name was rejected — the only record of the request's intent is
 // lost precisely on the failure path where it matters most.
@@ -1261,7 +1261,7 @@ func TestHandlers_UnresolvedProfileIsNotAuditedAsCanonicalURN(t *testing.T) {
 	assert.NotContains(t, entry.RequestedProfile, "profile://")
 }
 
-// TestHandlePostToken_RecordsScopedRepositoryInAuditedProfile covers Req 9.1:
+// TestHandlePostToken_RecordsScopedRepositoryInAuditedProfile:
 // the caller-supplied repository scope must be visible in the audited profile
 // URN, so an audit reader can tell which repository a caller-scoped profile
 // was actually exercised against.
