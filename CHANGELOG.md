@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.13.0](https://github.com/chinmina/chinmina-bridge/compare/v0.12.1...v0.13.0) (2026-08-14)
+
+
+### Features
+
+* add release-notes skill for augmented GitHub releases ([#340](https://github.com/chinmina/chinmina-bridge/issues/340)) ([18ac817](https://github.com/chinmina/chinmina-bridge/commit/18ac817069ac2bb7ee10f0596bea3cfd92d7ad83))
+
+
+### Bug Fixes
+
+* **deps:** update aws-sdk-go-v2 ([#352](https://github.com/chinmina/chinmina-bridge/issues/352)) ([2ecda6f](https://github.com/chinmina/chinmina-bridge/commit/2ecda6f318dd6d89ba6038d4916c73653d47700f))
+* **deps:** update dependency cosign to v3.1.3 ([#348](https://github.com/chinmina/chinmina-bridge/issues/348)) ([ef99794](https://github.com/chinmina/chinmina-bridge/commit/ef997947436578e2258da919fadda9ba24aa03aa))
+* **deps:** update dependency go to v1.26.6 ([#361](https://github.com/chinmina/chinmina-bridge/issues/361)) ([1b471a3](https://github.com/chinmina/chinmina-bridge/commit/1b471a362cad1dfa83df83001ba7c259dfb53f94))
+* **deps:** update dependency goreleaser to v2.17.1 ([#349](https://github.com/chinmina/chinmina-bridge/issues/349)) ([6824860](https://github.com/chinmina/chinmina-bridge/commit/68248609f32aa5954a980762fe3e9b4289a31f94))
+* **deps:** update dependency just to v1.58.0 ([#353](https://github.com/chinmina/chinmina-bridge/issues/353)) ([8aed62d](https://github.com/chinmina/chinmina-bridge/commit/8aed62dfc6eab9a05dbd738454e29501eb4f03de))
+* **deps:** update github-actions ([#347](https://github.com/chinmina/chinmina-bridge/issues/347)) ([3d30c23](https://github.com/chinmina/chinmina-bridge/commit/3d30c2363920540821d4ad3fc170ddc1b1286f68))
+* **deps:** update jwx-and-auth0-jwt-middleware ([#354](https://github.com/chinmina/chinmina-bridge/issues/354)) ([1b3c441](https://github.com/chinmina/chinmina-bridge/commit/1b3c441f0a89ba7e7fdf86210f59249c8ecf2cfc))
+* **deps:** update module github.com/buildkite/go-buildkite/v5 to v5.11.0 ([#355](https://github.com/chinmina/chinmina-bridge/issues/355)) ([fb6ce65](https://github.com/chinmina/chinmina-bridge/commit/fb6ce65a83f796f9ecd8f7962e5dd7a81bbaa03a))
+* **deps:** update module github.com/go-logr/logr to v1.4.4 ([#350](https://github.com/chinmina/chinmina-bridge/issues/350)) ([5598ae0](https://github.com/chinmina/chinmina-bridge/commit/5598ae015b459af2110f8e39de6706b767a157e3))
+* **deps:** update module github.com/google/go-github/v89 to v90 ([#357](https://github.com/chinmina/chinmina-bridge/issues/357)) ([371e4bc](https://github.com/chinmina/chinmina-bridge/commit/371e4bc83df5e7fac20b4ec59639e6f26c1d4b3d))
+* **deps:** update module github.com/grafana/pyroscope-go to v1.4.2 ([#362](https://github.com/chinmina/chinmina-bridge/issues/362)) ([41804d6](https://github.com/chinmina/chinmina-bridge/commit/41804d68ca8b58e105b72da9fd62acd4341b3ff2))
+* **deps:** update module github.com/phuslu/log to v1.0.128 ([#351](https://github.com/chinmina/chinmina-bridge/issues/351)) ([479ee21](https://github.com/chinmina/chinmina-bridge/commit/479ee21c29178ff1ad3c47c7ab0b20fa44f1d11c))
+* **deps:** update module github.com/sethvargo/go-envconfig to v1.4.3 ([#363](https://github.com/chinmina/chinmina-bridge/issues/363)) ([f0a3a8e](https://github.com/chinmina/chinmina-bridge/commit/f0a3a8e8c74f03c4c6ff3a08dca1179c78b05bd9))
+* **deps:** update module github.com/testcontainers/testcontainers-go to v0.44.0 ([#364](https://github.com/chinmina/chinmina-bridge/issues/364)) ([6581c43](https://github.com/chinmina/chinmina-bridge/commit/6581c436c52d850529286e6db8c9b58db493bdb9))
+* **deps:** update module github.com/tink-crypto/tink-go/v2 to v2.8.0 ([#365](https://github.com/chinmina/chinmina-bridge/issues/365)) ([71a34da](https://github.com/chinmina/chinmina-bridge/commit/71a34dadcb82c87ee38eec9a562e1b1d38e20dbc))
+* **deps:** update opentelemetry ([#356](https://github.com/chinmina/chinmina-bridge/issues/356)) ([79d722f](https://github.com/chinmina/chinmina-bridge/commit/79d722fc98834b11a1cc25b33649e2264a18365d))
+* remove potential race when configuration reloads ([#360](https://github.com/chinmina/chinmina-bridge/issues/360)) ([3102538](https://github.com/chinmina/chinmina-bridge/commit/310253895f6ff350e252eca481e6a0d5fc85ca5d))
+
 ## [0.12.1](https://github.com/chinmina/chinmina-bridge/compare/v0.12.0...v0.12.1) (2026-08-12)
 
 
