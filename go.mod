@@ -7,7 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.43.5
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.35
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.44.5
-	github.com/buildkite/go-buildkite/v5 v5.7.0
+	github.com/buildkite/go-buildkite/v5 v5.11.0
 	github.com/chinmina/iamcacheauth v1.0.0
 	github.com/gkampitakis/go-snaps v0.5.23
 	github.com/go-logr/logr v1.4.4
