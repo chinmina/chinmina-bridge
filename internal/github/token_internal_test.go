@@ -3,7 +3,7 @@ package github
 import (
 	"testing"
 
-	api "github.com/google/go-github/v89/github"
+	api "github.com/google/go-github/v90/github"
 	"github.com/stretchr/testify/assert"
 )
 
