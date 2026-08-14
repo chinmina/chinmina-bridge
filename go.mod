@@ -3,7 +3,7 @@ module github.com/chinmina/chinmina-bridge
 go 1.26
 
 require (
-	github.com/auth0/go-jwt-middleware/v3 v3.2.0
+	github.com/auth0/go-jwt-middleware/v3 v3.3.0
 	github.com/aws/aws-sdk-go-v2 v1.43.5
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.35
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.44.5
@@ -16,7 +16,7 @@ require (
 	github.com/grafana/pyroscope-go v1.4.2
 	github.com/jferrl/go-githubauth v1.7.0
 	github.com/justinas/alice v1.2.0
-	github.com/lestrrat-go/jwx/v3 v3.1.1
+	github.com/lestrrat-go/jwx/v3 v3.2.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/phuslu/log v1.0.128
 	github.com/sethvargo/go-envconfig v1.4.3
@@ -80,10 +80,10 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
-	github.com/lestrrat-go/dsig v1.2.1 // indirect
+	github.com/lestrrat-go/dsig v1.3.0 // indirect
 	github.com/lestrrat-go/dsig-secp256k1 v1.0.0 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
-	github.com/lestrrat-go/httprc/v3 v3.0.5 // indirect
+	github.com/lestrrat-go/httprc/v3 v3.0.6 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
