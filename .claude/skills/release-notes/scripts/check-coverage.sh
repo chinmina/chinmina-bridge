@@ -31,7 +31,17 @@ main() {
   fi
 
   if [[ -z "${notes}" ]]; then
-    notes="$(printf '%s\n' "${work}"/release-notes-*.md | head -n 1)"
+    shopt -s nullglob
+    local matches=("${work}"/release-notes-*.md)
+    shopt -u nullglob
+    if [[ ${#matches[@]} -eq 0 ]]; then
+      err "no release-notes-*.md found in ${work}"
+      return 1
+    elif [[ ${#matches[@]} -gt 1 ]]; then
+      err "expected exactly one release-notes-*.md in ${work}, found ${#matches[@]}"
+      return 1
+    fi
+    notes="${matches[0]}"
   fi
   if [[ ! -f "${notes}" ]]; then
     err "notes file not found: ${notes}"
@@ -39,10 +49,11 @@ main() {
   fi
 
   local found="${work}/notes-prs.txt"
-  grep -oE '#[0-9]+' "${notes}" \
-    | grep -oE '[0-9]+' \
-    | sort -un \
-    > "${found}"
+  if ! grep -oE '#[0-9]+' "${notes}" | grep -oE '[0-9]+' | sort -n > "${found}"; then
+    # grep exits non-zero when a stage matches nothing (e.g. no #<number>
+    # citations at all); treat that as zero citations, not a script failure.
+    : > "${found}"
+  fi
 
   if diff -q "${expected}" "${found}" > /dev/null; then
     err "OK: all $(wc -l < "${expected}" | tr -d ' ') PRs present exactly once"

@@ -14,7 +14,8 @@ write (`<WORK>/release-notes-<tag>.md`).
 - `header.md` — the rendered boilerplate header. Use it **verbatim** as the top
   of the document; do not edit it.
 - `summary/*.md` — one file per PR, each with frontmatter (`pr`, `title`, `url`,
-  `category`) and a one/two-sentence summary. This is your source material.
+  `author`, `category`) and a one/two-sentence summary. This is your source
+  material.
 
 Read `meta.json`, `header.md`, and every file in `summary/`. Do not read
 anything outside WORK.
@@ -92,12 +93,12 @@ you rarely should. Never bulk-read the PR directory.
 Group the PR bullets under `###` headings by each summary's `category`. Render
 every bullet in GitHub's exact style so author and PR links render:
 
-```
+```markdown
 * <title> by @<author> in #<pr>
 ```
 
-- The `author` is the login; you have it in each `pr/<n>.md` frontmatter if a
-  summary omits it. Bot logins render as e.g. `@renovate[bot]`.
+- The `author` is the login from each summary's frontmatter. Bot logins
+  render as e.g. `@renovate[bot]`.
 - Order categories by importance for **this** release: headline/feature work
   first, `Dependency Updates` last. Drop empty categories.
 - The Haiku categories are a starting point, not gospel. Merge or rename them

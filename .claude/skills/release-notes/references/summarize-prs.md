@@ -19,11 +19,12 @@ You were told two things when you were started:
 3. For **each** PR, write an output file to `<WORK>/summary/<pr>.md` (where
    `<pr>` is the PR number) with **exactly** this structure:
 
-```
+```markdown
 ---
 pr: <number>
-title: <copy the title verbatim from the input frontmatter>
-url: <copy the url verbatim from the input frontmatter>
+title: <title, as a double-quoted YAML string>
+url: <url, as a double-quoted YAML string>
+author: <copy the author verbatim from the input frontmatter>
 category: <ONE category from the list below>
 ---
 <one or two plain sentences: what the change does and, if stated, why>
@@ -31,8 +32,10 @@ category: <ONE category from the list below>
 
 ## Rules
 
-- Copy `pr`, `title`, and `url` **unchanged** from the input frontmatter. Do not
-  reword the title.
+- Copy `pr`, `title`, `url`, and `author` **unchanged** from the input
+  frontmatter. Do not reword the title. Emit `title` and `url` as
+  double-quoted YAML strings (escape any `"` or `\` inside them) so a colon or
+  other special character in a PR title can't break the frontmatter.
 - If the frontmatter says `bot: true`, the summary body is exactly:
   `Dependency update: <title>`. Do not read the body — it was deliberately
   omitted because it is a useless changelog dump.
