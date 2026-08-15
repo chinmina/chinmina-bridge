@@ -278,11 +278,51 @@ the separation of the pipeline and organization chains.
 The key becomes configuration digest, application ID, installation ID, profile
 URN. Numeric IDs cannot contain the separator, so the key stays unambiguous.
 
-The YAML digest alone is insufficient: remapping a logical name to different
-credentials in deployment configuration does not change the YAML, so a
-distributed Valkey cache could serve tokens minted by the previous app after a
-redeploy. Including the resolved identity rather than the name means only
-entries for the genuinely remapped app are orphaned.
+The digest alone is insufficient, and the reason is specific to this design's
+split between where credentials are declared and where they are selected. The
+YAML says `app: packages`; the mapping from that name to an application and
+installation lives in deployment configuration. Repointing the name at
+different credentials therefore leaves the YAML — and so the digest, and so the
+key — completely unchanged, and a cache that survives the change keeps serving
+tokens minted by the previous app.
+
+This is a staleness defect, not an exploitable weakness, and it is worth being
+precise about which. No caller input reaches the name-to-credential mapping, so
+nothing here is attacker-triggerable; a caller that receives a stale token
+matched the profile legitimately and is entitled to a token for it. What fails
+is the operator's intent: a configuration change does not take effect when they
+believe it has. Three preconditions must all hold — a distributed cache (an
+in-process cache dies with the restart that any environment change requires), a
+logical name *reused* for different credentials rather than a new name added,
+and an operator-initiated remap.
+
+The window is bounded but not small. Cache entries live 45 minutes and GitHub
+installation tokens live 60 minutes from mint, so a token handed out just
+before an entry expires remains usable for roughly a further quarter hour. A
+rolling deployment widens this further: instances not yet replaced continue
+minting through the old credential and writing to the shared key, so replaced
+instances actively consume their entries rather than merely draining a
+pre-existing backlog.
+
+The scenario that motivates the fix is remap-as-privilege-reduction —
+repointing a name from a broad app to a narrow one precisely in order to shrink
+what a set of pipelines can do. For up to an hour afterwards, some builds still
+receive the wide credential. Remap-as-incident-response is less exposed than it
+appears, because uninstalling the suspect app revokes its outstanding
+installation tokens; note though that *rotating an app's private key does not*,
+so "rotate the key and repoint the name" leaves cached tokens working.
+
+Two things justify fixing it despite the narrow preconditions. It costs two
+integers in a key string, so there is no design tension to weigh. More
+importantly, the indirection actively invites the triggering action: the
+principal benefit of a logical name is that what sits behind it can be swapped
+without touching the YAML, which is exactly the operation the cache cannot
+observe. A feature whose main convenience is the thing that breaks it warrants
+the guard.
+
+Keying on the resolved identity rather than a registry-wide fingerprint means
+only the genuinely remapped app's entries are orphaned; every other profile
+stays warm across the change.
 
 Deploying this change orphans every existing cache entry once, because the key
 format changes for the default app too. This is a one-time cold cache, not a
@@ -346,12 +386,13 @@ invalid case asserts the profile lands in `invalidProfiles` and that other
 profiles in the same configuration remain valid — the isolation property is the
 point of Reqs 27–29. A refresh test asserts re-evaluation (Req 31).
 
-**Cache key includes app identity** (`internal/vendor`) — the key guard for the
-hole this design introduces. Two resolved requests identical in profile and
-digest but differing in resolved app must not share an entry (Req 38), and a
-single request round-trips through its own key. Prefer asserting observable
-cache behaviour over asserting the key string, so the format stays free to
-change.
+**Cache key includes app identity** (`internal/vendor`) — guards the staleness
+defect described under Cache key, which is otherwise invisible until an
+operator remaps a name in production. Two resolved requests identical in
+profile and digest but differing in resolved app must not share an entry
+(Req 38), and a single request round-trips through its own key. Prefer
+asserting observable cache behaviour over asserting the key string, so the
+format stays free to change.
 
 **Vending through the resolved app** (`internal/vendor`) — a resolved request
 carrying a non-default app mints through that app's function, not the default's;
