@@ -57,11 +57,13 @@ they are not independently shippable:
 - **PR 3** — Phase 3 (startup gate)
 - **PR 4** — Phase 4 (config-validation/route-construction split, transport
   ordering)
-- **PR 5** — Phases 5–7 combined (registry; profile schema, resolution,
-  cache-safe vending, response/audit attribution; span attributes for profile
-  counts) — combined because Phase 6 cannot exist without Phase 5's registry,
-  and Phase 7 is a small addition once Phase 6's compilation changes land.
-- **PR 6** — Phase 8 (`.envrc` documentation only — R51). Reqs 52–57 are
+- **PR 5** — Phases 5–8 combined (registry; profile schema and compilation;
+  request-time resolution and cache-safe vending; span attributes for profile
+  counts) — combined because Phase 6 cannot validate an `app` property without
+  Phase 5's registry, Phase 7 cannot resolve or cache-key an identity without
+  Phase 6's compiled attribute, and Phase 8 is a small addition once Phase 6's
+  compilation changes exist.
+- **PR 6** — Phase 9 (`.envrc` documentation only — R51). Reqs 52–57 are
   out of scope for this repository; they are published from the separate
   `chinmina.github.io` documentation repository.
 
@@ -81,8 +83,7 @@ relative to each other, ahead of the feature itself.
 
 ## Phase 1: Edge-triggered invalid-profile logging; `ProfileUnavailableError` carries its cause
 
-**EARS requirements**: R28, R44 (foundation — full audit-entry wiring lands in
-Phase 6)
+**EARS requirements**: R28, R44
 
 ### Why this phase exists
 
@@ -93,7 +94,10 @@ refresh interval for the life of the process. This is worth fixing on its own,
 and it becomes load-bearing once app-caused invalidity exists in Phase 6:
 `ProfileUnavailableError` currently discards its cause, and once logging is
 edge-triggered, the audit entry becomes the only timely record of *why* a
-profile is invalid.
+profile is invalid. Both the cause-capture mechanism and its wiring onto the
+audit entry land here — neither needs an app or a registry to exist, since
+profiles can already be invalid today for pre-existing reasons (e.g. a bad
+match rule).
 
 ### Locked decisions (non-negotiable)
 
@@ -107,7 +111,11 @@ profile is invalid.
   unchanged.
 - `ProfileUnavailableError` gains its wrapped cause without changing the
   caller-facing message or HTTP behavior it already produces.
-- No sensitive data enters the logged reason string.
+- When a request resolves an unavailable profile, the audit entry for that
+  request records the invalidity reason from the error's cause (R44) — this
+  wiring does not depend on the app registry existing; it applies to any
+  invalidity reason, today's included.
+- No sensitive data enters the logged reason string or the audit entry.
 
 ### Flex zone (implementation choice allowed)
 
@@ -135,6 +143,9 @@ unchanged.
       without changing the string returned to callers.
 - [ ] `[structural]` Existing 404 behavior and caller-facing message for an
       unavailable profile are unchanged.
+- [ ] `[observable]` A request against a profile invalid for an existing
+      reason (e.g. a bad match rule) has that reason recorded on the audit
+      entry.
 
 ### Verification
 
@@ -258,7 +269,7 @@ exactly what R40/R41 require.
 
 This couples startup to profile-source availability for existing deployments
 using an organization profile location — a real behavior change. Confirmed
-intentional per the PRD; Phase 8's documentation should call it out so it
+intentional per the PRD; Phase 9's documentation should call it out so it
 isn't mistaken for a regression during rollout.
 
 ### End-to-end behaviour to implement
@@ -500,23 +511,21 @@ sub-step with its own estimate before continuing into verification tests.
 
 ---
 
-## Phase 6: Profile schema (`app`), resolution, cache-safe vending, response/audit attribution
+## Phase 6: Profile schema — `app` property & compilation
 
-**EARS requirements**: R20–R27, R29–R39, R43, R45, R46
+**EARS requirements**: R20–R27, R29, R30
 
 **Carry-forward**: re-verify Phase 5 in full (`just test` on `internal/github`,
 `just integration`) — this phase is the registry's first consumer.
 
 ### Why this phase exists
 
-This is where the registry becomes usable: profiles can name an app, requests
-resolve that name to an identity at the handler boundary, tokens mint through
-the resolved installation, and every downstream surface — cache, response,
-audit — reflects which app served the request. Resolution and the cache key
-are inseparable: a resolved identity that isn't part of the cache key means a
-cache hit can serve a token minted through an app that has since been
-disabled, which is exactly what R36 forbids. Splitting this into two phases
-would let one land in a state where that guarantee doesn't hold.
+Before requests can resolve or mint through a named app, profiles need a way
+to declare one, and the service needs to validate that declaration against the
+registry at compile time. This is deliberately scoped to compilation only —
+no request-serving code changes here — so it can be fully exercised through
+table-driven compilation tests and a refresh test, without touching the
+request-serving hot path that Phase 7 owns.
 
 ### Locked decisions (non-negotiable)
 
@@ -525,14 +534,93 @@ would let one land in a state where that guarantee doesn't hold.
   (R20, R21).
 - Normalize in compilation, not at the request boundary: an omitted `app` and
   an explicit `app: default` compile to the same attribute value, so they are
-  indistinguishable downstream and produce identical audit attribution (R22,
-  R23).
+  indistinguishable downstream and produce identical audit attribution once
+  Phase 7 reads it (R22, R23).
 - The default pipeline profile always mints through the default app and has no
   `app` property (R24).
 - Empty `app` string is invalid; a name absent from the registry is invalid; a
   name naming a disabled app is invalid (R25, R26, R27). Compilation asks the
-  registry for its set of usable names — the same function the request path
-  uses to resolve — so both share one enforcement point.
+  registry for its set of usable names — the same function Phase 7's request
+  path will use to resolve — so both share one enforcement point.
+- Compilation threads the registry's usable-names set through
+  `FetchOrganizationProfile` → `load` → `compile`, *and* through
+  `PeriodicRefresh` for the background refresh path — missing the background
+  path is the specific failure R30 exists to prevent (profiles valid for one
+  refresh interval, invalid after, unchanged digest, generation swap logging
+  only at debug level).
+- A request naming an invalid profile (including one whose app is unknown or
+  disabled) returns 404 with the reason on the audit entry, using the
+  cause-capture and audit wiring already built in Phase 1 (R29).
+  Other profiles in the same configuration remain valid (isolation).
+- No sensitive data in any surface this phase touches.
+
+### Flex zone (implementation choice allowed)
+
+- Exact plumbing of the registry's usable-names set through the compilation
+  call chain.
+- How validation error messages describe the rejection reason (feeds Phase 1's
+  logging and audit-entry wiring).
+
+### End-to-end behaviour to implement
+
+An organization or named pipeline profile may declare `app: <name>`.
+Compilation validates the name against the registry's usable-names set,
+normalizes an omitted `app` and an explicit `app: default` to the same
+attribute value, and revalidates on every background refresh.
+
+### Acceptance criteria
+
+- [ ] `[observable]` A profile declaring `app: <enabled-name>` compiles valid.
+- [ ] `[observable]` Two configurations differing only in the presence of
+      `app: default` compile to equal profile attributes.
+- [ ] `[observable]` A profile with an empty `app` string, an unknown app
+      name, or a disabled app's name is invalid; other profiles in the same
+      configuration remain valid; a request against it returns 404 with the
+      reason on the audit entry.
+- [ ] `[observable]` The default pipeline profile mints through the default
+      app and does not accept an `app` property.
+- [ ] `[observable]` A profile naming an enabled app remains valid across a
+      background profile refresh (R30 regression guard).
+
+### Verification
+
+`just test` on `internal/profile` — extends the existing compilation tables
+with `app`-bearing cases; a refresh test driving `PeriodicRefresh` and
+asserting continued validity.
+
+### Regression watchpoints
+
+Existing profile compilation tests without an `app` property must keep
+passing unchanged.
+
+### Replan triggers
+
+If threading the registry's usable-names set through both the synchronous
+load path and `PeriodicRefresh`'s background path needs a broader interface
+change than expected, pause before R30's guarantee ends up only
+half-implemented.
+
+---
+
+## Phase 7: Request-time app resolution & cache-safe vending
+
+**EARS requirements**: R31–R39, R43, R45, R46
+
+**Carry-forward**: re-verify Phase 6 in full (`just test` on
+`internal/profile`) — this phase is Phase 6's first consumer at request time.
+
+### Why this phase exists
+
+Resolution and the cache key are inseparable, which is why they're one phase
+rather than two: a resolved identity that isn't part of the cache key means a
+cache hit can serve a token minted through an app that has since been
+disabled, which is exactly what R36 forbids. This is where the registry and
+the compiled `app` attribute from Phase 6 become live at request time — an app
+name resolves to an identity, tokens mint through it, and the cache, response,
+and audit entry all key off that same identity.
+
+### Locked decisions (non-negotiable)
+
 - The name resolves to an app identity (name, application ID, installation ID)
   at the handler boundary, in the profile resolver — never inside the
   `Vending` stage. The chain is Audit → Authorized → Cached → Vending, and
@@ -541,18 +629,12 @@ would let one land in a state where that guarantee doesn't hold.
   that lookup the guard that runs on every request (R31; satisfies R36's
   final clause).
 - A profile resolved but whose app cannot be resolved in the registry is a
-  500, not a 403/404: reaching that state means compilation should already
-  have invalidated the profile — the service's defect, not GitHub's denial,
-  matching the shape of existing unresolved-scope guards (R36).
+  500, not a 403/404: reaching that state means Phase 6's compilation should
+  already have invalidated the profile — the service's defect, not GitHub's
+  denial, matching the shape of existing unresolved-scope guards (R36).
 - The resolved identity is data (name, application ID, installation ID), not a
   closure — no credential is captured in a value that flows into a cache
   payload (R32).
-- Compilation threads the registry's usable-names set through
-  `FetchOrganizationProfile` → `load` → `compile`, *and* through
-  `PeriodicRefresh` for the background refresh path — missing the background
-  path is the specific failure Req 30 exists to prevent (profiles valid for
-  one refresh interval, invalid after, unchanged digest, generation swap
-  logging only at debug level).
 - The organization profile configuration file is always retrieved through the
   default app, never a per-profile app (R34).
 - The service does not check a requested repository's owner against the
@@ -568,20 +650,14 @@ would let one land in a state where that guarantee doesn't hold.
   test rather than a runtime check.
 - Token response includes the minting app's name (R45); the audit entry
   records the resolved app's name at resolution time, so every downstream
-  outcome — including failures — carries it (R43); the token cache outcome
-  metric is attributed with the app name (R46).
-- A profile invalid because its named app is disabled fails *before* an app is
-  resolved, so its audit entry carries the invalidity reason from Phase 1
-  (R44) rather than an app name — now load-bearing, since Phase 1's
-  edge-triggered logging means the audit entry is the only timely record.
+  outcome — including failures reached after resolution — carries it (R43);
+  the token cache outcome metric is attributed with the app name (R46).
 - Deploying this orphans every existing cache entry once (key format changes
   for the default app too) — accepted as a one-time cold cache.
 - No sensitive data in any surface this phase touches.
 
 ### Flex zone (implementation choice allowed)
 
-- Exact plumbing of the registry's usable-names set through the compilation
-  call chain.
 - Internal shape of the resolved identity value and where in the resolver it
   attaches to the resolved request value.
 
@@ -598,13 +674,11 @@ on this phase, not just one acceptance criterion among many.
 
 ### End-to-end behaviour to implement
 
-An organization or named pipeline profile may declare `app: <name>`. A
-request against such a profile resolves the name to an app identity, mints
-its token through that app's installation, includes the app's name in the
-response and audit entry, and caches the result under a key that includes the
-app's identity. A profile naming a disabled or unknown app is invalid and
-returns 404 with the reason on the audit entry. A previously cached token is
-never served once its app becomes unresolvable.
+A request against a profile bound to an app (from Phase 6) resolves the name
+to an app identity, mints its token through that app's installation, includes
+the app's name in the response and audit entry, and caches the result under a
+key that includes the app's identity. A previously cached token is never
+served once its app becomes unresolvable.
 
 ### Acceptance criteria
 
@@ -614,47 +688,37 @@ never served once its app becomes unresolvable.
 - [ ] `[observable]` A request against the default pipeline profile, and one
       against a profile with no `app` property, both mint through the default
       app.
-- [ ] `[observable]` Two configurations differing only in the presence of
-      `app: default` compile to equal profile attributes.
-- [ ] `[observable]` A profile naming an unknown or disabled app is invalid;
-      the request returns 404 with the reason on the audit entry; other
-      profiles in the same configuration remain valid.
 - [ ] `[observable]` Priming a cache entry, then making the registry unable to
       resolve that profile's app, then repeating the request: returns 500,
       and the previously cached token is not served.
 - [ ] `[observable]` Two requests resolving the same profile/digest through two
       different app identities do not share a cache entry.
-- [ ] `[observable]` A profile naming an enabled app remains valid across a
-      background profile refresh.
+- [ ] `[observable]` The token cache outcome metric is attributed with the
+      resolved app's name.
 - [ ] `[structural]` Resolution occurs in the profile resolver, not inside
       `Vending` (verified by the cache-bypass test above).
 
 ### Verification
 
-`just test` on `internal/profile` and `internal/vendor`; `just integration`
-for the end-to-end cases (request via second app, disabled-app 404,
-cache-bypass 500); an integration test issuing parallel requests across two
-apps under `go test -race`, guarding against future lazily-populated registry
-state.
+`just test` on `internal/vendor`; `just integration` for the end-to-end cases
+(request via second app, cache-bypass 500); an integration test issuing
+parallel requests across two apps under `go test -race`, guarding against
+future lazily-populated registry state.
 
 ### Regression watchpoints
 
 Single-app deployments (no `GITHUB_APPS`, no `app` properties) must behave
 exactly as before — same cache behavior modulo the one-time cold cache, same
 response shape, same audit shape (app name now always present, naming
-"default"). Existing profile-compilation and vendor-chain tests must keep
-passing.
+"default"). Existing vendor-chain tests must keep passing.
 
 ### Replan triggers
 
-If threading the registry's usable-names set through both the synchronous
-load path and `PeriodicRefresh`'s background path needs a broader interface
-change than expected, pause before Req 30's guarantee ends up only
-half-implemented.
+None beyond the cache-bypass test already called out as this phase's gate.
 
 ---
 
-## Phase 7: Span attributes for valid/invalid profile counts
+## Phase 8: Span attributes for valid/invalid profile counts
 
 **EARS requirements**: R47
 
@@ -704,7 +768,7 @@ exist.
 
 ---
 
-## Phase 8: Documentation
+## Phase 9: Documentation
 
 **EARS requirements**: R51 (only requirement in scope for this repository)
 
@@ -764,14 +828,14 @@ None.
 | R20–R27 | Phase 6 | Profile schema and compilation |
 | R28 | Phase 1 | Edge-triggered invalid-profile logging |
 | R29–R30 | Phase 6 | Invalid-profile request handling; refresh-path validity |
-| R31–R36 | Phase 6 | Token vending, resolution and the cache-bypass guard |
-| R37–R39 | Phase 6 | Caching |
+| R31–R36 | Phase 7 | Token vending, resolution and the cache-bypass guard |
+| R37–R39 | Phase 7 | Caching |
 | R40–R41 | Phase 3 | Startup gate |
 | R42 | Phase 2 | Shutdown hooks on every exit path |
-| R43 | Phase 6 | Audit entry records resolved app name |
-| R44 | Phase 1, Phase 6 | Cause captured in Phase 1; wired into audit entry in Phase 6 |
-| R45–R46 | Phase 6 | Response and cache-metric attribution |
-| R47 | Phase 7 | Span attributes for profile counts |
+| R43 | Phase 7 | Audit entry records resolved app name |
+| R44 | Phase 1 | Cause captured and wired into the audit entry — no app/registry dependency |
+| R45–R46 | Phase 7 | Response and cache-metric attribution |
+| R47 | Phase 8 | Span attributes for profile counts |
 | R48–R50 | Phase 5 | Registry logging and redaction |
-| R51 | Phase 8 | `.envrc` documentation (this repository) |
+| R51 | Phase 9 | `.envrc` documentation (this repository) |
 | R52–R57 | *(out of scope)* | Published from the separate documentation repository |
