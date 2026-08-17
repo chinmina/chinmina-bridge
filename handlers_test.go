@@ -1261,6 +1261,60 @@ func TestHandlers_UnresolvedProfileIsNotAuditedAsCanonicalURN(t *testing.T) {
 	assert.NotContains(t, entry.RequestedProfile, "profile://")
 }
 
+// invalidProfileYAML compiles to one valid profile and one that fails
+// validation, so a request against the invalid profile carries a reason
+// produced by the real compilation path rather than a synthesised error.
+const invalidProfileYAML = `organization:
+  profiles:
+    - name: valid-profile
+      repositories:
+        - repo1
+      permissions:
+        - contents:read
+    - name: broken-profile
+      repositories:
+        - repo1
+      permissions:
+        - contents:read
+      match:
+        - claim: not_a_real_claim
+          value: anything
+
+pipeline:
+  defaults:
+    permissions:
+      - contents:read
+`
+
+// TestHandlePostToken_RecordsInvalidProfileReason: the caller of an
+// unavailable profile is told only that it is unavailable, so the audit
+// entry's error is the sole durable record of why. Without the reason, an
+// operator seeing a 404 has no way to tell a misconfigured profile from a
+// mistyped name.
+func TestHandlePostToken_RecordsInvalidProfileReason(t *testing.T) {
+	store := profiletest.CreateTestProfileStore(t, invalidProfileYAML)
+	resolve := NewOrgProfileResolver(store.GetOrganizationProfile)
+
+	ctx, entry := audit.Context(claimsContext())
+	req, err := http.NewRequestWithContext(ctx, "POST", "/organization/token/broken-profile", nil)
+	require.NoError(t, err)
+	req.SetPathValue("profile", "broken-profile")
+
+	rr := httptest.NewRecorder()
+	handlePostToken(tv[orgAttr]("unused"), resolve).ServeHTTP(rr, req)
+
+	// caller-facing behaviour is unchanged: 404, and a message that says
+	// nothing about the cause
+	require.Equal(t, http.StatusNotFound, rr.Code)
+	var respBody ErrorResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &respBody))
+	assert.Equal(t, ErrorResponse{Error: "profile unavailable: validation failed"}, respBody)
+
+	assert.Equal(t,
+		`profile resolution failed: profile "broken-profile" unavailable: invalid match rule for claim "not_a_real_claim": claim "not_a_real_claim" is not allowed for matching`,
+		entry.Error)
+}
+
 // TestHandlePostToken_RecordsScopedRepositoryInAuditedProfile:
 // the caller-supplied repository scope must be visible in the audited profile
 // URN, so an audit reader can tell which repository a caller-scoped profile

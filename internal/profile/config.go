@@ -73,8 +73,15 @@ type ProfileUnavailableError struct {
 	Cause error
 }
 
+// Error names the reason the profile failed validation, so the audit entry
+// this string lands on records why the request was refused. The caller-facing
+// message comes from Status and stays deliberately generic.
 func (e ProfileUnavailableError) Error() string {
-	return fmt.Sprintf("profile %q unavailable: validation failed", e.Name)
+	if e.Cause == nil {
+		return fmt.Sprintf("profile %q unavailable: validation failed", e.Name)
+	}
+
+	return fmt.Sprintf("profile %q unavailable: %v", e.Name, e.Cause)
 }
 
 func (e ProfileUnavailableError) Unwrap() error {
