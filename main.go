@@ -151,10 +151,27 @@ func main() {
 }
 
 func launchServer() error {
-	shutdownHooks := server.ShutdownHooks{}
+	return runWithShutdownHooks(context.Background(), startServer)
+}
 
-	serverContext := context.Background()
+// runWithShutdownHooks guarantees that hooks registered by run are executed
+// before the process exits, on whichever path it takes. Registration happens
+// progressively during startup, so an exit before the HTTP server begins
+// serving (a configuration failure, or any later startup gate) would otherwise
+// discard buffered telemetry describing that very failure and leak the cache
+// connection.
+//
+// The deferred call and the server's own shutdown wiring both call Execute;
+// Execute runs the hooks at most once, so the two call sites cannot
+// double-execute them.
+func runWithShutdownHooks(ctx context.Context, run func(context.Context, *server.ShutdownHooks) error) error {
+	shutdownHooks := &server.ShutdownHooks{}
+	defer shutdownHooks.Execute(ctx)
 
+	return run(ctx, shutdownHooks)
+}
+
+func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHooks) error {
 	orgProfile := profile.NewProfileStore()
 	orgProfile.Update(serverContext, profile.NewDefaultProfiles())
 	cfg, err := config.Load(serverContext)
@@ -188,7 +205,7 @@ func launchServer() error {
 	}
 
 	// setup routing and dependencies
-	handler, err := configureServerRoutes(serverContext, cfg, orgProfile, &shutdownHooks)
+	handler, err := configureServerRoutes(serverContext, cfg, orgProfile, shutdownHooks)
 	if err != nil {
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
@@ -196,7 +213,12 @@ func launchServer() error {
 	orgProfileLocation := cfg.Server.OrgProfile
 
 	taskCtx, cancel := context.WithCancel(serverContext)
-	defer cancel()
+
+	// Cancelling the task context has to be the last action so it doesn't
+	// interfere with other shutdown tasks, so it is registered here rather than
+	// deferred: the hooks are the only cancellation path, and they now run on
+	// every exit from startup, not just once the server is serving.
+	shutdownHooks.Add("context", func() error { cancel(); return nil })
 
 	// Start Goroutine to refresh the organization profile every 5 minutes
 	if orgProfileLocation != "" {
@@ -222,10 +244,6 @@ func launchServer() error {
 		ReadHeaderTimeout: 20 * time.Second, // Prevent Slowloris attacks
 	}
 
-	// cancelling the task context has to be the last action so it doesn't
-	// interfere with other shutdown tasks. Cancel is done here explicitly to
-	// include it with the rest of the shutdown hooks, even though it is deferred.
-	shutdownHooks.Add("context", func() error { cancel(); return nil })
 	server.RegisterOnShutdown(func() {
 		shutdownHooks.Execute(serverContext)
 	})

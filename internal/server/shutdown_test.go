@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -214,6 +215,82 @@ func TestShutdownHooks_Execute(t *testing.T) {
 		hooks := &ShutdownHooks{hooks: nil}
 		// Should not panic
 		hooks.Execute(context.Background())
+	})
+
+	t.Run("runs hooks only once across repeated calls", func(t *testing.T) {
+		hooks := &ShutdownHooks{}
+		calls := 0
+
+		hooks.AddContext("counted", func(ctx context.Context) error {
+			calls++
+			return nil
+		})
+
+		hooks.Execute(context.Background())
+		hooks.Execute(context.Background())
+		hooks.Execute(context.Background())
+
+		assert.Equal(t, 1, calls, "hooks should execute exactly once regardless of how many exit paths call Execute")
+	})
+
+	t.Run("hooks added after execution do not run", func(t *testing.T) {
+		hooks := &ShutdownHooks{}
+		called := false
+
+		hooks.Execute(context.Background())
+		hooks.AddContext("late", func(ctx context.Context) error {
+			called = true
+			return nil
+		})
+		hooks.Execute(context.Background())
+
+		assert.False(t, called, "shutdown is terminal: a hook registered afterwards must not resurrect execution")
+	})
+
+	t.Run("concurrent caller blocks until execution completes", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			hooks := &ShutdownHooks{}
+			release := make(chan struct{})
+			started := make(chan struct{})
+			finished := false
+
+			hooks.AddContext("slow", func(ctx context.Context) error {
+				close(started)
+				<-release
+				finished = true
+				return nil
+			})
+
+			go hooks.Execute(context.Background())
+			<-started
+
+			// The second caller must not observe an incomplete shutdown: this
+			// is what stops the process exiting while telemetry is still
+			// flushing.
+			returned := make(chan struct{})
+			go func() {
+				hooks.Execute(context.Background())
+				close(returned)
+			}()
+
+			// Returns only once the second caller is parked waiting on the
+			// in-flight execution, rather than merely not yet scheduled. A
+			// real-time delay here would prove nothing on a loaded machine.
+			synctest.Wait()
+
+			select {
+			case <-returned:
+				t.Fatal("Execute returned while hooks were still running")
+			default:
+			}
+
+			close(release)
+
+			// No timeout guard needed: an execution that never released the
+			// waiter would leave the bubble deadlocked, which fails the test.
+			<-returned
+			assert.True(t, finished, "the blocked caller should only return once hooks have completed")
+		})
 	})
 }
 
