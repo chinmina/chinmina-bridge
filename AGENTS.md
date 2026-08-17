@@ -136,6 +136,14 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 - Handlers return appropriate HTTP status codes via `requestError(w, statusCode)`
 - panic() may not be added by CI agents without explicit direction to do so. The plan must state explicitly that a panic can be used in a given situation. Otherwise, errors must be used.
 
+### Concurrency
+
+- Put a critical section in its own function and unlock with `defer`: the body is
+  the guarded region, and no branch added later can skip the unlock.
+- Return the guarded state to the caller. Slow work, I/O and callbacks belong
+  outside the lock; never hold a lock across a callback.
+- Example: `ShutdownHooks.beginExecution` in `internal/server/shutdown.go`.
+
 ### Testing
 
 **Assertion Style:**
