@@ -69,7 +69,8 @@ pipeline:
 	store := NewProfileStore()
 	ctx := context.Background()
 
-	refresh(ctx, store, gh, "acme:silk:profile.yaml")
+	err := refresh(ctx, store, gh, "acme:silk:profile.yaml")
+	require.NoError(t, err)
 
 	// Verify the profile was fetched and store was updated
 	assert.Equal(t, 1, gh.calls())
@@ -80,65 +81,42 @@ pipeline:
 	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 }
 
-func TestRefresh_Error(t *testing.T) {
-	expectedErr := errors.New("github error")
-	gh := &mockGitHubClientForDaemon{
-		err: expectedErr,
+// refresh reports failure to its caller instead of logging it: the startup gate
+// and the background loop treat a failed attempt differently.
+func TestRefresh_Failure(t *testing.T) {
+	tests := []struct {
+		name string
+		gh   *mockGitHubClientForDaemon
+	}{
+		{
+			name: "retrieval error",
+			gh:   &mockGitHubClientForDaemon{err: errors.New("github error")},
+		},
+		{
+			name: "invalid yaml",
+			gh:   &mockGitHubClientForDaemon{yaml: "invalid: yaml: content: ["},
+		},
+		{
+			name: "panic is recovered and returned",
+			gh:   &mockGitHubClientForDaemon{panicOn: 1},
+		},
 	}
 
-	store := NewProfileStore()
-	initialDigest := store.Digest()
-	ctx := context.Background()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewProfileStore()
+			initialDigest := store.Digest()
 
-	// Should not panic despite error
-	refresh(ctx, store, gh, "acme:silk:profile.yaml")
+			err := refresh(context.Background(), store, tt.gh, "acme:silk:profile.yaml")
 
-	// Verify fetch was attempted
-	assert.Equal(t, 1, gh.calls())
-
-	// Verify store was not updated (digest unchanged)
-	assert.Equal(t, initialDigest, store.Digest())
-}
-
-func TestRefresh_InvalidYAML(t *testing.T) {
-	gh := &mockGitHubClientForDaemon{
-		yaml: "invalid: yaml: content: [",
+			require.Error(t, err)
+			assert.Equal(t, 1, tt.gh.calls(), "fetch should have been attempted")
+			assert.Equal(t, initialDigest, store.Digest(), "store should not be updated")
+		})
 	}
-
-	store := NewProfileStore()
-	initialDigest := store.Digest()
-	ctx := context.Background()
-
-	// Should not panic despite invalid YAML
-	refresh(ctx, store, gh, "acme:silk:profile.yaml")
-
-	// Verify fetch was attempted
-	assert.Equal(t, 1, gh.calls())
-
-	// Verify store was not updated (digest unchanged)
-	assert.Equal(t, initialDigest, store.Digest())
 }
 
-func TestRefresh_Panic(t *testing.T) {
-	gh := &mockGitHubClientForDaemon{
-		panicOn: 1, // Panic on first call
-	}
-
-	store := NewProfileStore()
-	initialDigest := store.Digest()
-	ctx := context.Background()
-
-	// Should not panic - refresh should recover internally
-	refresh(ctx, store, gh, "acme:silk:profile.yaml")
-
-	// Verify fetch was attempted
-	assert.Equal(t, 1, gh.calls())
-
-	// Verify store was not updated (digest unchanged)
-	assert.Equal(t, initialDigest, store.Digest())
-}
-
-func TestPeriodicRefresh_ImmediateFirstRefresh(t *testing.T) {
+func TestPeriodicRefresh_DelaysFirstRefresh(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		validYAML := `organization:
   profiles:
@@ -164,8 +142,13 @@ pipeline:
 		// Wait for goroutine to reach waiting state
 		synctest.Wait()
 
-		// First refresh should have happened
-		assert.Equal(t, 1, gh.calls(), "first refresh should happen immediately")
+		// AwaitFirstGeneration owns the first load, so the loop must not fetch
+		// again at boot.
+		assert.Equal(t, 0, gh.calls(), "first refresh should wait a full interval")
+
+		time.Sleep(5 * time.Minute)
+		synctest.Wait()
+		assert.Equal(t, 1, gh.calls())
 
 		profile, _, err := store.GetOrganizationProfile("immediate")
 		require.NoError(t, err)
@@ -196,16 +179,19 @@ pipeline:
 
 		go PeriodicRefresh(ctx, store, gh, "acme:silk:profile.yaml")
 
-		// Wait for first refresh to complete and goroutine to enter sleep
+		// Wait for the goroutine to enter its first sleep
+		synctest.Wait()
+		assert.Equal(t, 0, gh.calls())
+
+		// Sleep to trigger each refresh (time will advance)
+		time.Sleep(5 * time.Minute)
 		synctest.Wait()
 		assert.Equal(t, 1, gh.calls())
 
-		// Sleep to trigger second refresh (time will advance)
 		time.Sleep(5 * time.Minute)
 		synctest.Wait()
 		assert.Equal(t, 2, gh.calls())
 
-		// Sleep to trigger third refresh
 		time.Sleep(5 * time.Minute)
 		synctest.Wait()
 		assert.Equal(t, 3, gh.calls())
@@ -234,7 +220,9 @@ pipeline:
 
 		go PeriodicRefresh(ctx, store, gh, "acme:silk:profile.yaml")
 
-		// Wait for first refresh
+		// Advance past the first interval so one refresh has run
+		synctest.Wait()
+		time.Sleep(5 * time.Minute)
 		synctest.Wait()
 		assert.Equal(t, 1, gh.calls())
 
@@ -272,9 +260,9 @@ pipeline:
 
 		go PeriodicRefresh(ctx, store, gh, "acme:silk:profile.yaml")
 
-		// Wait for first refresh and goroutine to enter sleep
+		// Wait for the goroutine to enter its interval sleep
 		synctest.Wait()
-		assert.Equal(t, 1, gh.calls())
+		assert.Equal(t, 0, gh.calls())
 
 		// Cancel while sleeping
 		cancel()
@@ -283,8 +271,8 @@ pipeline:
 		// Wait for the goroutine to process cancellation and exit
 		synctest.Wait()
 
-		// Verify no more refreshes happened
-		assert.Equal(t, 1, gh.calls(), "should exit without additional refresh")
+		// Verify no refreshes happened
+		assert.Equal(t, 0, gh.calls(), "should exit without a refresh")
 	})
 }
 
@@ -311,7 +299,9 @@ pipeline:
 
 		go PeriodicRefresh(ctx, store, gh, "acme:silk:profile.yaml")
 
-		// Wait for first attempt (which panics)
+		// Advance to the first attempt (which panics)
+		synctest.Wait()
+		time.Sleep(5 * time.Minute)
 		synctest.Wait()
 		assert.Equal(t, 1, gh.calls())
 
@@ -354,6 +344,8 @@ pipeline:
 		go PeriodicRefresh(ctx, store, gh, "acme:silk:profile.yaml")
 
 		// First refresh (fails with error)
+		synctest.Wait()
+		time.Sleep(5 * time.Minute)
 		synctest.Wait()
 		assert.Equal(t, 1, gh.calls())
 

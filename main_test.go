@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/chinmina/chinmina-bridge/internal/config"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -85,5 +87,30 @@ func TestRunWithShutdownHooks(t *testing.T) {
 		})
 
 		assert.Equal(t, 1, calls, "an unwinding panic is still an exit path")
+	})
+}
+
+func TestStartProfileRefresh(t *testing.T) {
+	t.Run("does nothing when no organization profile location is configured", func(t *testing.T) {
+		store := profile.NewProfileStore()
+		before := store.Digest()
+
+		// The GitHub configuration is deliberately empty: reaching the client
+		// would fail, so returning cleanly proves nothing was loaded, no gate
+		// was entered and startup is unaffected.
+		err := startProfileRefresh(t.Context(), t.Context(), config.Config{}, store)
+
+		require.NoError(t, err)
+		assert.Equal(t, before, store.Digest())
+	})
+
+	t.Run("rejects a malformed organization profile location", func(t *testing.T) {
+		cfg := config.Config{}
+		cfg.Server.OrgProfile = "acme:silk"
+
+		err := startProfileRefresh(t.Context(), t.Context(), cfg, profile.NewProfileStore())
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid organization profile location")
 	})
 }

@@ -171,6 +171,50 @@ func runWithShutdownHooks(ctx context.Context, run func(context.Context, *server
 	return run(ctx, shutdownHooks)
 }
 
+// startProfileRefresh loads the first organization profile generation and then
+// starts the background refresh loop.
+//
+// The first load is synchronous, and startup does not continue until it
+// succeeds: an instance that serves before it has a generation answers
+// organization profile requests with 404 and pipeline requests with a built-in
+// permission set, while reporting healthy and counting as ready during a
+// rolling deployment. Not listening is the readiness signal, so gating here —
+// before serveHTTP opens the listening socket — leaves the healthcheck contract
+// unchanged.
+//
+// Where no organization profile location is configured there is nothing to load
+// and nothing to gate on, so startup is unaffected.
+//
+// serverCtx is the process-scoped context the GitHub client is built against;
+// taskCtx is the shutdown-scoped context governing the load and the refresh
+// loop.
+func startProfileRefresh(serverCtx, taskCtx context.Context, cfg config.Config, orgProfile *profile.ProfileStore) error {
+	orgProfileLocation := cfg.Server.OrgProfile
+	if orgProfileLocation == "" {
+		return nil
+	}
+
+	// Check that the profile conforms to the expected format
+	location := strings.SplitN(orgProfileLocation, ":", 3)
+	if len(location) != 3 {
+		return fmt.Errorf("invalid organization profile location: %s", orgProfileLocation)
+	}
+
+	gh, err := github.New(serverCtx, cfg.Github, github.WithTokenTransport)
+	if err != nil {
+		return fmt.Errorf("github configuration failed: %w", err)
+	}
+
+	err = profile.AwaitFirstGeneration(taskCtx, orgProfile, gh, orgProfileLocation)
+	if err != nil {
+		return fmt.Errorf("initial organization profile load failed: %w", err)
+	}
+
+	go profile.PeriodicRefresh(taskCtx, orgProfile, gh, orgProfileLocation)
+
+	return nil
+}
+
 func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHooks) error {
 	orgProfile := profile.NewProfileStore()
 	orgProfile.Update(serverContext, profile.NewDefaultProfiles())
@@ -210,8 +254,6 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
 
-	orgProfileLocation := cfg.Server.OrgProfile
-
 	taskCtx, cancel := context.WithCancel(serverContext)
 
 	// Cancelling the task context has to be the last action so it doesn't
@@ -220,20 +262,9 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 	// every exit from startup, not just once the server is serving.
 	shutdownHooks.Add("context", func() error { cancel(); return nil })
 
-	// Start Goroutine to refresh the organization profile every 5 minutes
-	if orgProfileLocation != "" {
-		// Check that the profile conforms to the expected format
-		location := strings.SplitN(orgProfileLocation, ":", 3)
-		if len(location) != 3 {
-			return fmt.Errorf("invalid organization profile location: %s", orgProfileLocation)
-		}
-
-		gh, err := github.New(serverContext, cfg.Github, github.WithTokenTransport)
-		if err != nil {
-			return fmt.Errorf("github configuration failed: %w", err)
-		}
-
-		go profile.PeriodicRefresh(taskCtx, orgProfile, gh, orgProfileLocation)
+	err = startProfileRefresh(serverContext, taskCtx, cfg, orgProfile)
+	if err != nil {
+		return err
 	}
 
 	// start the server
