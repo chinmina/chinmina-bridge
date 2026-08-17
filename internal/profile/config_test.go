@@ -119,6 +119,14 @@ func TestProfileUnavailableError_Format(t *testing.T) {
 		Cause: assert.AnError,
 	}
 
+	assert.Equal(t, `profile "test-profile" unavailable: `+assert.AnError.Error(), err.Error())
+}
+
+// A cause is always set in practice, but the message must stay readable if a
+// caller constructs the error without one.
+func TestProfileUnavailableError_FormatWithoutCause(t *testing.T) {
+	err := ProfileUnavailableError{Name: "test-profile"}
+
 	assert.Equal(t, `profile "test-profile" unavailable: validation failed`, err.Error())
 }
 
