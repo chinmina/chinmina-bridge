@@ -39,13 +39,21 @@ services:
       - TRAEFIK_PROVIDERS_DOCKER=true                        # Enable Docker Auto-discovery
       - TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT=false      # Don't expose containers unless explicitly told
       # --- TRACING (OTLP gRPC) ---
+      # OpenObserve requires basic auth on ingestion, and identifies the target
+      # organization and stream by gRPC metadata headers.
       - TRAEFIK_TRACING_OTLP=true
-      - TRAEFIK_TRACING_OTLP_GRPC_ENDPOINT=aspire:18889     # Aspire OTLP
+      - TRAEFIK_TRACING_OTLP_GRPC_ENDPOINT=openobserve:5081  # OpenObserve OTLP
       - TRAEFIK_TRACING_OTLP_GRPC_INSECURE=true
+      - TRAEFIK_TRACING_OTLP_GRPC_HEADERS_AUTHORIZATION=Basic Y2hpbm1pbmFAZXhhbXBsZS5jb206U3dpbW1pbmctUGVuZ3Vpbi00Mg==
+      - TRAEFIK_TRACING_OTLP_GRPC_HEADERS_ORGANIZATION=default
+      - TRAEFIK_TRACING_OTLP_GRPC_HEADERS_STREAM-NAME=default
       # --- METRICS (OTLP gRPC) ---
       - TRAEFIK_METRICS_OTLP=true
-      - TRAEFIK_METRICS_OTLP_GRPC_ENDPOINT=aspire:18889
+      - TRAEFIK_METRICS_OTLP_GRPC_ENDPOINT=openobserve:5081
       - TRAEFIK_METRICS_OTLP_GRPC_INSECURE=true
+      - TRAEFIK_METRICS_OTLP_GRPC_HEADERS_AUTHORIZATION=Basic Y2hpbm1pbmFAZXhhbXBsZS5jb206U3dpbW1pbmctUGVuZ3Vpbi00Mg==
+      - TRAEFIK_METRICS_OTLP_GRPC_HEADERS_ORGANIZATION=default
+      - TRAEFIK_METRICS_OTLP_GRPC_HEADERS_STREAM-NAME=default
       - TRAEFIK_METRICS_OTLP_ADDENTRYPOINTSLABELS=true       # Adds port info (port 80 vs 443)
       - TRAEFIK_METRICS_OTLP_ADDSERVICESLABELS=true          # Adds service info (whoami, etc.)
     ports:
@@ -57,7 +65,7 @@ services:
     scale: 1
     image: alpine
     depends_on:
-      - aspire
+      - openobserve
       - valkey
     working_dir: "/src"
     command: ["./dist/chinmina-bridge"]
@@ -78,7 +86,8 @@ services:
       - VALKEY_TLS=false
       - VALKEY_USERNAME=default
       - VALKEY_PASSWORD=swimming-penguin-42
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire:18889
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://openobserve:5081
+      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic Y2hpbm1pbmFAZXhhbXBsZS5jb206U3dpbW1pbmctUGVuZ3Vpbi00Mg==,organization=default,stream-name=default
       - OBSERVE_ENABLED=true
       - OBSERVE_METRICS_ENABLED=true
       - OBSERVE_TYPE=grpc
@@ -96,15 +105,27 @@ services:
       - "traefik.http.routers.chinmina.rule=PathPrefix(`/`)"
       - "traefik.http.services.chinmina.loadbalancer.server.port=80"
 
-  # .NET Aspire dashboard all in one for local OTEL tracing, using in-memory storage which is
-  # not persisted.
-  aspire:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+  # OpenObserve all-in-one: OTLP endpoint (traces, metrics, logs) plus UI. Data is written
+  # inside the container only, so it is discarded with the stack.
+  #
+  # UI: http://localhost:5080, sign in with the root credentials below. Ingestion is
+  # authenticated: the Basic credentials used by the exporters above are
+  # `base64(ZO_ROOT_USER_EMAIL:ZO_ROOT_USER_PASSWORD)`, so keep them in step if changed:
+  #
+  #   printf 'chinmina@example.com:Swimming-Penguin-42' | base64
+  #
+  openobserve:
+    image: openobserve/openobserve:latest
     ports:
-      - "18888:18888" # dashboard
+      - "5080:5080" # UI and OTLP/HTTP ingestion
+      - "5081:5081" # OTLP/gRPC ingestion
     environment:
-      - ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
-      - LOG_LEVEL=debug
+      - ZO_ROOT_USER_EMAIL=chinmina@example.com
+      - ZO_ROOT_USER_PASSWORD=Swimming-Penguin-42
+      - ZO_DATA_DIR=/data
+      - ZO_TELEMETRY=false # don't report local dev usage upstream
+      - RUST_LOG=info
+    # NB: no healthcheck, the image has no shell or HTTP client to probe with.
 
   valkey:
     image: valkey/valkey:9-alpine
