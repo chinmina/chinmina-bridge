@@ -52,7 +52,7 @@ rewording; no separate traceability mapping is needed.
 Phases are the planning/acceptance-criteria unit; PRs may combine phases where
 they are not independently shippable:
 
-- **PR 1** — Phase 1 (edge-triggered invalid-profile logging)
+- **PR 1** — Phase 1 (invalidity reason on the audit entry)
 - **PR 2** — Phase 2 (shutdown hooks on every startup exit path)
 - **PR 3** — Phase 3 (startup gate)
 - **PR 4** — Phase 4 (config-validation/route-construction split, transport
@@ -81,64 +81,46 @@ relative to each other, ahead of the feature itself.
 
 ---
 
-## Phase 1: Edge-triggered invalid-profile logging; `ProfileUnavailableError` carries its cause
+## Phase 1: `ProfileUnavailableError` carries its cause onto the audit entry
 
-**EARS requirements**: R28, R44
+**EARS requirements**: R44
 
 ### Why this phase exists
 
-Compilation logs its batched invalid-profile warning on every compile, and
-compilation runs on every refresh — so today, one permanently-invalid profile
-(for any existing reason, e.g. a bad match rule) produces a warning every
-refresh interval for the life of the process. This is worth fixing on its own,
-and it becomes load-bearing once app-caused invalidity exists in Phase 6:
-`ProfileUnavailableError` currently discards its cause, and once logging is
-edge-triggered, the audit entry becomes the only timely record of *why* a
-profile is invalid. Both the cause-capture mechanism and its wiring onto the
-audit entry land here — neither needs an app or a registry to exist, since
-profiles can already be invalid today for pre-existing reasons (e.g. a bad
-match rule).
+`ProfileUnavailableError` currently discards its cause — the caller-facing
+message comes from a separate method, so a request against an unavailable
+profile gives no durable record of *why*. This phase wires that reason onto
+the audit entry. It doesn't need an app or a registry to exist: profiles can
+already be invalid today for pre-existing reasons (e.g. a bad match rule), so
+this lands and is verifiable independent of the rest of the feature.
+
+Compilation's batched invalid-profile warning still logs on every compile, as
+it does today — this phase does not touch that logging path or attempt to
+deduplicate it. That's a deliberate scope cut: only the audit-entry wiring is
+in scope here.
 
 ### Locked decisions (non-negotiable)
 
-- The comparison lives in the profile store (`ProfileStoreOf`) — the only
-  component holding both the old and new generation, already under a write
-  lock.
-- Diff the profile-name-to-reason mapping, not just the set of invalid names —
-  a profile whose reason changes must be logged again.
-- Diff on the mapping, not the digest — an unchanged YAML whose validity flips
-  must still be caught; the store update runs even when the digest is
-  unchanged.
 - `ProfileUnavailableError` gains its wrapped cause without changing the
   caller-facing message or HTTP behavior it already produces.
 - When a request resolves an unavailable profile, the audit entry for that
   request records the invalidity reason from the error's cause (R44) — this
   wiring does not depend on the app registry existing; it applies to any
   invalidity reason, today's included.
-- No sensitive data enters the logged reason string or the audit entry.
+- No sensitive data enters the audit entry.
 
 ### Flex zone (implementation choice allowed)
 
-- Exact diffing data structure (map vs. sorted slice comparison).
 - Whether the cause is exposed via `Unwrap()` or a dedicated accessor.
-- Log level and field layout for the batched warning.
 
 ### End-to-end behaviour to implement
 
-Two successive profile refreshes with the same invalid profile (same name,
-same reason) log the warning once, not twice. A refresh whose invalid set or
-reasons change logs again. `ProfileUnavailableError` retains its cause
-internally even though the HTTP response and caller-facing message are
-unchanged.
+`ProfileUnavailableError` retains its cause internally even though the HTTP
+response and caller-facing message are unchanged. A request against an
+unavailable profile has the invalidity reason recorded on its audit entry.
 
 ### Acceptance criteria
 
-- [ ] `[observable]` A profile invalid for the same reason across two
-      consecutive refreshes produces exactly one warning log line.
-- [ ] `[observable]` A profile whose invalidity reason changes between
-      refreshes (same name, different cause) produces a new warning log line.
-- [ ] `[observable]` A profile that becomes valid, then invalid again, is
-      logged again (not permanently suppressed).
 - [ ] `[structural]` `ProfileUnavailableError` exposes its wrapped cause
       without changing the string returned to callers.
 - [ ] `[structural]` Existing 404 behavior and caller-facing message for an
@@ -149,22 +131,18 @@ unchanged.
 
 ### Verification
 
-`just test` on `internal/profile`; a new table-driven test asserting log-call
-counts across synthetic refresh sequences (unchanged invalid set → one log;
-changed reason → second log).
+`just test` on `internal/profile`, asserting the audit entry's recorded
+reason for a request against an invalid profile.
 
 ### Regression watchpoints
 
-Existing profile refresh tests (e.g.
-`TestIntegrationProfileRefresh_ServesNoMixedGeneration`) must keep passing;
-the *first* log of a newly-invalid profile must not be accidentally
-suppressed.
+Existing profile refresh and invalid-profile tests (e.g.
+`TestIntegrationProfileRefresh_ServesNoMixedGeneration`) must keep passing
+unchanged — this phase adds a field to the audit entry, nothing else.
 
 ### Replan triggers
 
-If diffing by reason string proves unstable (e.g. a wrapped error's message
-contains non-deterministic content), revisit the comparison key before
-proceeding.
+None expected — narrow, low-risk change.
 
 ---
 
@@ -826,7 +804,7 @@ None.
 | R1–R11 | Phase 5 | App registry configuration |
 | R12–R19 | Phase 5 | Organization verification |
 | R20–R27 | Phase 6 | Profile schema and compilation |
-| R28 | Phase 1 | Edge-triggered invalid-profile logging |
+| R28 | *(descoped)* | Edge-triggered dedup logging was cut from Phase 1 by explicit decision — the batched invalid-profile warning keeps logging on every compile, as it does today; not implemented by this plan |
 | R29–R30 | Phase 6 | Invalid-profile request handling; refresh-path validity |
 | R31–R36 | Phase 7 | Token vending, resolution and the cache-bypass guard |
 | R37–R39 | Phase 7 | Caching |
