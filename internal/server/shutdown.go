@@ -17,10 +17,12 @@ type hookDefinition struct {
 //
 // A ShutdownHooks value must not be copied after first use.
 type ShutdownHooks struct {
+	// hooks is deliberately unsynchronized: every hook is registered during
+	// startup, before any exit path can call Execute.
 	hooks []hookDefinition
 
-	// mu guards completed, and only completed. beginExecution is the sole
-	// reader and writer of both.
+	// mu guards completed and nothing else, and beginExecution is its only
+	// reader and writer.
 	mu sync.Mutex
 	// completed is created when execution begins and closed when it finishes.
 	// A nil value means shutdown has not started. Waiting on a channel rather
