@@ -134,8 +134,9 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 		harness.valkeyPassword = cacheCfg.Valkey.Password
 	}
 
-	// Mirrors the production startup order deliberately: the harness should
-	// exercise the sequence the service actually uses.
+	// Mirrors the production construction sequence, minus the transport
+	// install: tests must not mutate http.DefaultTransport for the whole
+	// process, and with telemetry disabled there is nothing to instrument.
 	validated, err := validateConfiguration(cfg)
 	require.NoError(t, err)
 

@@ -278,7 +278,7 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 
 	validated, err := validateConfiguration(cfg)
 	if err != nil {
-		return fmt.Errorf("configuration validation failed: %w", err)
+		return err
 	}
 
 	// configure telemetry, including wrapping default HTTP client
