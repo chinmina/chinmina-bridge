@@ -134,8 +134,16 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 		harness.valkeyPassword = cacheCfg.Valkey.Password
 	}
 
-	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore, &hooks)
+	// Mirrors the production construction sequence, minus the transport
+	// install: tests must not mutate http.DefaultTransport for the whole
+	// process, and with telemetry disabled there is nothing to instrument.
+	validated, err := validateConfiguration(cfg)
 	require.NoError(t, err)
+
+	clients, err := configureUpstreamClients(context.Background(), cfg, validated, &hooks)
+	require.NoError(t, err)
+
+	handler := configureServerRoutes(validated, clients, harness.ProfileStore)
 
 	harness.Server = httptest.NewServer(handler)
 	hooks.AddClose("api-server", harness.Server)

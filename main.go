@@ -27,47 +27,77 @@ import (
 	phuslog "github.com/phuslu/log"
 )
 
-func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *profile.ProfileStore, hooks *server.ShutdownHooks) (http.Handler, error) {
-	// wrap a mux such that HTTP telemetry is configured by default
-	muxWithoutTelemetry := http.NewServeMux()
-	mux := observe.NewMux(muxWithoutTelemetry)
+type validatedConfig struct {
+	basePath           string // "" when served at the root
+	orgProfileLocation string // "" when no organization profile is configured
+	authorizer         alice.Constructor
+}
 
-	// configure middleware
-	auditor := audit.Middleware()
+// validateConfiguration must not make network calls, so that a configuration
+// error always beats the connectivity failure that would otherwise mask it.
+func validateConfiguration(cfg config.Config) (validatedConfig, error) {
+	// When a base path is configured, it is stripped before routing so the
+	// application can be served under a sub-path (e.g. behind an ALB).
+	basePath, err := config.NormalizeBasePath(cfg.Server.BasePath)
+	if err != nil {
+		return validatedConfig{}, fmt.Errorf("invalid base path: %w", err)
+	}
+
+	// Empty disables organization profiles. Checking here rather than at the
+	// gate is what keeps a typo cheap to diagnose.
+	orgProfileLocation := cfg.Server.OrgProfile
+	if orgProfileLocation != "" {
+		if err := profile.ValidateLocation(orgProfileLocation); err != nil {
+			return validatedConfig{}, fmt.Errorf("invalid organization profile location: %w", err)
+		}
+	}
 
 	authorizer, err := jwt.Middleware(cfg.Authorization)
 	if err != nil {
-		return nil, fmt.Errorf("authorizer configuration failed: %w", err)
+		return validatedConfig{}, fmt.Errorf("authorizer configuration failed: %w", err)
 	}
 
-	// The request body size is fairly limited to prevent accidental or
-	// deliberate abuse. Given the current API shape, this is not configurable.
-	requestLimitBytes := int64(20 << 10) // 20 KB
-	requestLimiter := maxRequestSize(requestLimitBytes)
+	return validatedConfig{
+		basePath:           basePath,
+		orgProfileLocation: orgProfileLocation,
+		authorizer:         authorizer,
+	}, nil
+}
 
-	// When a base path is configured, strip it before routing so the
-	// application can be served under a sub-path (e.g. behind an ALB).
-	normalizedBasePath, err := config.NormalizeBasePath(cfg.Server.BasePath)
-	if err != nil {
-		return nil, fmt.Errorf("invalid base path: %w", err)
-	}
+// upstreamClients must not be replaced after route construction captures it:
+// the handlers would keep the old values.
+type upstreamClients struct {
+	buildkite buildkite.PipelineLookup
+	github    github.Client
 
-	if normalizedBasePath != "" {
-		slog.Info("serving under base path", "path", normalizedBasePath)
-	}
+	// Token rather than app transport, because it reads repository content.
+	// Nil when unconfigured, which is what leaves the refresh task unstarted.
+	profileSource *github.Client
 
-	authorizedRouteMiddleware := alice.New(requestLimiter, auditor, authorizer)
-	standardRouteMiddleware := alice.New(requestLimiter)
+	tokenCache cache.TokenCache[vendor.ProfileToken]
+}
 
-	// setup token handler and dependencies
+// configureUpstreamClients must run after installOutboundTransport: clients
+// capture http.DefaultTransport as they are built, so one made earlier
+// silently loses pool tuning and tracing. Add new clients here.
+func configureUpstreamClients(ctx context.Context, cfg config.Config, validated validatedConfig, hooks *server.ShutdownHooks) (upstreamClients, error) {
 	bk, err := buildkite.New(cfg.Buildkite)
 	if err != nil {
-		return nil, fmt.Errorf("buildkite configuration failed: %w", err)
+		return upstreamClients{}, fmt.Errorf("buildkite configuration failed: %w", err)
 	}
 
 	gh, err := github.New(ctx, cfg.Github)
 	if err != nil {
-		return nil, fmt.Errorf("github configuration failed: %w", err)
+		return upstreamClients{}, fmt.Errorf("github configuration failed: %w", err)
+	}
+
+	var profileSource *github.Client
+	if validated.orgProfileLocation != "" {
+		client, err := github.New(ctx, cfg.Github, github.WithTokenTransport)
+		if err != nil {
+			return upstreamClients{}, fmt.Errorf("github configuration failed: %w", err)
+		}
+		profileSource = &client
 	}
 
 	// Configure cache backend based on CACHE_TYPE
@@ -78,10 +108,40 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 		10_000,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("cache configuration failed: %w", err)
+		return upstreamClients{}, fmt.Errorf("cache configuration failed: %w", err)
 	}
 
 	hooks.Add("cache", tokenCache.Close)
+
+	return upstreamClients{
+		buildkite:     bk,
+		github:        gh,
+		profileSource: profileSource,
+		tokenCache:    tokenCache,
+	}, nil
+}
+
+// configureServerRoutes cannot fail: everything it needs is validated and
+// constructed before it is called.
+func configureServerRoutes(validated validatedConfig, clients upstreamClients, orgProfile *profile.ProfileStore) http.Handler {
+	// wrap a mux such that HTTP telemetry is configured by default
+	muxWithoutTelemetry := http.NewServeMux()
+	mux := observe.NewMux(muxWithoutTelemetry)
+
+	// configure middleware
+	auditor := audit.Middleware()
+
+	// The request body size is fairly limited to prevent accidental or
+	// deliberate abuse. Given the current API shape, this is not configurable.
+	requestLimitBytes := int64(20 << 10) // 20 KB
+	requestLimiter := maxRequestSize(requestLimitBytes)
+
+	if validated.basePath != "" {
+		slog.Info("serving under base path", "path", validated.basePath)
+	}
+
+	authorizedRouteMiddleware := alice.New(requestLimiter, auditor, validated.authorizer)
+	standardRouteMiddleware := alice.New(requestLimiter)
 
 	// Pipeline and organization routes are deliberately separate, with very
 	// different authorization and match rules. This allows for simpler controls
@@ -99,8 +159,8 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 
 	repoVendor := vendor.Auditor(
 		vendor.Authorized(
-			vendor.Cached[profile.PipelineProfileAttr](tokenCache)(
-				vendor.Vending(vendor.PipelineRepositories(bk.RepositoryLookup), gh.CreateAccessToken),
+			vendor.Cached[profile.PipelineProfileAttr](clients.tokenCache)(
+				vendor.Vending(vendor.PipelineRepositories(clients.buildkite.RepositoryLookup), clients.github.CreateAccessToken),
 			),
 		),
 	)
@@ -118,8 +178,8 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 
 	orgVendor := vendor.Auditor(
 		vendor.Authorized(
-			vendor.Cached[profile.OrganizationProfileAttr](tokenCache)(
-				vendor.Vending(vendor.OrgRepositories, gh.CreateAccessToken),
+			vendor.Cached[profile.OrganizationProfileAttr](clients.tokenCache)(
+				vendor.Vending(vendor.OrgRepositories, clients.github.CreateAccessToken),
 			),
 		),
 	)
@@ -133,11 +193,11 @@ func configureServerRoutes(ctx context.Context, cfg config.Config, orgProfile *p
 
 	// StripPrefix wraps the entire mux so it runs before pattern matching.
 	var handler http.Handler = mux
-	if normalizedBasePath != "" {
-		handler = stripPrefix(normalizedBasePath, mux)
+	if validated.basePath != "" {
+		handler = stripPrefix(validated.basePath, mux)
 	}
 
-	return handler, nil
+	return handler
 }
 
 func main() {
@@ -182,26 +242,12 @@ func runWithShutdownHooks(ctx context.Context, run func(context.Context, *server
 //
 // No timeout: a deadline of ours would be evidence about this service rather
 // than the profile source, so the platform's grace period is the backstop.
-//
-// serverCtx builds the GitHub client and outlives shutdown; taskCtx governs the
-// refresh task.
-func startProfileRefresh(serverCtx, taskCtx context.Context, cfg config.Config, orgProfile *profile.ProfileStore) error {
-	orgProfileLocation := cfg.Server.OrgProfile
-	if orgProfileLocation == "" {
+func startProfileRefresh(taskCtx context.Context, orgProfile *profile.ProfileStore, source *github.Client, location string) error {
+	if source == nil {
 		return nil
 	}
 
-	err := profile.ValidateLocation(orgProfileLocation)
-	if err != nil {
-		return fmt.Errorf("invalid organization profile location: %w", err)
-	}
-
-	gh, err := github.New(serverCtx, cfg.Github, github.WithTokenTransport)
-	if err != nil {
-		return fmt.Errorf("github configuration failed: %w", err)
-	}
-
-	ready := profile.RefreshTask(orgProfile, gh, orgProfileLocation).Start(taskCtx)
+	ready := profile.RefreshTask(orgProfile, *source, location).Start(taskCtx)
 
 	return awaitFirstLoad(taskCtx, ready)
 }
@@ -218,12 +264,21 @@ func awaitFirstLoad(ctx context.Context, ready <-chan struct{}) error {
 	}
 }
 
+// startServer's stage order is load-bearing; each stage documents its own
+// constraint. Data flow enforces most of them, but telemetry-before-transport
+// holds only while these calls stay in this order.
 func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHooks) error {
 	orgProfile := profile.NewProfileStore()
 	orgProfile.Update(serverContext, profile.NewDefaultProfiles())
+
 	cfg, err := config.Load(serverContext)
 	if err != nil {
 		return fmt.Errorf("configuration load failed: %w", err)
+	}
+
+	validated, err := validateConfiguration(cfg)
+	if err != nil {
+		return err
 	}
 
 	// configure telemetry, including wrapping default HTTP client
@@ -243,19 +298,14 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 	}
 	shutdownHooks.Add("pyroscope", downPyroscope)
 
-	http.DefaultTransport = observe.HTTPTransport(
-		configureHTTPTransport(cfg.Server),
-		cfg.Observe,
-	)
-	http.DefaultClient = &http.Client{
-		Transport: http.DefaultTransport,
+	installOutboundTransport(cfg)
+
+	clients, err := configureUpstreamClients(serverContext, cfg, validated, shutdownHooks)
+	if err != nil {
+		return err
 	}
 
-	// setup routing and dependencies
-	handler, err := configureServerRoutes(serverContext, cfg, orgProfile, shutdownHooks)
-	if err != nil {
-		return fmt.Errorf("server routing configuration failed: %w", err)
-	}
+	handler := configureServerRoutes(validated, clients, orgProfile)
 
 	// Signal-aware because the gate below can block indefinitely, and
 	// serveHTTP — which installs the serving path's handler — is not reached
@@ -272,7 +322,7 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 	// every exit from startup, not just once the server is serving.
 	shutdownHooks.Add("context", func() error { stop(); return nil })
 
-	err = startProfileRefresh(serverContext, taskCtx, cfg, orgProfile)
+	err = startProfileRefresh(taskCtx, orgProfile, clients.profileSource, validated.orgProfileLocation)
 	if err != nil {
 		return err
 	}
@@ -330,6 +380,18 @@ func logBuildInfo() {
 	}
 
 	slog.Info("build information", attrs...)
+}
+
+// installOutboundTransport must run after telemetry is configured: the tracing
+// wrapper binds the providers set up there.
+func installOutboundTransport(cfg config.Config) {
+	http.DefaultTransport = observe.HTTPTransport(
+		configureHTTPTransport(cfg.Server),
+		cfg.Observe,
+	)
+	http.DefaultClient = &http.Client{
+		Transport: http.DefaultTransport,
+	}
 }
 
 func configureHTTPTransport(cfg config.ServerConfig) *http.Transport {
