@@ -557,7 +557,7 @@ func generateKey(t *testing.T) string {
 
 // withPlainTransport creates a transport with no auth - for testing only
 func withPlainTransport(clientConfig *github.ClientConfig) {
-	clientConfig.TransportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
+	clientConfig.TransportFactory = func(ctx context.Context, cfg config.GithubConfig, wrapped http.RoundTripper, _ github.AWSConfigLoader) (http.RoundTripper, error) {
 		return wrapped, nil
 	}
 }

@@ -112,6 +112,14 @@ type GithubConfig struct {
 
 	ApplicationID  int64 `env:"GITHUB_APP_ID, required"`
 	InstallationID int64 `env:"GITHUB_APP_INSTALLATION_ID, required"`
+
+	// Apps is a JSON array of additional named GitHub App entries, each with a
+	// name, appId, installationId and exactly one of privateKey or
+	// privateKeyArn. It is held as raw JSON because its schema, validation and
+	// redaction rules belong with the app registry rather than with
+	// environment loading. Empty means no registry: the default app above vends
+	// every token and no installation is queried at startup.
+	Apps string `env:"GITHUB_APPS"`
 }
 
 type ObserveConfig struct {

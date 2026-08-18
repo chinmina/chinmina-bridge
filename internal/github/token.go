@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	appconfig "github.com/chinmina/chinmina-bridge/internal/config"
@@ -54,7 +55,11 @@ func New(ctx context.Context, cfg appconfig.GithubConfig, config ...ClientOption
 		c(clientConfig)
 	}
 
-	authTransport, err := clientConfig.TransportFactory(ctx, cfg, http.DefaultTransport)
+	if clientConfig.LoadAWS == nil {
+		clientConfig.LoadAWS = newAWSConfigLoader(ctx)
+	}
+
+	authTransport, err := clientConfig.TransportFactory(ctx, cfg, http.DefaultTransport, clientConfig.LoadAWS)
 	if err != nil {
 		return Client{}, fmt.Errorf("could not create GitHub transport: %w", err)
 	}
@@ -104,6 +109,33 @@ func (c Client) GetFileContent(ctx context.Context, owner string, repo string, p
 	return "", fmt.Errorf("path %s in repo %s/%s returned no content", path, owner, repo)
 }
 
+// installationAccount identifies the account a GitHub App installation belongs
+// to. The numeric ID is what installations are compared on: a login is
+// renameable and, once released, claimable by another account, so comparing
+// logins would let an unrelated account inherit an app's association. The
+// login is carried for logging only.
+type installationAccount struct {
+	ID    int64
+	Login string
+}
+
+// InstallationAccount queries the account this client's installation belongs
+// to. It is the only call the registry makes to verify that every configured
+// app shares one organization.
+func (c Client) InstallationAccount(ctx context.Context) (installationAccount, error) {
+	installation, _, err := c.client.Apps.GetInstallation(ctx, c.installationID)
+	if err != nil {
+		return installationAccount{}, fmt.Errorf("could not query installation %d: %w", c.installationID, err)
+	}
+
+	account := installation.GetAccount()
+	if account == nil || account.GetID() == 0 {
+		return installationAccount{}, fmt.Errorf("installation %d has no account", c.installationID)
+	}
+
+	return installationAccount{ID: account.GetID(), Login: account.GetLogin()}, nil
+}
+
 func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
 	tokenPermissions, err := scopesToPermissions(scopes)
 	if err != nil {
@@ -124,7 +156,12 @@ func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scope
 }
 
 type ClientConfig struct {
-	TransportFactory func(context.Context, appconfig.GithubConfig, http.RoundTripper) (http.RoundTripper, error)
+	TransportFactory func(context.Context, appconfig.GithubConfig, http.RoundTripper, AWSConfigLoader) (http.RoundTripper, error)
+
+	// LoadAWS is shared across every client built from one registry, so a
+	// multi-app deployment resolves AWS credentials once rather than once per
+	// app. Nil means "resolve privately", which is correct for a lone client.
+	LoadAWS AWSConfigLoader
 }
 
 type ClientOption func(*ClientConfig)
@@ -133,9 +170,16 @@ func WithAppTransport(clientConfig *ClientConfig) {
 	clientConfig.TransportFactory = createAppTransport
 }
 
+// WithAWSConfigLoader shares one AWS configuration resolution across clients.
+func WithAWSConfigLoader(loadAWS AWSConfigLoader) ClientOption {
+	return func(clientConfig *ClientConfig) {
+		clientConfig.LoadAWS = loadAWS
+	}
+}
+
 func WithTokenTransport(clientConfig *ClientConfig) {
-	clientConfig.TransportFactory = func(ctx context.Context, cfg appconfig.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
-		signingKey, err := createSigningKey(ctx, cfg)
+	clientConfig.TransportFactory = func(_ context.Context, cfg appconfig.GithubConfig, wrapped http.RoundTripper, loadAWS AWSConfigLoader) (http.RoundTripper, error) {
+		signingKey, err := createSigningKey(cfg, loadAWS)
 		if err != nil {
 			return nil, fmt.Errorf("create signing key: %w", err)
 		}
@@ -163,8 +207,8 @@ func WithTokenTransport(clientConfig *ClientConfig) {
 	}
 }
 
-func createAppTransport(ctx context.Context, cfg appconfig.GithubConfig, wrapped http.RoundTripper) (http.RoundTripper, error) {
-	signingKey, err := createSigningKey(ctx, cfg)
+func createAppTransport(_ context.Context, cfg appconfig.GithubConfig, wrapped http.RoundTripper, loadAWS AWSConfigLoader) (http.RoundTripper, error) {
+	signingKey, err := createSigningKey(cfg, loadAWS)
 	if err != nil {
 		return nil, fmt.Errorf("could not create signing key for GitHub transport: %w", err)
 	}
@@ -183,9 +227,13 @@ func createAppTransport(ctx context.Context, cfg appconfig.GithubConfig, wrapped
 // createSigningKey returns the appropriate signing key based on configuration.
 // Returns either a jwk.Key for PEM-based signing or a kmsSigningKey for AWS
 // KMS-based signing.
-func createSigningKey(ctx context.Context, cfg appconfig.GithubConfig) (any, error) {
+//
+// loadAWS resolves the AWS configuration for KMS-backed keys. Callers building
+// more than one key share a single loader so credentials are resolved once for
+// every app rather than once per app.
+func createSigningKey(cfg appconfig.GithubConfig, loadAWS AWSConfigLoader) (any, error) {
 	if cfg.PrivateKeyARN != "" {
-		return createKMSSigningKey(ctx, cfg.PrivateKeyARN)
+		return createKMSSigningKey(cfg.PrivateKeyARN, loadAWS)
 	}
 
 	if cfg.PrivateKey != "" {
@@ -195,9 +243,30 @@ func createSigningKey(ctx context.Context, cfg appconfig.GithubConfig) (any, err
 	return nil, fmt.Errorf("no private key configuration specified")
 }
 
-// createKMSSigningKey creates a KMS signing key using the AWS SDK.
-func createKMSSigningKey(ctx context.Context, arn string) (kmsSigningKey, error) {
-	awsCfg, err := config.LoadDefaultConfig(ctx)
+// AWSConfigLoader resolves the AWS configuration used by KMS-backed signing
+// keys. It takes no context: see kmsSigningKey for why nothing on the signing
+// path may capture one.
+type AWSConfigLoader func() (aws.Config, error)
+
+// newAWSConfigLoader resolves the default AWS configuration at most once, on
+// first use. Deployments with no ARN-backed key never resolve credentials at
+// all, and a registry of several ARN-backed apps resolves them once between
+// them.
+//
+// ctx governs the resolution only; the resulting aws.Config outlives it, and
+// each SDK operation supplies its own context.
+func newAWSConfigLoader(ctx context.Context) AWSConfigLoader {
+	return sync.OnceValues(func() (aws.Config, error) {
+		return config.LoadDefaultConfig(ctx)
+	})
+}
+
+// createKMSSigningKey creates a KMS signing key using the AWS SDK. It contacts
+// nothing: the first network call a KMS-backed app makes is the signing
+// operation itself, so a bad ARN, an IAM denial or a KMS outage surfaces on
+// the verification or minting path, never here.
+func createKMSSigningKey(arn string, loadAWS AWSConfigLoader) (kmsSigningKey, error) {
+	awsCfg, err := loadAWS()
 	if err != nil {
 		return kmsSigningKey{}, fmt.Errorf("load AWS config: %w", err)
 	}
@@ -205,7 +274,6 @@ func createKMSSigningKey(ctx context.Context, arn string) (kmsSigningKey, error)
 	client := kms.NewFromConfig(awsCfg)
 
 	return kmsSigningKey{
-		ctx:    ctx,
 		client: client,
 		arn:    arn,
 	}, nil

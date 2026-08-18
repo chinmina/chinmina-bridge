@@ -34,7 +34,6 @@ func TestKMSSigner_Sign(t *testing.T) {
 	}
 
 	key := kmsSigningKey{
-		ctx:    context.Background(),
 		client: mockClient,
 		arn:    "arn:aws:kms:us-east-1:123456789:key/test-key",
 	}
@@ -62,7 +61,6 @@ func TestKMSSigner_Sign_KMSError(t *testing.T) {
 	}
 
 	key := kmsSigningKey{
-		ctx:    context.Background(),
 		client: mockClient,
 		arn:    "arn:aws:kms:us-east-1:123456789:key/test-key",
 	}
@@ -107,7 +105,6 @@ func TestDelegatingSigner_Sign_KMSKey(t *testing.T) {
 	}
 
 	key := kmsSigningKey{
-		ctx:    context.Background(),
 		client: mockClient,
 		arn:    "arn:aws:kms:us-east-1:123456789:key/test-key",
 	}
