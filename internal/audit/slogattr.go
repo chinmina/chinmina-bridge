@@ -118,6 +118,7 @@ func (e *Entry) SlogAttrs() []slog.Attr {
 		Str("requestedProfile", e.RequestedProfile).
 		Str("requestedRepository", e.RequestedRepository).
 		Str("vendedRepository", e.VendedRepository).
+		Str("app", e.App).
 		Str("hashedToken", e.HashedToken).
 		Strs("repositories", e.Repositories).
 		Strs("permissions", e.Permissions)

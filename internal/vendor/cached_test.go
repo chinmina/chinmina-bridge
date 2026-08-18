@@ -868,7 +868,7 @@ organization:
 	})
 
 	c := newTestCached(t, defaultTTL)
-	m := vendor.Authorized(c(vendor.Vending(vendor.OrgRepositories, tokenVendor)))
+	m := vendor.Authorized(c(vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))))
 	v := vendor.Auditor(m)
 
 	ref := profile.ProfileRef{

@@ -15,9 +15,11 @@ import (
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/jwt/jwxtest"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
+	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/chinmina/chinmina-bridge/internal/testhelpers"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -37,17 +39,56 @@ type APITestHarness struct {
 	GitHubMock          *testhelpers.MockGitHubServer
 	BuildkiteMock       *testhelpers.MockBuildkiteServer
 	ProfileStore        *profile.ProfileStore
-	jwk                 jwxtest.JWK
-	valkeyAddr          string
-	valkeyPassword      string
+
+	// Apps is the registry the routes were built with. Tests compile profiles
+	// against it so a profile naming an app agrees with what the running
+	// service considers usable.
+	Apps           github.Registry
+	jwk            jwxtest.JWK
+	valkeyAddr     string
+	valkeyPassword string
 }
 
-// APITestHarnessOption configures the API test harness.
-type APITestHarnessOption func(*config.Config)
+// APITestHarnessOption configures the API test harness. It receives the
+// harness as well as the configuration because some options need the mock
+// servers, which exist before the service is configured — an app registry is
+// verified against the GitHub mock during construction, so a test must be able
+// to set up that mock's responses first.
+type APITestHarnessOption func(*APITestHarness, *config.Config)
+
+// WithGitHubApps configures additional named GitHub Apps, as GITHUB_APPS does
+// in a deployment. Entries inherit the mock's API URL, so their installation
+// verification and minting both resolve against it.
+func WithGitHubApps(entries ...GitHubAppEntry) APITestHarnessOption {
+	return func(_ *APITestHarness, cfg *config.Config) {
+		encoded, err := json.Marshal(entries)
+		if err != nil {
+			panic(fmt.Sprintf("could not encode GITHUB_APPS: %v", err))
+		}
+		cfg.Github.Apps = string(encoded)
+	}
+}
+
+// WithInstallation configures the GitHub mock's response for one installation
+// before the registry verifies it, which is the only way to exercise an app
+// that verification disables.
+func WithInstallation(installationID int64, installation testhelpers.MockInstallation) APITestHarnessOption {
+	return func(h *APITestHarness, _ *config.Config) {
+		h.GitHubMock.SetInstallation(installationID, installation)
+	}
+}
+
+// GitHubAppEntry mirrors one GITHUB_APPS entry.
+type GitHubAppEntry struct {
+	Name           string `json:"name"`
+	ApplicationID  int64  `json:"appId"`
+	InstallationID int64  `json:"installationId"`
+	PrivateKey     string `json:"privateKey"`
+}
 
 // WithValkeyCache configures the test harness to use a Valkey cache container.
 func WithValkeyCache() APITestHarnessOption {
-	return func(cfg *config.Config) {
+	return func(_ *APITestHarness, cfg *config.Config) {
 		cfg.Cache.Type = "valkey"
 	}
 }
@@ -55,7 +96,7 @@ func WithValkeyCache() APITestHarnessOption {
 // WithBasePath configures the test harness with a base path prefix for
 // sub-path deployment testing.
 func WithBasePath(basePath string) APITestHarnessOption {
-	return func(cfg *config.Config) {
+	return func(_ *APITestHarness, cfg *config.Config) {
 		cfg.Server.BasePath = basePath
 	}
 }
@@ -124,7 +165,7 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 
 	// Apply options
 	for _, opt := range options {
-		opt(&cfg)
+		opt(harness, &cfg)
 	}
 
 	if cfg.Cache.Type == "valkey" {
@@ -143,12 +184,27 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 	clients, err := configureUpstreamClients(context.Background(), cfg, validated, &hooks)
 	require.NoError(t, err)
 
+	harness.Apps = clients.apps
+
 	handler := configureServerRoutes(validated, clients, harness.ProfileStore)
 
 	harness.Server = httptest.NewServer(handler)
 	hooks.AddClose("api-server", harness.Server)
 
 	return harness
+}
+
+// UpdateProfiles compiles profile YAML against this harness's app registry and
+// installs it as the current generation. Compiling against the registry is
+// what makes a profile naming an app valid in the same way it would be in a
+// deployment.
+func (h *APITestHarness) UpdateProfiles(t *testing.T, yamlContent string) {
+	t.Helper()
+
+	profiles, err := profiletest.CompileFromYAML(yamlContent, h.Apps.IsUsable)
+	require.NoError(t, err)
+
+	h.ProfileStore.Update(t.Context(), profiles)
 }
 
 // GenerateToken creates a valid JWT signed with the test JWK.

@@ -34,14 +34,37 @@ func initOutcomeMetrics() {
 	})
 }
 
-func recordOutcome(ctx context.Context, result string) {
+func recordOutcome(ctx context.Context, result string, appName string) {
 	initOutcomeMetrics()
 	if tokenCacheOutcome == nil {
 		return
 	}
 	tokenCacheOutcome.Add(ctx, 1,
-		metric.WithAttributes(attribute.String("token.cache.result", result)),
+		metric.WithAttributes(
+			attribute.String("token.cache.result", result),
+			attribute.String("token.app", appName),
+		),
 	)
+}
+
+// cacheKey identifies a cached token by configuration generation, minting app
+// identity, and profile.
+//
+// The digest alone is insufficient. The YAML names an app, but the mapping
+// from that name to a credential lives in deployment configuration, so
+// repointing a name leaves the YAML — and the digest — unchanged while the
+// cache keeps serving tokens minted through the previous app. The key carries
+// the identity rather than the name, so only a repointed app's entries are
+// orphaned: two names for one application and installation share entries,
+// differing only in attribution.
+//
+// Numeric identifiers cannot contain the separator, so the key stays
+// unambiguous. This format differs from the previous one for the default app
+// too, so deploying it orphans every existing entry once: old and new formats
+// are disjoint keyspaces, each warms independently during a rolling
+// deployment, and nothing reaps the old ones — they expire.
+func cacheKey[T any](r Resolved[T]) string {
+	return fmt.Sprintf("%s:%d:%d:%s", r.Digest, r.App.ApplicationID, r.App.InstallationID, r.Ref.String())
 }
 
 // Cached supplies a vendor that caches the results of the wrapped vendor. The
@@ -59,19 +82,25 @@ func Cached[T any](tokenCache cache.TokenCache[ProfileToken]) func(ProfileTokenV
 				return NewVendorFailed(fmt.Errorf("no configuration generation resolved for profile %s", r.Ref))
 			}
 
-			key := fmt.Sprintf("%s:%s", r.Digest, r.Ref.String())
+			// An unresolved identity would key every app's entries together
+			// under zeroes, so refuse rather than assume the default app.
+			if r.App.IsZero() {
+				return NewVendorFailed(fmt.Errorf("no app identity resolved for profile %s", r.Ref))
+			}
+
+			key := cacheKey(r)
 
 			cachedToken, found, err := tokenCache.Get(ctx, key)
 			if err != nil {
 				// retrieval errors are effectively cache misses, but we record them
 				// separately to identify cache issues in production
-				recordOutcome(ctx, "error")
+				recordOutcome(ctx, "error", r.App.Name)
 				slog.Warn("cache get failed", "error", err, "key", key)
 			} else if !found {
 				// successfully found that the key is not in the cache
-				recordOutcome(ctx, "miss")
+				recordOutcome(ctx, "miss", r.App.Name)
 			} else if token, ok := checkTokenRepository(cachedToken, requestedRepository); !ok {
-				recordOutcome(ctx, "mismatch")
+				recordOutcome(ctx, "mismatch", r.App.Name)
 
 				if r.Ref.Type == profile.ProfileTypeOrg {
 					// For org profiles, a mismatch means the request is for a repo not
@@ -101,7 +130,7 @@ func Cached[T any](tokenCache cache.TokenCache[ProfileToken]) func(ProfileTokenV
 				}
 			} else {
 				// short circuit and return on a cache hit
-				recordOutcome(ctx, "hit")
+				recordOutcome(ctx, "hit", r.App.Name)
 				return NewVendorSuccess(token)
 			}
 

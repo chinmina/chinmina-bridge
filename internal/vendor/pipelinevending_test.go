@@ -89,7 +89,7 @@ func TestPipelineVending_FailsWhenTokenVendorFails(t *testing.T) {
 		return "", time.Time{}, errors.New("token vendor failed")
 	})
 
-	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), tokenVendor)
+	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -115,7 +115,7 @@ func TestPipelineVending_SucceedsWithTokenWhenPossible(t *testing.T) {
 		return "vended-token-value", vendedDate, nil
 	})
 
-	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), tokenVendor)
+	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -152,7 +152,7 @@ func TestPipelineVending_SucceedsWithEmptyRequestedRepo(t *testing.T) {
 		return "vended-token-value", vendedDate, nil
 	})
 
-	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), tokenVendor)
+	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -189,7 +189,7 @@ func TestPipelineVending_TranslatesSSHToHTTPSForPipelineRepo(t *testing.T) {
 		return "vended-token-value", vendedDate, nil
 	})
 
-	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), tokenVendor)
+	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -256,7 +256,7 @@ func TestPipelineVending_IssuesTheResolvedProfilesPermissions(t *testing.T) {
 				return "vended-token-value", vendedDate, nil
 			})
 
-			v := vendor.Vending(vendor.PipelineRepositories(repoLookup), tokenVendor)
+			v := vendor.Vending(vendor.PipelineRepositories(repoLookup), mintingThrough(tokenVendor))
 
 			ref := profile.ProfileRef{
 				Organization: "organization-slug",

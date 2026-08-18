@@ -175,23 +175,22 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 
 	// Pipeline (repo) routes
 
-	// Until profiles can name an app, every token mints through the default
-	// app's identity. The registry is still the minting path so single-app and
-	// multi-app deployments share one code path.
-	defaultApp := clients.apps.DefaultIdentity()
-	mintDefault := func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
-		return clients.apps.CreateAccessToken(ctx, defaultApp, repoNames, scopes)
-	}
+	// Vending mints through whichever app the request resolved to. The
+	// registry is passed as a minting function rather than resolved per
+	// request inside the chain: Cached short-circuits before Vending runs, so
+	// the resolution that guards a warm entry has to happen in the resolver.
+	mint := clients.apps.CreateAccessToken
+	resolveApp := clients.apps.Resolve
 
 	repoVendor := vendor.Auditor(
 		vendor.Authorized(
 			vendor.Cached[profile.PipelineProfileAttr](clients.tokenCache)(
-				vendor.Vending(vendor.PipelineRepositories(clients.buildkite.RepositoryLookup), mintDefault),
+				vendor.Vending(vendor.PipelineRepositories(clients.buildkite.RepositoryLookup), mint),
 			),
 		),
 	)
 
-	pipelineResolver := NewPipelineProfileResolver(orgProfile.GetPipelineProfile)
+	pipelineResolver := NewPipelineProfileResolver(orgProfile.GetPipelineProfile, resolveApp)
 	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, pipelineResolver))
 	mux.Handle("POST /token", pipelineTokenHandler)
 	mux.Handle("POST /token/{profile}", pipelineTokenHandler)
@@ -205,12 +204,12 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 	orgVendor := vendor.Auditor(
 		vendor.Authorized(
 			vendor.Cached[profile.OrganizationProfileAttr](clients.tokenCache)(
-				vendor.Vending(vendor.OrgRepositories, mintDefault),
+				vendor.Vending(vendor.OrgRepositories, mint),
 			),
 		),
 	)
 
-	orgResolver := NewOrgProfileResolver(orgProfile.GetOrganizationProfile)
+	orgResolver := NewOrgProfileResolver(orgProfile.GetOrganizationProfile, resolveApp)
 	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, orgResolver)))
 	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, orgResolver)))
 
