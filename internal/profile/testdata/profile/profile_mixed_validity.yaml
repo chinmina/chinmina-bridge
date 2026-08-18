@@ -1,0 +1,24 @@
+organization:
+  profiles:
+    - name: "org-valid"
+      repositories: ["test"]
+      permissions: ["contents:read"]
+
+    # invalid: repositories must be non-empty
+    - name: "org-empty-repositories"
+      repositories: []
+      permissions: ["contents:read"]
+
+    # invalid: permissions must be non-empty
+    - name: "org-empty-permissions"
+      repositories: ["test"]
+      permissions: []
+
+pipeline:
+  profiles:
+    - name: "pipeline-valid"
+      permissions: ["contents:read"]
+
+    # invalid: permissions must be non-empty
+    - name: "pipeline-empty-permissions"
+      permissions: []
