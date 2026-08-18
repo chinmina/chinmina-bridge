@@ -48,7 +48,7 @@ pipeline:
 		},
 	}
 
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:docs/profile.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:docs/profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, profiles.digest)
@@ -74,10 +74,10 @@ func TestFetchOrganizationProfile_ReturnsCorrectDigest(t *testing.T) {
 	}
 
 	// Fetch the same profile twice
-	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:profile.yaml", gh)
+	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
-	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:profile.yaml", gh)
+	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Digests should be identical for same content
@@ -101,7 +101,7 @@ func TestFetchOrganizationProfile_CanBeCalledMultipleTimes(t *testing.T) {
 
 	// Call multiple times
 	for range 3 {
-		profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+		profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh, DefaultAppOnly)
 		require.NoError(t, err)
 		assert.NotEmpty(t, profiles.digest)
 	}
@@ -112,7 +112,7 @@ func TestFetchOrganizationProfile_NonExistent(t *testing.T) {
 		err: errors.New("404 not found"),
 	}
 
-	_, err := FetchOrganizationProfile(context.Background(), "acme:silk:nonexistent.yaml", gh)
+	_, err := FetchOrganizationProfile(context.Background(), "acme:silk:nonexistent.yaml", gh, DefaultAppOnly)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "organization profile load failed")
 }
@@ -132,7 +132,7 @@ func TestProfileStore_GetOrganizationProfile_Success(t *testing.T) {
 	}
 
 	// Fetch and load profiles
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Create store and update with profiles
@@ -160,7 +160,7 @@ func TestProfileStore_GetOrganizationProfile_NotFound(t *testing.T) {
 		},
 	}
 
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	store := NewProfileStore()
@@ -189,7 +189,7 @@ func TestProfileStore_GetOrganizationProfile_Unavailable(t *testing.T) {
 		},
 	}
 
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	store := NewProfileStore()
@@ -226,7 +226,7 @@ pipeline:
 	}
 
 	// Fetch and load profiles
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Create store and update with profiles
@@ -262,7 +262,7 @@ pipeline:
 		},
 	}
 
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	store := NewProfileStore()
@@ -290,7 +290,7 @@ func TestProfileStore_Digest(t *testing.T) {
 		},
 	}
 
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	store := NewProfileStore()
@@ -326,13 +326,13 @@ func TestProfileStore_Digest_ChangesWithUpdate(t *testing.T) {
 	store := NewProfileStore()
 
 	// Load first version
-	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh)
+	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 	store.Update(t.Context(), profiles1)
 	digest1 := store.Digest()
 
 	// Update with different content
-	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh)
+	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 	store.Update(t.Context(), profiles2)
 	digest2 := store.Digest()
@@ -358,7 +358,7 @@ func TestProfileStore_Concurrency(t *testing.T) {
 		},
 	}
 
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:silk:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	store := NewProfileStore()
@@ -418,7 +418,7 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 	store := NewProfileStore()
 
 	// Load first version
-	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh)
+	profiles1, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 	store.Update(t.Context(), profiles1)
 
@@ -427,7 +427,7 @@ func TestProfileStore_Update_MultipleTimes(t *testing.T) {
 	assert.Equal(t, NewSpecificScope("v1"), profile1.Attrs.Scope)
 
 	// Update with second version
-	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh)
+	profiles2, err := FetchOrganizationProfile(context.Background(), "acme:test:v2.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 	store.Update(t.Context(), profiles2)
 
@@ -457,7 +457,7 @@ func TestProfileStore_Update_NoChange(t *testing.T) {
 
 	store := NewProfileStore()
 
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:test:v1.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	// First update
@@ -479,7 +479,7 @@ func TestFetchOrganizationProfile_InvalidYAML(t *testing.T) {
 		},
 	}
 
-	_, err := FetchOrganizationProfile(context.Background(), "acme:test:invalid.yaml", gh)
+	_, err := FetchOrganizationProfile(context.Background(), "acme:test:invalid.yaml", gh, DefaultAppOnly)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "profile file parsing failed")
 }
@@ -513,7 +513,7 @@ pipeline:
 	}
 
 	// Test the load function directly (via FetchOrganizationProfile)
-	profiles, err := FetchOrganizationProfile(context.Background(), "acme:config:profile.yaml", gh)
+	profiles, err := FetchOrganizationProfile(context.Background(), "acme:config:profile.yaml", gh, DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Verify profiles are loaded correctly

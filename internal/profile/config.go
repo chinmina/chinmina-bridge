@@ -53,12 +53,22 @@ type organizationProfile struct {
 	Match        []matchRule `yaml:"match"`
 	Repositories []string    `yaml:"repositories"`
 	Permissions  []string    `yaml:"permissions"`
+
+	// App names the GitHub App this profile's tokens are minted through. A
+	// pointer distinguishes an omitted property from an explicitly empty one:
+	// omitted means the default app, while `app: ""` names nothing and is a
+	// mistake worth reporting rather than silently reading as the default.
+	App *string `yaml:"app"`
 }
 
 type pipelineProfile struct {
 	Name        string      `yaml:"name"`
 	Match       []matchRule `yaml:"match"`
 	Permissions []string    `yaml:"permissions"`
+
+	// App names the GitHub App this profile's tokens are minted through. See
+	// organizationProfile.App for why this is a pointer.
+	App *string `yaml:"app"`
 }
 
 type matchRule struct {

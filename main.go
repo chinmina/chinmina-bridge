@@ -268,12 +268,12 @@ func runWithShutdownHooks(ctx context.Context, run func(context.Context, *server
 //
 // No timeout: a deadline of ours would be evidence about this service rather
 // than the profile source, so the platform's grace period is the backstop.
-func startProfileRefresh(taskCtx context.Context, orgProfile *profile.ProfileStore, source *github.Client, location string) error {
+func startProfileRefresh(taskCtx context.Context, orgProfile *profile.ProfileStore, source *github.Client, location string, usableApp profile.AppLookup) error {
 	if source == nil {
 		return nil
 	}
 
-	ready := profile.RefreshTask(orgProfile, *source, location).Start(taskCtx)
+	ready := profile.RefreshTask(orgProfile, *source, location, usableApp).Start(taskCtx)
 
 	return awaitFirstLoad(taskCtx, ready)
 }
@@ -348,7 +348,7 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 	// every exit from startup, not just once the server is serving.
 	shutdownHooks.Add("context", func() error { stop(); return nil })
 
-	err = startProfileRefresh(taskCtx, orgProfile, clients.profileSource, validated.orgProfileLocation)
+	err = startProfileRefresh(taskCtx, orgProfile, clients.profileSource, validated.orgProfileLocation, clients.apps.IsUsable)
 	if err != nil {
 		return err
 	}

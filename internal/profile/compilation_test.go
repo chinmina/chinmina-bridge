@@ -243,7 +243,7 @@ func TestCompile_GracefulDegradation(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Valid profiles should be accessible
@@ -286,7 +286,7 @@ func TestCompile_DuplicateNameHandling(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 	orgProfiles := profiles.orgProfiles
 
@@ -308,7 +308,7 @@ func TestCompile_EmptyListsHandling(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 	orgProfiles := profiles.orgProfiles
 
@@ -340,7 +340,7 @@ func TestCompile_DigestPreservation(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	assert.Equal(t, digest, profiles.digest, "digest should be preserved through compilation")
@@ -354,7 +354,7 @@ func TestCompile_LocationPreservation(t *testing.T) {
 	require.NoError(t, err)
 
 	location := "github://acme/profiles/main/profiles.yaml"
-	profiles, err := compile(config, digest, location)
+	profiles, err := compile(config, digest, location, DefaultAppOnly)
 	require.NoError(t, err)
 
 	stats := profiles.Stats()
@@ -390,7 +390,7 @@ func TestCompile_PipelineDefaultsFallback(t *testing.T) {
 			config, digest, err := parse(string(yamlContent))
 			require.NoError(t, err)
 
-			profiles, err := compile(config, digest, "local")
+			profiles, err := compile(config, digest, "local", DefaultAppOnly)
 			require.NoError(t, err)
 
 			defaultProfile, err := profiles.GetPipelineProfile("default")
@@ -407,7 +407,7 @@ func TestProfileMatching_ExactMatch_Success(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -431,7 +431,7 @@ func TestProfileMatching_ExactMatch_Failure(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -458,7 +458,7 @@ func TestProfileMatching_RegexMatch_Success(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -482,7 +482,7 @@ func TestProfileMatching_RegexMatch_Failure(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -508,7 +508,7 @@ func TestProfileMatching_MultipleRules_AllPass(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -537,7 +537,7 @@ func TestProfileMatching_MultipleRules_OneFails(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -567,7 +567,7 @@ func TestProfileMatching_EmptyRules_AlwaysPasses(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -605,7 +605,7 @@ func TestCompilePipelineProfiles_ReservedNameRejection(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	// "default" should be invalid
 	_, err := result.Get("default")
@@ -629,7 +629,7 @@ func TestCompilePipelineProfiles_EmptyMatchRulesPass(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	profile, err := result.Get("open-profile")
 	require.NoError(t, err)
@@ -653,7 +653,7 @@ func TestCompilePipelineProfiles_EmptyPermissionsRejection(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	// "no-permissions" should be invalid
 	_, err := result.Get("no-permissions")
@@ -683,7 +683,7 @@ func TestCompilePipelineProfiles_DuplicateNames(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	// With duplicate names, the last profile wins (second's attributes overwrite first)
 	duplicateProfile, err := result.Get("duplicate")
@@ -732,7 +732,7 @@ func TestCompilePipelineProfiles_DefaultProfileCreation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions)
+			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions, DefaultAppOnly)
 
 			// "default" profile should exist
 			defaultProfile, err := result.Get("default")
@@ -758,7 +758,7 @@ func TestCompilePipelineProfiles_WithMatchRules(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	profile, err := result.Get("specific-pipeline")
 	require.NoError(t, err)
@@ -789,7 +789,7 @@ func TestCompilePipelineProfiles_InvalidMatchRule(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	// "bad-regex-profile" should be marked invalid due to bad regex
 	_, err := result.Get("bad-regex-profile")
@@ -862,7 +862,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	result := profiles.orgProfiles
@@ -938,7 +938,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	result := profiles.orgProfiles
@@ -1015,7 +1015,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	result := profiles.pipelineProfiles
@@ -1067,7 +1067,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	_, err = compile(config, digest, "local")
+	_, err = compile(config, digest, "local", DefaultAppOnly)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid default permissions")
 	assert.Contains(t, err.Error(), "invalid permission field")
@@ -1164,7 +1164,7 @@ func TestCompilePipelineProfiles_MetadataReadAutoAdded(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions)
+			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions, DefaultAppOnly)
 
 			profile, err := result.Get(tt.profileName)
 			require.NoError(t, err)
@@ -1220,7 +1220,7 @@ func TestCompileOrganizationProfiles_MetadataReadAutoAdded(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := compileOrganizationProfiles(tt.profiles)
+			result := compileOrganizationProfiles(tt.profiles, DefaultAppOnly)
 
 			profile, err := result.Get(tt.profileName)
 			require.NoError(t, err)
@@ -1250,7 +1250,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	p, err := profiles.GetOrgProfile("scoped-profile")
@@ -1276,7 +1276,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	p, err := profiles.GetOrgProfile("all-repos-profile")
@@ -1329,7 +1329,7 @@ pipeline:
 			config, digest, err := parse(yamlContent)
 			require.NoError(t, err)
 
-			profiles, err := compile(config, digest, "local")
+			profiles, err := compile(config, digest, "local", DefaultAppOnly)
 			require.NoError(t, err)
 
 			_, err = profiles.GetOrgProfile(tt.profileName)
@@ -1358,7 +1358,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	p, err := profiles.GetOrgProfile("old-wildcard")
@@ -1398,7 +1398,7 @@ pipeline:
 			config, digest, err := parse(yamlContent)
 			require.NoError(t, err)
 
-			profiles, err := compile(config, digest, "local")
+			profiles, err := compile(config, digest, "local", DefaultAppOnly)
 			require.NoError(t, err)
 
 			_, err = profiles.GetOrgProfile(tt.profileName)
@@ -1423,7 +1423,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	_, err = profiles.GetPipelineProfile("team/deploy")

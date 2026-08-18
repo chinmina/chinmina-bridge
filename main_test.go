@@ -268,7 +268,7 @@ func TestStartProfileRefresh_NotConfigured(t *testing.T) {
 
 	// Returning cleanly is the assertion: nothing loaded, no gate entered, so an
 	// unconfigured deployment starts as it always did.
-	err := startProfileRefresh(t.Context(), store, nil, "")
+	err := startProfileRefresh(t.Context(), store, nil, "", profile.DefaultAppOnly)
 
 	require.NoError(t, err)
 	assert.Equal(t, before, store.Digest())
