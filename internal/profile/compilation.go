@@ -35,10 +35,81 @@ func resolveRepositoryScope(repos []string) RepositoryScope {
 	return NewSpecificScope(repos...)
 }
 
+// AppLookup reports whether a profile may name this app: present in the app
+// registry, and enabled. It is the registry's own resolution function, so a
+// compiled profile and a live request can never disagree about which apps are
+// usable.
+type AppLookup func(name string) bool
+
+// DefaultAppOnly is the lookup for a deployment with no app registry: the
+// default app is usable and nothing else is. It is also what compilation
+// outside a running service (tests, tooling) should use.
+func DefaultAppOnly(name string) bool {
+	return name == github.DefaultAppName
+}
+
+// resolveProfileApp normalises and validates a profile's declared app.
+//
+// Normalisation happens here rather than at the request boundary so that an
+// omitted `app` and an explicit `app: default` produce the same attribute
+// value: the two spellings are indistinguishable downstream, and so produce
+// identical audit attribution for identical behaviour. It also means a valid
+// profile's app name is never empty, which is what lets the resolver treat an
+// empty one as a defect rather than a default.
+func resolveProfileApp(app *string, usable AppLookup) (string, error) {
+	if app == nil {
+		return github.DefaultAppName, nil
+	}
+
+	if *app == "" {
+		return "", fmt.Errorf("app must not be empty")
+	}
+
+	if !usable(*app) {
+		// Unknown and disabled are one answer by design: the registry does not
+		// distinguish them, so that no caller can resolve a disabled app by
+		// forgetting to check a flag.
+		return "", fmt.Errorf("app %q is not a configured, enabled application", *app)
+	}
+
+	return *app, nil
+}
+
+// validateOrganizationProfile checks one profile in isolation and returns the
+// app its tokens mint through. Validation is separated from the loop so that
+// adding a rule does not make the compilation loop harder to read: the loop's
+// job is bookkeeping across profiles, this function's is one profile's
+// validity.
+func validateOrganizationProfile(prof organizationProfile, usableApp AppLookup) (string, error) {
+	// Reject names that would produce an ambiguous URN
+	if err := validateProfileName(prof.Name); err != nil {
+		return "", err
+	}
+
+	if len(prof.Repositories) == 0 {
+		return "", fmt.Errorf("repositories list must be non-empty")
+	}
+
+	if err := validateRepositories(prof.Repositories); err != nil {
+		return "", fmt.Errorf("invalid repositories: %w", err)
+	}
+
+	if len(prof.Permissions) == 0 {
+		return "", fmt.Errorf("permissions list must be non-empty")
+	}
+
+	if err := validatePermissions(prof.Permissions); err != nil {
+		return "", fmt.Errorf("invalid permissions: %w", err)
+	}
+
+	return resolveProfileApp(prof.App, usableApp)
+}
+
 // compileOrganizationProfiles compiles organization profiles from config.
 // Returns a ProfileStoreOf containing valid and invalid profiles.
-func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[OrganizationProfileAttr] {
+func compileOrganizationProfiles(profiles []organizationProfile, usableApp AppLookup) ProfileStoreOf[OrganizationProfileAttr] {
 	validMatchers := make(map[string]Matcher)
+	validApps := make(map[string]string)
 	invalidProfiles := make(map[string]error)
 	duplicateNameCheck := duplicateNameValidator()
 
@@ -49,35 +120,9 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 			continue
 		}
 
-		// Reject names that would produce an ambiguous URN
-		if err := validateProfileName(prof.Name); err != nil {
+		app, err := validateOrganizationProfile(prof, usableApp)
+		if err != nil {
 			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		// Check for empty repositories list
-		if len(prof.Repositories) == 0 {
-			err := fmt.Errorf("repositories list must be non-empty")
-			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		// Validate repository format
-		if err := validateRepositories(prof.Repositories); err != nil {
-			invalidProfiles[prof.Name] = fmt.Errorf("invalid repositories: %w", err)
-			continue
-		}
-
-		// Check for empty permissions list
-		if len(prof.Permissions) == 0 {
-			err := fmt.Errorf("permissions list must be non-empty")
-			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		// Validate permissions format
-		if err := validatePermissions(prof.Permissions); err != nil {
-			invalidProfiles[prof.Name] = fmt.Errorf("invalid permissions: %w", err)
 			continue
 		}
 
@@ -88,6 +133,7 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 		}
 
 		validMatchers[prof.Name] = matcher
+		validApps[prof.Name] = app
 	}
 
 	// Log warnings for invalid profiles
@@ -122,6 +168,7 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 		attrs := OrganizationProfileAttr{
 			Scope:       scope,
 			Permissions: ensureMetadataRead(p.Permissions),
+			App:         validApps[p.Name],
 		}
 
 		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
@@ -134,8 +181,9 @@ func compileOrganizationProfiles(profiles []organizationProfile) ProfileStoreOf[
 // Creates a "default" profile from defaultPermissions.
 // Validates that user-defined profiles don't use the reserved "default" name.
 // Returns a ProfileStoreOf containing valid and invalid profiles.
-func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []string) ProfileStoreOf[PipelineProfileAttr] {
+func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []string, usableApp AppLookup) ProfileStoreOf[PipelineProfileAttr] {
 	validMatchers := make(map[string]Matcher)
+	validApps := make(map[string]string)
 	invalidProfiles := make(map[string]error)
 	duplicateNameCheck := duplicateNameValidator()
 
@@ -172,6 +220,12 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 			continue
 		}
 
+		app, err := resolveProfileApp(prof.App, usableApp)
+		if err != nil {
+			invalidProfiles[prof.Name] = err
+			continue
+		}
+
 		// Compile match rules (empty rules are allowed)
 		matcher, err := compileMatchRules(prof.Match)
 		if err != nil {
@@ -180,6 +234,7 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 		}
 
 		validMatchers[prof.Name] = matcher
+		validApps[prof.Name] = app
 	}
 
 	// Log warnings for invalid profiles
@@ -205,6 +260,7 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 
 		attrs := PipelineProfileAttr{
 			Permissions: ensureMetadataRead(p.Permissions),
+			App:         validApps[p.Name],
 		}
 
 		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
@@ -212,9 +268,14 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 
 	// Add "default" profile from defaultPermissions
 	// Empty match rules means it matches all pipelines
+	//
+	// It always mints through the default app: it is synthesised rather than
+	// declared, so there is no YAML to carry an `app` property, and the
+	// reserved name means none can be declared to override it.
 	defaultMatcher, _ := compileMatchRules(nil) // Empty rules always succeed
 	validProfiles["default"] = NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
 		Permissions: ensureMetadataRead(defaultPermissions),
+		App:         github.DefaultAppName,
 	})
 
 	return NewProfileStoreOf(validProfiles, invalidProfiles)
@@ -224,9 +285,14 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 // Invalid profiles are tracked in ProfileStoreOf's invalidProfiles map.
 // The digest is passed through to the returned Profiles.
 // Returns an error if the default pipeline permissions are invalid.
-func compile(config profileConfig, digest string, location string) (Profiles, error) {
+//
+// usableApp is consulted on every compile, not only the first. Profile
+// validity is a function of both the YAML and the registry, and compilation
+// runs again on every background refresh, so a profile naming an enabled app
+// stays valid across refreshes and one naming a disabled app stays invalid.
+func compile(config profileConfig, digest string, location string, usableApp AppLookup) (Profiles, error) {
 	// Compile organization profiles
-	orgProfiles := compileOrganizationProfiles(config.Organization.Profiles)
+	orgProfiles := compileOrganizationProfiles(config.Organization.Profiles, usableApp)
 
 	// Extract pipeline defaults with fallback
 	pipelineDefaults := config.Pipeline.Defaults.Permissions
@@ -240,7 +306,7 @@ func compile(config profileConfig, digest string, location string) (Profiles, er
 	}
 
 	// Compile pipeline profiles
-	pipelineProfiles := compilePipelineProfiles(config.Pipeline.Profiles, pipelineDefaults)
+	pipelineProfiles := compilePipelineProfiles(config.Pipeline.Profiles, pipelineDefaults, usableApp)
 
 	// Create and return Profiles
 	return NewProfiles(orgProfiles, pipelineProfiles, digest, location), nil

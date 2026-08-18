@@ -6,6 +6,7 @@ import (
 
 	"log/slog"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -26,10 +27,13 @@ func NewDefaultProfiles() Profiles {
 	// Create universal matcher (empty match rules always match)
 	defaultMatcher := CompositeMatcher()
 
-	// Create pipeline profiles map with only "default"
+	// Create pipeline profiles map with only "default", which always mints
+	// through the default app: this generation exists precisely because no
+	// configuration has been loaded, so no other app can have been named.
 	pipelineProfiles := map[string]AuthorizedProfile[PipelineProfileAttr]{
 		"default": NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
 			Permissions: []string{"contents:read", "metadata:read"},
+			App:         github.DefaultAppName,
 		}),
 	}
 
@@ -114,12 +118,17 @@ func (p *ProfileStore) Update(ctx context.Context, profiles Profiles) {
 
 // FetchOrganizationProfile loads organization profile configuration from GitHub.
 // This is the main entry point for production code.
-func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh GitHubClient) (Profiles, error) {
-	return load(ctx, gh, orgProfileLocation)
+//
+// usableApp travels with the fetch rather than being captured once at startup
+// so that the background refresh path validates against the same registry the
+// synchronous path does. A profile's validity depends on both the YAML and the
+// registry, and only one of those is reflected in the digest.
+func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh GitHubClient, usableApp AppLookup) (Profiles, error) {
+	return load(ctx, gh, orgProfileLocation, usableApp)
 }
 
 // load retrieves, parses, and compiles profile configuration from GitHub.
-func load(ctx context.Context, gh GitHubClient, orgProfileLocation string) (Profiles, error) {
+func load(ctx context.Context, gh GitHubClient, orgProfileLocation string, usableApp AppLookup) (Profiles, error) {
 	yamlContent, err := retrieve(ctx, gh, orgProfileLocation)
 	if err != nil {
 		return Profiles{}, err
@@ -130,7 +139,7 @@ func load(ctx context.Context, gh GitHubClient, orgProfileLocation string) (Prof
 		return Profiles{}, err
 	}
 
-	profiles, err := compile(config, digest, orgProfileLocation)
+	profiles, err := compile(config, digest, orgProfileLocation, usableApp)
 	if err != nil {
 		return Profiles{}, err
 	}
