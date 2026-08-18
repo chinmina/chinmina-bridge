@@ -1,4 +1,4 @@
-// Package repeat runs an action on a schedule until its context is cancelled.
+// Package repeat schedules repeating background work.
 package repeat
 
 import (
@@ -9,40 +9,26 @@ import (
 
 // Task runs an action on a schedule until its context is cancelled.
 //
-// Two intervals, chosen by whether the action has ever succeeded — never by how
-// it last failed. Retrying sooner does not make an upstream recover sooner;
-// what differs is the cost of waiting. Before the first success a caller is
-// typically blocked on it, so FirstInterval is short. Afterwards the work is
-// established and staleness is cheap, so Interval applies to every attempt,
-// including one that follows a failure.
+// The interval is chosen by whether the action has ever succeeded, never by how
+// it last failed: retrying sooner does not make an upstream recover sooner.
+// What differs is the cost of waiting, and before the first success a caller is
+// usually blocked on it.
 type Task struct {
-	// Name identifies the work in log records.
-	Name string
+	Name  string // identifies the work in log records
+	Attrs []any  // further log attributes, applied to every record
 
-	// Attrs are additional log attributes describing the work, applied to
-	// every record this task emits.
-	Attrs []any
+	FirstInterval time.Duration // delay before the first success
+	Interval      time.Duration // delay thereafter, failed attempts included
 
-	// FirstInterval is the delay between attempts before the first success.
-	FirstInterval time.Duration
-
-	// Interval is the delay between attempts once the action has succeeded.
-	Interval time.Duration
-
-	// Action is the work to repeat. Its failures are reported by the task, so
-	// it should return them rather than logging them itself.
+	// Action returns its failures rather than logging them; the task logs them.
 	Action func(context.Context) error
 }
 
-// Start runs the task in the background and returns a channel that is closed
-// once the action has succeeded for the first time.
+// Start runs the task in the background, returning a channel closed on the
+// action's first success.
 //
-// The channel is a latch, not a stream: it is closed exactly once and stays
-// closed, so any number of callers can wait on it, none can miss it, and there
-// is nothing to drain. A caller gating on the first success selects on it
-// alongside its own context.
-//
-// The task runs until ctx is cancelled.
+// Closing rather than sending makes it a latch: no caller can miss the signal,
+// and nothing has to drain it to keep the task running.
 func (t Task) Start(ctx context.Context) <-chan struct{} {
 	ready := make(chan struct{})
 
@@ -80,9 +66,8 @@ func (t Task) run(ctx context.Context, ready chan<- struct{}) {
 	}
 }
 
-// logFailure reports a failed attempt. Every failure is reported here, at a
-// single call site, so the record is the same shape whether or not the action
-// has ever succeeded.
+// logFailure is the only reporting site, so a failure logs the same shape
+// whether or not the action has ever succeeded.
 func (t Task) logFailure(err error) {
 	attrs := append([]any{"task", t.Name, "error", err}, t.Attrs...)
 

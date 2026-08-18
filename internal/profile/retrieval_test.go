@@ -15,9 +15,6 @@ func TestDecomposePath_Success(t *testing.T) {
 	assert.Equal(t, "docs/profile.yaml", path)
 }
 
-// A location that can never resolve has to be rejected here: startup waits on
-// the profile it names, so an unrejected one retries forever against GitHub
-// rather than failing as the configuration error it is.
 func TestDecomposePath_Invalid(t *testing.T) {
 	tests := []struct {
 		name     string

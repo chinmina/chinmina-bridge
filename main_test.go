@@ -95,18 +95,14 @@ func TestStartProfileRefresh(t *testing.T) {
 		store := profile.NewProfileStore()
 		before := store.Digest()
 
-		// The GitHub configuration is deliberately empty: reaching the client
-		// would fail, so returning cleanly proves nothing was loaded, no gate
-		// was entered and startup is unaffected.
+		// The GitHub config is deliberately empty: reaching the client would
+		// fail, so returning cleanly proves the gate was never entered.
 		err := startProfileRefresh(t.Context(), t.Context(), config.Config{}, store)
 
 		require.NoError(t, err)
 		assert.Equal(t, before, store.Digest())
 	})
 
-	// Startup now waits on the configured location, so a location that can
-	// never resolve has to fail here. Left to the gate it is indistinguishable
-	// from an outage and retries forever, holding the deployment closed.
 	t.Run("rejects a malformed organization profile location", func(t *testing.T) {
 		locations := []string{
 			"acme:silk",
@@ -138,9 +134,6 @@ func TestAwaitFirstLoad(t *testing.T) {
 		assert.NoError(t, awaitFirstLoad(t.Context(), ready))
 	})
 
-	// A signal arriving while the gate waits has to abandon it. Otherwise the
-	// process is killed where it stands and the shutdown hooks — including the
-	// telemetry flush describing why it was waiting — never run.
 	t.Run("abandons the wait when the context is cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()

@@ -12,30 +12,15 @@ import (
 )
 
 const (
-	// refreshInterval is the period between refreshes once a generation is
-	// being served.
 	refreshInterval = 5 * time.Minute
 
-	// firstLoadRetryInterval is the period between attempts before the first
-	// generation loads. It is much shorter than refreshInterval because the
-	// service is not yet accepting connections while it retries: every wasted
-	// second is time the deployment spends unavailable. Once a generation is
-	// being served that pressure is gone.
+	// Short, because startup blocks on this: every second spent retrying is a
+	// second the deployment is unavailable.
 	firstLoadRetryInterval = 5 * time.Second
 )
 
-// RefreshTask returns the background task that keeps the store's profile
-// generation current from the given location.
-//
-// The task's first success is the signal to start serving. Until a generation
-// has loaded the service has no configuration to serve: organization profile
-// requests are answered with 404 and pipeline requests with a built-in
-// permission set, while the instance reports healthy and counts as ready
-// during a rolling deployment.
-//
-// That signal is a latch on the first load only. Once it fires, later loss of
-// access to the profile source leaves the loaded generation in place and the
-// task keeps serving it.
+// RefreshTask keeps the store's profile generation current. Callers gate
+// startup on its first success.
 func RefreshTask(profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string) repeat.Task {
 	return repeat.Task{
 		Name:          "organization profile refresh",
@@ -48,10 +33,8 @@ func RefreshTask(profileStore *ProfileStore, gh GitHubClient, orgProfileLocation
 	}
 }
 
-// refresh performs a single profile refresh operation with tracing. Failures,
-// including a recovered panic, are returned rather than logged: the span
-// records them here, and the task driving this reports them at its own single
-// call site.
+// refresh loads one generation. Failures, including a recovered panic, are
+// returned rather than logged: the span records them, and the task logs them.
 func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string) (err error) {
 	tracer := otel.Tracer("github.com/chinmina/chinmina-bridge/internal/profile")
 	ctx, span := tracer.Start(ctx, "refresh_organization_profile")

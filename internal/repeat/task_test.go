@@ -23,8 +23,7 @@ const (
 	interval      = time.Minute
 )
 
-// stubAction stands in for the work being repeated, so the loop is exercised
-// without any of the action's own dependencies.
+// stubAction exercises the loop without the action's own dependencies.
 type stubAction struct {
 	calls atomic.Int32
 	mu    sync.Mutex
@@ -76,8 +75,7 @@ func closed(ready <-chan struct{}) bool {
 	}
 }
 
-// captureLogs redirects the default logger to a buffer for the duration of the
-// test, returning a function that decodes the records written so far.
+// captureLogs returns a function decoding the records written so far.
 func captureLogs(t *testing.T) func() []map[string]any {
 	t.Helper()
 
@@ -112,8 +110,7 @@ func TestTask_ReadyClosesOnFirstSuccess(t *testing.T) {
 	})
 }
 
-// The latch holds the caller closed for as long as the action keeps failing:
-// this is what stops a service serving before it has anything to serve.
+// Holding the caller closed while the action fails is the point of the latch.
 func TestTask_ReadyStaysOpenWhileFailing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		action := &stubAction{err: errors.New("upstream unavailable")}
@@ -136,9 +133,8 @@ func TestTask_ReadyStaysOpenWhileFailing(t *testing.T) {
 	})
 }
 
-// Once the first success has happened the long interval governs every attempt,
-// including one that follows a failure: retrying sooner would not make the
-// upstream recover sooner, and the work is no longer blocking anyone.
+// After the first success the long interval governs every attempt, a failed
+// one included.
 func TestTask_IntervalAfterFirstSuccess(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -195,8 +191,7 @@ func TestTask_StopsOnContextCancellation(t *testing.T) {
 	})
 }
 
-// Every failure is reported the same way, whether or not the action has ever
-// succeeded — one call site, one record shape.
+// A failure either side of the first success logs the same shape.
 func TestTask_LogsEveryFailureIdentically(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		logs := captureLogs(t)

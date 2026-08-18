@@ -173,35 +173,24 @@ func runWithShutdownHooks(ctx context.Context, run func(context.Context, *server
 	return run(ctx, shutdownHooks)
 }
 
-// startProfileRefresh starts the organization profile refresh task and blocks
-// until it has loaded a generation.
+// startProfileRefresh blocks until the first profile generation loads.
 //
-// Startup does not continue until that first load succeeds: an instance that
-// serves before it has a generation answers organization profile requests with
-// 404 and pipeline requests with a built-in permission set, while reporting
-// healthy and counting as ready during a rolling deployment. Not listening is
-// the readiness signal, so gating here — before serveHTTP opens the listening
-// socket — leaves the healthcheck contract unchanged.
+// An instance serving without one answers organization profiles with 404 and
+// pipelines with a built-in permission set, while reporting healthy to a
+// rolling deployment. Not listening is the readiness signal, so gating before
+// serveHTTP leaves the healthcheck contract alone.
 //
-// No timeout governs the wait. A deadline of our own would be evidence about
-// this service rather than about the profile source, so an unreachable source
-// blocks startup and the platform's startup grace period is the backstop; the
-// task logs each failed attempt while that plays out.
+// No timeout: a deadline of ours would be evidence about this service rather
+// than the profile source, so the platform's grace period is the backstop.
 //
-// Where no organization profile location is configured there is nothing to load
-// and nothing to gate on, so startup is unaffected.
-//
-// serverCtx is the process-scoped context the GitHub client is built against;
-// taskCtx is the shutdown-scoped context governing the refresh task.
+// serverCtx builds the GitHub client and outlives shutdown; taskCtx governs the
+// refresh task.
 func startProfileRefresh(serverCtx, taskCtx context.Context, cfg config.Config, orgProfile *profile.ProfileStore) error {
 	orgProfileLocation := cfg.Server.OrgProfile
 	if orgProfileLocation == "" {
 		return nil
 	}
 
-	// Check that the profile conforms to the expected format. This is the last
-	// chance to reject a location cheaply: past here a bad one is retried
-	// against GitHub, and startup waits on it.
 	err := profile.ValidateLocation(orgProfileLocation)
 	if err != nil {
 		return fmt.Errorf("invalid organization profile location: %w", err)
@@ -217,12 +206,9 @@ func startProfileRefresh(serverCtx, taskCtx context.Context, cfg config.Config, 
 	return awaitFirstLoad(taskCtx, ready)
 }
 
-// awaitFirstLoad blocks until the refresh task reports its first success, or
-// until ctx is cancelled — by a shutdown signal, or by shutdown itself.
-//
-// Abandoning the wait is reported as a startup failure: the instance never
-// became ready and never served a request, so it exits non-zero having run its
-// shutdown hooks, rather than being killed with its telemetry unflushed.
+// awaitFirstLoad treats cancellation as a startup failure: the instance never
+// became ready, so it exits non-zero having run its hooks rather than being
+// killed with its telemetry unflushed.
 func awaitFirstLoad(ctx context.Context, ready <-chan struct{}) error {
 	select {
 	case <-ready:
@@ -271,24 +257,19 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
 
-	// The task context is signal-aware because startup can now block
-	// indefinitely on the profile gate below. Shutdown hooks are registered by
-	// this point, but serveHTTP — which installs the serving path's own signal
-	// handling — is not reached until the gate opens. Without a handler
-	// covering the wait, a SIGTERM during it kills the process outright and the
-	// hooks never run, discarding the very telemetry that explains why startup
-	// was waiting.
+	// Signal-aware because the gate below can block indefinitely, and
+	// serveHTTP — which installs the serving path's handler — is not reached
+	// until it opens. Without this, a SIGTERM while waiting kills the process
+	// before the hooks can flush the telemetry explaining the wait.
 	//
-	// Only the task context is signal-aware: serverContext constructs the
-	// GitHub clients, and cancelling that on SIGTERM would break token minting
-	// for requests still in flight during the shutdown grace period.
+	// Only taskCtx: serverContext builds the GitHub clients, and cancelling it
+	// would break minting for requests still in flight during shutdown.
 	taskCtx, stop := signal.NotifyContext(serverContext, syscall.SIGINT, syscall.SIGTERM)
 
 	// Cancelling the task context has to be the last action so it doesn't
 	// interfere with other shutdown tasks, so it is registered here rather than
 	// deferred: the hooks are the only cancellation path, and they now run on
-	// every exit from startup, not just once the server is serving. stop both
-	// unregisters the signal handler and cancels the context.
+	// every exit from startup, not just once the server is serving.
 	shutdownHooks.Add("context", func() error { stop(); return nil })
 
 	err = startProfileRefresh(serverContext, taskCtx, cfg, orgProfile)

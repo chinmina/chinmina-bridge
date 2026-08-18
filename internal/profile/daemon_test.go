@@ -73,8 +73,6 @@ func TestRefresh_Success(t *testing.T) {
 	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 }
 
-// refresh reports failure to its caller instead of logging it: the span records
-// the failure here, and the task driving refresh reports it at one call site.
 func TestRefresh_Failure(t *testing.T) {
 	tests := []struct {
 		name string
@@ -108,8 +106,7 @@ func TestRefresh_Failure(t *testing.T) {
 	}
 }
 
-// The task's scheduling is the repeat package's concern; what belongs here is
-// that the action it carries loads a generation into the store.
+// Scheduling belongs to the repeat package; only the action belongs here.
 func TestRefreshTask_ActionLoadsAGeneration(t *testing.T) {
 	gh := &mockGitHubClientForDaemon{
 		yaml: daemonTestYAML,
