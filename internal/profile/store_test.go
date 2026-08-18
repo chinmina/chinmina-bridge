@@ -3,11 +3,15 @@ package profile
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 // mockGitHubClient implements GitHubClient for testing
@@ -576,4 +580,74 @@ func TestNewDefaultProfiles(t *testing.T) {
 	require.Error(t, err)
 	var notFoundErr ProfileNotFoundError
 	assert.ErrorAs(t, err, &notFoundErr)
+}
+
+// tracedSpanContext returns a context carrying an active recorded span, and a
+// function that ends the span and yields its attributes.
+func tracedSpanContext(t *testing.T) (context.Context, func() []attribute.KeyValue) {
+	t.Helper()
+
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	ctx, span := tp.Tracer("test").Start(t.Context(), t.Name())
+
+	return ctx, func() []attribute.KeyValue {
+		span.End()
+		spans := recorder.Ended()
+		require.Len(t, spans, 1, "expected exactly one recorded span")
+		return spans[0].Attributes()
+	}
+}
+
+func TestProfileStore_Update_ProfileCountSpanAttributes(t *testing.T) {
+	tests := []struct {
+		name     string
+		fixture  string
+		expected []attribute.KeyValue
+	}{
+		{
+			// two of the three organization profiles are invalid; of the
+			// pipeline profiles one is invalid, and the synthesised "default"
+			// joins the valid one
+			name:    "mixed validity",
+			fixture: "testdata/profile/profile_mixed_validity.yaml",
+			expected: []attribute.KeyValue{
+				attribute.Int("profile.organization.valid_count", 1),
+				attribute.Int("profile.organization.invalid_count", 2),
+				attribute.Int("profile.pipeline.valid_count", 2),
+				attribute.Int("profile.pipeline.invalid_count", 1),
+			},
+		},
+		{
+			// nothing invalid: the zero counts must still be present, so a
+			// consumer can distinguish "none invalid" from "not reported"
+			name:    "all valid",
+			fixture: "testdata/profile/valid_profile.yaml",
+			expected: []attribute.KeyValue{
+				attribute.Int("profile.organization.valid_count", 2),
+				attribute.Int("profile.organization.invalid_count", 0),
+				attribute.Int("profile.pipeline.valid_count", 1),
+				attribute.Int("profile.pipeline.invalid_count", 0),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yamlContent, err := os.ReadFile(tt.fixture)
+			require.NoError(t, err)
+
+			gh := &mockGitHubClient{
+				files: map[string]string{"acme:test:profiles.yaml": string(yamlContent)},
+			}
+
+			profiles, err := FetchOrganizationProfile(t.Context(), "acme:test:profiles.yaml", gh, DefaultAppOnly)
+			require.NoError(t, err)
+
+			ctx, attrs := tracedSpanContext(t)
+			NewProfileStore().Update(ctx, profiles)
+
+			assert.Subset(t, attrs(), tt.expected)
+		})
+	}
 }

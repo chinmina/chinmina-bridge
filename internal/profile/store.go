@@ -96,21 +96,27 @@ func (p *ProfileStore) Update(ctx context.Context, profiles Profiles) {
 	oldDigest := p.profiles.Digest()
 	newDigest := profiles.Digest()
 
+	stats := profiles.Stats()
+
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(
 		attribute.String("profile.digest_current", oldDigest),
 		attribute.String("profile.digest_updated", newDigest),
 		attribute.Bool("profile.digest_changed", oldDigest != newDigest),
+		attribute.Int("profile.organization.valid_count", stats.OrganizationProfileCount),
+		attribute.Int("profile.organization.invalid_count", stats.OrganizationInvalidProfileCount),
+		attribute.Int("profile.pipeline.valid_count", stats.PipelineProfileCount),
+		attribute.Int("profile.pipeline.invalid_count", stats.PipelineInvalidProfileCount),
 	)
 
 	// by default, only log when the source has actually changed content
 	if oldDigest != newDigest {
 		slog.Info("profiles: updated",
-			"stats", profiles.Stats(),
+			"stats", stats,
 			"previousStats", p.profiles.Stats())
 	} else {
 		slog.Debug("profiles: no changes detected",
-			"stats", profiles.Stats())
+			"stats", stats)
 	}
 
 	p.profiles = profiles
