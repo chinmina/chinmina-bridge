@@ -171,23 +171,26 @@ func runWithShutdownHooks(ctx context.Context, run func(context.Context, *server
 	return run(ctx, shutdownHooks)
 }
 
-// startProfileRefresh loads the first organization profile generation and then
-// starts the background refresh loop.
+// startProfileRefresh starts the organization profile refresh task and blocks
+// until it has loaded a generation.
 //
-// The first load is synchronous, and startup does not continue until it
-// succeeds: an instance that serves before it has a generation answers
-// organization profile requests with 404 and pipeline requests with a built-in
-// permission set, while reporting healthy and counting as ready during a
-// rolling deployment. Not listening is the readiness signal, so gating here —
-// before serveHTTP opens the listening socket — leaves the healthcheck contract
-// unchanged.
+// Startup does not continue until that first load succeeds: an instance that
+// serves before it has a generation answers organization profile requests with
+// 404 and pipeline requests with a built-in permission set, while reporting
+// healthy and counting as ready during a rolling deployment. Not listening is
+// the readiness signal, so gating here — before serveHTTP opens the listening
+// socket — leaves the healthcheck contract unchanged.
+//
+// No timeout governs the wait. A deadline of our own would be evidence about
+// this service rather than about the profile source, so an unreachable source
+// blocks startup and the platform's startup grace period is the backstop; the
+// task logs each failed attempt while that plays out.
 //
 // Where no organization profile location is configured there is nothing to load
 // and nothing to gate on, so startup is unaffected.
 //
 // serverCtx is the process-scoped context the GitHub client is built against;
-// taskCtx is the shutdown-scoped context governing the load and the refresh
-// loop.
+// taskCtx is the shutdown-scoped context governing the refresh task.
 func startProfileRefresh(serverCtx, taskCtx context.Context, cfg config.Config, orgProfile *profile.ProfileStore) error {
 	orgProfileLocation := cfg.Server.OrgProfile
 	if orgProfileLocation == "" {
@@ -207,14 +210,14 @@ func startProfileRefresh(serverCtx, taskCtx context.Context, cfg config.Config, 
 		return fmt.Errorf("github configuration failed: %w", err)
 	}
 
-	err = profile.AwaitFirstGeneration(taskCtx, orgProfile, gh, orgProfileLocation)
-	if err != nil {
-		return fmt.Errorf("initial organization profile load failed: %w", err)
+	ready := profile.RefreshTask(orgProfile, gh, orgProfileLocation).Start(taskCtx)
+
+	select {
+	case <-ready:
+		return nil
+	case <-taskCtx.Done():
+		return fmt.Errorf("initial organization profile load abandoned: %w", taskCtx.Err())
 	}
-
-	go profile.PeriodicRefresh(taskCtx, orgProfile, gh, orgProfileLocation)
-
-	return nil
 }
 
 func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHooks) error {
