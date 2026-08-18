@@ -129,3 +129,26 @@ func TestStartProfileRefresh(t *testing.T) {
 		}
 	})
 }
+
+func TestAwaitFirstLoad(t *testing.T) {
+	t.Run("returns once the first load is signalled", func(t *testing.T) {
+		ready := make(chan struct{})
+		close(ready)
+
+		assert.NoError(t, awaitFirstLoad(t.Context(), ready))
+	})
+
+	// A signal arriving while the gate waits has to abandon it. Otherwise the
+	// process is killed where it stands and the shutdown hooks — including the
+	// telemetry flush describing why it was waiting — never run.
+	t.Run("abandons the wait when the context is cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := awaitFirstLoad(ctx, make(chan struct{}))
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Contains(t, err.Error(), "initial organization profile load abandoned")
+	})
+}

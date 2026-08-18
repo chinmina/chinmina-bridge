@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime/debug"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
@@ -212,11 +214,21 @@ func startProfileRefresh(serverCtx, taskCtx context.Context, cfg config.Config, 
 
 	ready := profile.RefreshTask(orgProfile, gh, orgProfileLocation).Start(taskCtx)
 
+	return awaitFirstLoad(taskCtx, ready)
+}
+
+// awaitFirstLoad blocks until the refresh task reports its first success, or
+// until ctx is cancelled — by a shutdown signal, or by shutdown itself.
+//
+// Abandoning the wait is reported as a startup failure: the instance never
+// became ready and never served a request, so it exits non-zero having run its
+// shutdown hooks, rather than being killed with its telemetry unflushed.
+func awaitFirstLoad(ctx context.Context, ready <-chan struct{}) error {
 	select {
 	case <-ready:
 		return nil
-	case <-taskCtx.Done():
-		return fmt.Errorf("initial organization profile load abandoned: %w", taskCtx.Err())
+	case <-ctx.Done():
+		return fmt.Errorf("initial organization profile load abandoned: %w", ctx.Err())
 	}
 }
 
@@ -259,13 +271,25 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
 
-	taskCtx, cancel := context.WithCancel(serverContext)
+	// The task context is signal-aware because startup can now block
+	// indefinitely on the profile gate below. Shutdown hooks are registered by
+	// this point, but serveHTTP — which installs the serving path's own signal
+	// handling — is not reached until the gate opens. Without a handler
+	// covering the wait, a SIGTERM during it kills the process outright and the
+	// hooks never run, discarding the very telemetry that explains why startup
+	// was waiting.
+	//
+	// Only the task context is signal-aware: serverContext constructs the
+	// GitHub clients, and cancelling that on SIGTERM would break token minting
+	// for requests still in flight during the shutdown grace period.
+	taskCtx, stop := signal.NotifyContext(serverContext, syscall.SIGINT, syscall.SIGTERM)
 
 	// Cancelling the task context has to be the last action so it doesn't
 	// interfere with other shutdown tasks, so it is registered here rather than
 	// deferred: the hooks are the only cancellation path, and they now run on
-	// every exit from startup, not just once the server is serving.
-	shutdownHooks.Add("context", func() error { cancel(); return nil })
+	// every exit from startup, not just once the server is serving. stop both
+	// unregisters the signal handler and cancels the context.
+	shutdownHooks.Add("context", func() error { stop(); return nil })
 
 	err = startProfileRefresh(serverContext, taskCtx, cfg, orgProfile)
 	if err != nil {
