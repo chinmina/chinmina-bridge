@@ -134,8 +134,15 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 		harness.valkeyPassword = cacheCfg.Valkey.Password
 	}
 
-	handler, err := configureServerRoutes(context.Background(), cfg, harness.ProfileStore, &hooks)
+	// Mirrors the production startup order deliberately: the harness should
+	// exercise the sequence the service actually uses.
+	validated, err := validateConfiguration(cfg)
 	require.NoError(t, err)
+
+	clients, err := configureUpstreamClients(context.Background(), cfg, validated, &hooks)
+	require.NoError(t, err)
+
+	handler := configureServerRoutes(validated, clients, harness.ProfileStore)
 
 	harness.Server = httptest.NewServer(handler)
 	hooks.AddClose("api-server", harness.Server)

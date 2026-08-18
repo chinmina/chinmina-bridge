@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/chinmina/chinmina-bridge/internal/config"
+	"github.com/chinmina/chinmina-bridge/internal/jwt/jwxtest"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/stretchr/testify/assert"
@@ -90,40 +91,187 @@ func TestRunWithShutdownHooks(t *testing.T) {
 	})
 }
 
-func TestStartProfileRefresh(t *testing.T) {
-	t.Run("does nothing when no organization profile location is configured", func(t *testing.T) {
-		store := profile.NewProfileStore()
-		before := store.Digest()
+// validConfig passes offline validation, so each case can vary only the field
+// it exercises.
+func validConfig(t *testing.T) config.Config {
+	t.Helper()
 
-		// The GitHub config is deliberately empty: reaching the client would
-		// fail, so returning cleanly proves the gate was never entered.
-		err := startProfileRefresh(t.Context(), t.Context(), config.Config{}, store)
+	return config.Config{
+		Authorization: config.AuthorizationConfig{
+			Audience:                  "test-audience",
+			BuildkiteOrganizationSlug: "test-org",
+			IssuerURL:                 "https://agent.buildkite.com",
+		},
+		Buildkite: config.BuildkiteConfig{
+			Token: "test-buildkite-token",
+		},
+		Cache: config.CacheConfig{Type: "memory"},
+		Github: config.GithubConfig{
+			PrivateKey:     jwxtest.NewJWK(t).PrivateKeyPEM(),
+			ApplicationID:  12345,
+			InstallationID: 67890,
+		},
+	}
+}
 
-		require.NoError(t, err)
-		assert.Equal(t, before, store.Digest())
-	})
+func TestValidateConfiguration_Valid(t *testing.T) {
+	tests := []struct {
+		name       string
+		modify     func(*config.Config)
+		expectPath string
+		expectOrg  string
+	}{
+		{
+			name:   "no base path and no organization profile",
+			modify: func(*config.Config) {},
+		},
+		{
+			name:       "base path is normalized",
+			modify:     func(c *config.Config) { c.Server.BasePath = "chinmina/" },
+			expectPath: "/chinmina",
+		},
+		{
+			name:      "organization profile location is retained",
+			modify:    func(c *config.Config) { c.Server.OrgProfile = "acme:silk:profile.yaml" },
+			expectOrg: "acme:silk:profile.yaml",
+		},
+		{
+			name: "a path containing colons is part of the location",
+			modify: func(c *config.Config) {
+				c.Server.OrgProfile = "acme:silk:some:nested:path.yaml"
+			},
+			expectOrg: "acme:silk:some:nested:path.yaml",
+		},
+	}
 
-	t.Run("rejects a malformed organization profile location", func(t *testing.T) {
-		locations := []string{
-			"acme:silk",
-			"profile.yaml",
-			":silk:docs/profile.yaml",
-			"acme::docs/profile.yaml",
-			"acme:silk:",
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfig(t)
+			tt.modify(&cfg)
 
-		for _, location := range locations {
-			t.Run(location, func(t *testing.T) {
-				cfg := config.Config{}
-				cfg.Server.OrgProfile = location
+			validated, err := validateConfiguration(cfg)
 
-				err := startProfileRefresh(t.Context(), t.Context(), cfg, profile.NewProfileStore())
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectPath, validated.basePath)
+			assert.Equal(t, tt.expectOrg, validated.orgProfileLocation)
+			assert.NotNil(t, validated.authorizer)
+		})
+	}
+}
 
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), "invalid organization profile location")
-			})
-		}
-	})
+func TestValidateConfiguration_Invalid(t *testing.T) {
+	tests := []struct {
+		name          string
+		modify        func(*config.Config)
+		expectedError string
+	}{
+		{
+			name:          "base path with double slashes",
+			modify:        func(c *config.Config) { c.Server.BasePath = "/chinmina//bridge" },
+			expectedError: "invalid base path",
+		},
+		{
+			name: "authorization configuration that cannot be used",
+			modify: func(c *config.Config) {
+				c.Authorization.ConfigurationStatic = "not-a-jwks"
+			},
+			expectedError: "authorizer configuration failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfig(t)
+			tt.modify(&cfg)
+
+			_, err := validateConfiguration(cfg)
+
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.expectedError)
+		})
+	}
+}
+
+// These moved from the gate to the offline stage; reaching the gate with an
+// unresolvable location is the failure ValidateLocation exists to prevent.
+func TestValidateConfiguration_MalformedProfileLocation(t *testing.T) {
+	locations := []string{
+		"acme:silk",
+		"profile.yaml",
+		":silk:docs/profile.yaml",
+		"acme::docs/profile.yaml",
+		"acme:silk:",
+	}
+
+	for _, location := range locations {
+		t.Run(location, func(t *testing.T) {
+			cfg := validConfig(t)
+			cfg.Server.OrgProfile = location
+
+			_, err := validateConfiguration(cfg)
+
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "invalid organization profile location")
+		})
+	}
+}
+
+func TestConfigureUpstreamClients_ProfileSource(t *testing.T) {
+	tests := []struct {
+		name             string
+		orgProfile       string
+		expectProfileSrc bool
+	}{
+		{name: "constructed when an organization profile is configured", orgProfile: "acme:silk:profile.yaml", expectProfileSrc: true},
+		{name: "absent when no organization profile is configured", orgProfile: "", expectProfileSrc: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfig(t)
+			cfg.Server.OrgProfile = tt.orgProfile
+
+			validated, err := validateConfiguration(cfg)
+			require.NoError(t, err)
+
+			hooks := &server.ShutdownHooks{}
+			t.Cleanup(func() { hooks.Execute(t.Context()) })
+
+			clients, err := configureUpstreamClients(t.Context(), cfg, validated, hooks)
+
+			require.NoError(t, err)
+			require.NotNil(t, clients.tokenCache)
+			assert.Equal(t, tt.expectProfileSrc, clients.profileSource != nil)
+		})
+	}
+}
+
+func TestConfigureUpstreamClients_ConfigurationError(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Cache.Type = "not-a-cache-backend"
+
+	validated, err := validateConfiguration(cfg)
+	require.NoError(t, err)
+
+	hooks := &server.ShutdownHooks{}
+	t.Cleanup(func() { hooks.Execute(t.Context()) })
+
+	_, err = configureUpstreamClients(t.Context(), cfg, validated, hooks)
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "cache configuration failed")
+}
+
+func TestStartProfileRefresh_NotConfigured(t *testing.T) {
+	store := profile.NewProfileStore()
+	before := store.Digest()
+
+	// Returning cleanly is the assertion: nothing loaded, no gate entered, so an
+	// unconfigured deployment starts as it always did.
+	err := startProfileRefresh(t.Context(), store, nil, "")
+
+	require.NoError(t, err)
+	assert.Equal(t, before, store.Digest())
 }
 
 func TestAwaitFirstLoad(t *testing.T) {
