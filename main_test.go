@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/chinmina/chinmina-bridge/internal/config"
+	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -85,5 +87,61 @@ func TestRunWithShutdownHooks(t *testing.T) {
 		})
 
 		assert.Equal(t, 1, calls, "an unwinding panic is still an exit path")
+	})
+}
+
+func TestStartProfileRefresh(t *testing.T) {
+	t.Run("does nothing when no organization profile location is configured", func(t *testing.T) {
+		store := profile.NewProfileStore()
+		before := store.Digest()
+
+		// The GitHub config is deliberately empty: reaching the client would
+		// fail, so returning cleanly proves the gate was never entered.
+		err := startProfileRefresh(t.Context(), t.Context(), config.Config{}, store)
+
+		require.NoError(t, err)
+		assert.Equal(t, before, store.Digest())
+	})
+
+	t.Run("rejects a malformed organization profile location", func(t *testing.T) {
+		locations := []string{
+			"acme:silk",
+			"profile.yaml",
+			":silk:docs/profile.yaml",
+			"acme::docs/profile.yaml",
+			"acme:silk:",
+		}
+
+		for _, location := range locations {
+			t.Run(location, func(t *testing.T) {
+				cfg := config.Config{}
+				cfg.Server.OrgProfile = location
+
+				err := startProfileRefresh(t.Context(), t.Context(), cfg, profile.NewProfileStore())
+
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "invalid organization profile location")
+			})
+		}
+	})
+}
+
+func TestAwaitFirstLoad(t *testing.T) {
+	t.Run("returns once the first load is signalled", func(t *testing.T) {
+		ready := make(chan struct{})
+		close(ready)
+
+		assert.NoError(t, awaitFirstLoad(t.Context(), ready))
+	})
+
+	t.Run("abandons the wait when the context is cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := awaitFirstLoad(ctx, make(chan struct{}))
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Contains(t, err.Error(), "initial organization profile load abandoned")
 	})
 }

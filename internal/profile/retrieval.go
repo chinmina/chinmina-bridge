@@ -27,9 +27,19 @@ func retrieve(ctx context.Context, gh GitHubClient, orgProfileLocation string) (
 	return profile, nil
 }
 
+// ValidateLocation checks a location offline. Startup blocks until the profile
+// it names loads, so a typo left to fail against GitHub is indistinguishable
+// from an outage and retries forever.
+func ValidateLocation(profileLocation string) error {
+	_, _, _, err := decomposePath(profileLocation)
+	return err
+}
+
 // decomposePath splits the profile location into owner, repo, and path components.
 // Expects format: "owner:repo:path_seg1/path_seg2/..."
 // Example: "cultureamp:chinmina:docs/profile.yaml"
+//
+// An empty component can never resolve, so it is malformed rather than missing.
 func decomposePath(profileLocation string) (string, string, string, error) {
 	location := strings.SplitN(profileLocation, ":", 3)
 
@@ -38,6 +48,10 @@ func decomposePath(profileLocation string) (string, string, string, error) {
 	}
 
 	orgName, repoName, filePath := location[0], location[1], location[2]
+
+	if orgName == "" || repoName == "" || filePath == "" {
+		return "", "", "", fmt.Errorf("invalid profile location format %q: owner, repo and path are all required", profileLocation)
+	}
 
 	return orgName, repoName, filePath, nil
 }

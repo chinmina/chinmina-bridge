@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime/debug"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
@@ -171,6 +173,51 @@ func runWithShutdownHooks(ctx context.Context, run func(context.Context, *server
 	return run(ctx, shutdownHooks)
 }
 
+// startProfileRefresh blocks until the first profile generation loads.
+//
+// An instance serving without one answers organization profiles with 404 and
+// pipelines with a built-in permission set, while reporting healthy to a
+// rolling deployment. Not listening is the readiness signal, so gating before
+// serveHTTP leaves the healthcheck contract alone.
+//
+// No timeout: a deadline of ours would be evidence about this service rather
+// than the profile source, so the platform's grace period is the backstop.
+//
+// serverCtx builds the GitHub client and outlives shutdown; taskCtx governs the
+// refresh task.
+func startProfileRefresh(serverCtx, taskCtx context.Context, cfg config.Config, orgProfile *profile.ProfileStore) error {
+	orgProfileLocation := cfg.Server.OrgProfile
+	if orgProfileLocation == "" {
+		return nil
+	}
+
+	err := profile.ValidateLocation(orgProfileLocation)
+	if err != nil {
+		return fmt.Errorf("invalid organization profile location: %w", err)
+	}
+
+	gh, err := github.New(serverCtx, cfg.Github, github.WithTokenTransport)
+	if err != nil {
+		return fmt.Errorf("github configuration failed: %w", err)
+	}
+
+	ready := profile.RefreshTask(orgProfile, gh, orgProfileLocation).Start(taskCtx)
+
+	return awaitFirstLoad(taskCtx, ready)
+}
+
+// awaitFirstLoad treats cancellation as a startup failure: the instance never
+// became ready, so it exits non-zero having run its hooks rather than being
+// killed with its telemetry unflushed.
+func awaitFirstLoad(ctx context.Context, ready <-chan struct{}) error {
+	select {
+	case <-ready:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("initial organization profile load abandoned: %w", ctx.Err())
+	}
+}
+
 func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHooks) error {
 	orgProfile := profile.NewProfileStore()
 	orgProfile.Update(serverContext, profile.NewDefaultProfiles())
@@ -210,30 +257,24 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 		return fmt.Errorf("server routing configuration failed: %w", err)
 	}
 
-	orgProfileLocation := cfg.Server.OrgProfile
-
-	taskCtx, cancel := context.WithCancel(serverContext)
+	// Signal-aware because the gate below can block indefinitely, and
+	// serveHTTP — which installs the serving path's handler — is not reached
+	// until it opens. Without this, a SIGTERM while waiting kills the process
+	// before the hooks can flush the telemetry explaining the wait.
+	//
+	// Only taskCtx: serverContext builds the GitHub clients, and cancelling it
+	// would break minting for requests still in flight during shutdown.
+	taskCtx, stop := signal.NotifyContext(serverContext, syscall.SIGINT, syscall.SIGTERM)
 
 	// Cancelling the task context has to be the last action so it doesn't
 	// interfere with other shutdown tasks, so it is registered here rather than
 	// deferred: the hooks are the only cancellation path, and they now run on
 	// every exit from startup, not just once the server is serving.
-	shutdownHooks.Add("context", func() error { cancel(); return nil })
+	shutdownHooks.Add("context", func() error { stop(); return nil })
 
-	// Start Goroutine to refresh the organization profile every 5 minutes
-	if orgProfileLocation != "" {
-		// Check that the profile conforms to the expected format
-		location := strings.SplitN(orgProfileLocation, ":", 3)
-		if len(location) != 3 {
-			return fmt.Errorf("invalid organization profile location: %s", orgProfileLocation)
-		}
-
-		gh, err := github.New(serverContext, cfg.Github, github.WithTokenTransport)
-		if err != nil {
-			return fmt.Errorf("github configuration failed: %w", err)
-		}
-
-		go profile.PeriodicRefresh(taskCtx, orgProfile, gh, orgProfileLocation)
+	err = startProfileRefresh(serverContext, taskCtx, cfg, orgProfile)
+	if err != nil {
+		return err
 	}
 
 	// start the server

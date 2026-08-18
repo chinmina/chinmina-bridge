@@ -5,41 +5,46 @@ import (
 	"fmt"
 	"time"
 
-	"log/slog"
+	"github.com/chinmina/chinmina-bridge/internal/repeat"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 )
 
-// PeriodicRefresh runs a background loop that refreshes profiles from the given
-// location at regular intervals. Panics are recovered in the refresh function.
-// The loop exits when the context is cancelled.
-func PeriodicRefresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string) {
-	for {
-		refresh(ctx, profileStore, gh, orgProfileLocation)
+const (
+	refreshInterval = 5 * time.Minute
 
-		select {
-		case <-time.After(5 * time.Minute):
-			// continue
-		case <-ctx.Done():
-			slog.Info("refresh goroutine shutting down gracefully")
-			return
-		}
+	// Short, because startup blocks on this: every second spent retrying is a
+	// second the deployment is unavailable.
+	firstLoadRetryInterval = 5 * time.Second
+)
+
+// RefreshTask keeps the store's profile generation current. Callers gate
+// startup on its first success.
+func RefreshTask(profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string) repeat.Task {
+	return repeat.Task{
+		Name:          "organization profile refresh",
+		Attrs:         []any{"location", orgProfileLocation},
+		FirstInterval: firstLoadRetryInterval,
+		Interval:      refreshInterval,
+		Action: func(ctx context.Context) error {
+			return refresh(ctx, profileStore, gh, orgProfileLocation)
+		},
 	}
 }
 
-// refresh performs a single profile refresh operation with tracing.
-func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string) {
+// refresh loads one generation. Failures, including a recovered panic, are
+// returned rather than logged: the span records them, and the task logs them.
+func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string) (err error) {
 	tracer := otel.Tracer("github.com/chinmina/chinmina-bridge/internal/profile")
 	ctx, span := tracer.Start(ctx, "refresh_organization_profile")
 	defer span.End()
 
 	defer func() {
 		if r := recover(); r != nil {
-			err := fmt.Errorf("panic during profile refresh: %v", r)
+			err = fmt.Errorf("panic during profile refresh: %v", r)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "profile refresh panicked")
-			slog.Warn("profile refresh panicked, recovered", "panic", r)
 		}
 	}()
 
@@ -47,10 +52,11 @@ func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, o
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "profile refresh failed")
-		slog.Warn("organization profile refresh failed, continuing", "error", err)
-		return
+		return err
 	}
 
 	profileStore.Update(ctx, profiles)
 	span.SetStatus(codes.Ok, "profile refreshed")
+
+	return nil
 }
