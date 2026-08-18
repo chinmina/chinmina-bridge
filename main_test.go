@@ -104,13 +104,28 @@ func TestStartProfileRefresh(t *testing.T) {
 		assert.Equal(t, before, store.Digest())
 	})
 
+	// Startup now waits on the configured location, so a location that can
+	// never resolve has to fail here. Left to the gate it is indistinguishable
+	// from an outage and retries forever, holding the deployment closed.
 	t.Run("rejects a malformed organization profile location", func(t *testing.T) {
-		cfg := config.Config{}
-		cfg.Server.OrgProfile = "acme:silk"
+		locations := []string{
+			"acme:silk",
+			"profile.yaml",
+			":silk:docs/profile.yaml",
+			"acme::docs/profile.yaml",
+			"acme:silk:",
+		}
 
-		err := startProfileRefresh(t.Context(), t.Context(), cfg, profile.NewProfileStore())
+		for _, location := range locations {
+			t.Run(location, func(t *testing.T) {
+				cfg := config.Config{}
+				cfg.Server.OrgProfile = location
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid organization profile location")
+				err := startProfileRefresh(t.Context(), t.Context(), cfg, profile.NewProfileStore())
+
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "invalid organization profile location")
+			})
+		}
 	})
 }

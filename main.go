@@ -194,10 +194,12 @@ func startProfileRefresh(serverCtx, taskCtx context.Context, cfg config.Config, 
 		return nil
 	}
 
-	// Check that the profile conforms to the expected format
-	location := strings.SplitN(orgProfileLocation, ":", 3)
-	if len(location) != 3 {
-		return fmt.Errorf("invalid organization profile location: %s", orgProfileLocation)
+	// Check that the profile conforms to the expected format. This is the last
+	// chance to reject a location cheaply: past here a bad one is retried
+	// against GitHub, and startup waits on it.
+	err := profile.ValidateLocation(orgProfileLocation)
+	if err != nil {
+		return fmt.Errorf("invalid organization profile location: %w", err)
 	}
 
 	gh, err := github.New(serverCtx, cfg.Github, github.WithTokenTransport)
