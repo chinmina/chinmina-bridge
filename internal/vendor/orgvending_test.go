@@ -65,7 +65,7 @@ func TestOrgVending_FailWhenTokenVendorFails(t *testing.T) {
 		return "", time.Time{}, errors.New("token vendor failed")
 	})
 
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -86,7 +86,7 @@ func TestOrgVending_SuccessfulTokenProvisioning(t *testing.T) {
 	tokenVendor := vendor.TokenVendor(func(ctx context.Context, repositoryURLs []string, scopes []string) (string, time.Time, error) {
 		return "non-default-token-value", vendedDate, nil
 	})
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	tests := []struct {
 		name         string
@@ -138,7 +138,7 @@ func TestOrgVending_WildcardRepository(t *testing.T) {
 		return "wildcard-token-value", vendedDate, nil
 	})
 
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	tests := []struct {
 		name         string
@@ -195,7 +195,7 @@ func TestOrgVending_CallerScopedRepository_Success(t *testing.T) {
 		return "scoped-token", vendedDate, nil
 	})
 
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization:     "organization-slug",
@@ -235,7 +235,7 @@ func TestOrgVending_CallerScoped_MissingScopeParameter(t *testing.T) {
 		return "", time.Time{}, nil
 	})
 
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -268,7 +268,7 @@ func TestOrgVending_GitCredentials_CallerScoped_DerivesRepoFromURL(t *testing.T)
 		return "scoped-token", vendedDate, nil
 	})
 
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization:     "organization-slug",
@@ -307,7 +307,7 @@ func TestOrgVending_GitCredentials_CallerScoped_IssuanceFailure(t *testing.T) {
 		return "", time.Time{}, errors.New("GitHub API rejected request")
 	})
 
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization:     "organization-slug",
@@ -332,7 +332,7 @@ func TestOrgVending_GitCredentials_AllRepos_NoUnmatched(t *testing.T) {
 		return "", time.Time{}, errors.New("GitHub API rejected request")
 	})
 
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",

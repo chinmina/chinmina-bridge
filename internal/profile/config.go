@@ -102,6 +102,27 @@ func (e ProfileUnavailableError) Status() (int, string) {
 	return http.StatusNotFound, "profile unavailable: validation failed"
 }
 
+// AppUnresolvedError indicates a profile was resolved but the GitHub App it
+// names could not be resolved in the registry.
+//
+// This is a 500 rather than a 403 or 404: reaching it means compilation should
+// already have invalidated the profile, so it describes a defect in this
+// service rather than a denial by GitHub or a name the caller got wrong. It is
+// also the guard that stops a warm cache entry being served after its app is
+// disabled, so it must never be softened into a success.
+type AppUnresolvedError struct {
+	ProfileName string
+	AppName     string
+}
+
+func (e AppUnresolvedError) Error() string {
+	return fmt.Sprintf("profile %q names app %q, which could not be resolved", e.ProfileName, e.AppName)
+}
+
+func (e AppUnresolvedError) Status() (int, string) {
+	return http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError)
+}
+
 // ProfileNotFoundError indicates a profile was not found in the store
 type ProfileNotFoundError struct {
 	Name string

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 )
 
@@ -31,6 +32,15 @@ type Resolved[T any] struct {
 	Profile profile.AuthorizedProfile[T]
 	// Digest identifies the configuration generation Profile was read from.
 	Digest string
+	// App is the GitHub App identity this request's token is minted through,
+	// resolved from the profile's app name at the handler boundary.
+	//
+	// It is data rather than a closure over a client, so this whole value
+	// stays loggable and no credential is captured in something that flows
+	// into a cache payload. The stages downstream read it from here rather
+	// than consulting the registry themselves, which is what keeps the
+	// registry lookup on the one code path that runs for every request.
+	App github.AppIdentity
 }
 
 type ProfileTokenVendor[T any] func(ctx context.Context, r Resolved[T], repo string) VendorResult
@@ -42,15 +52,27 @@ type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug s
 // GitHub repository that the vendor has permissions to access.
 type TokenVendor func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error)
 
+// AppTokenVendor vends a token through a specific GitHub App installation.
+// Resolving the identity to a minting client is an O(1) lookup against the
+// immutable registry, so this stays a plain function call rather than
+// something a request has to carry a client for.
+type AppTokenVendor func(ctx context.Context, app github.AppIdentity, repoNames []string, scopes []string) (string, time.Time, error)
+
 type ProfileToken struct {
 	OrganizationSlug    string                  `json:"organizationSlug"`
 	Profile             string                  `json:"profile"`
 	VendedRepositoryURL string                  `json:"repositoryUrl"`
 	Repositories        profile.RepositoryScope `json:"repositories"`
 	Permissions         []string                `json:"permissions"`
-	Token               string                  `json:"token"`
-	HashedToken         string                  `json:"hashedToken"`
-	Expiry              time.Time               `json:"expiry"`
+
+	// App names the GitHub App the token was minted through. It is part of the
+	// cached payload, not merely of the live response, so a cache hit and a
+	// cache miss return the same shape.
+	App string `json:"app"`
+
+	Token       string    `json:"token"`
+	HashedToken string    `json:"hashedToken"`
+	Expiry      time.Time `json:"expiry"`
 }
 
 func (t ProfileToken) URL() (*url.URL, error) {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/cache"
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
@@ -34,6 +35,12 @@ func newTestCached(t *testing.T, ttl time.Duration) func(vendor.ProfileTokenVend
 // so they all address one namespace.
 const testGeneration = "test-generation"
 
+// testApp stands in for the app identity the boundary resolver stamps. The
+// cache key includes it, so every helper here supplies one: a zero identity is
+// refused by Cached rather than defaulted, which is the behaviour that stops
+// an unresolved request keying every app's entries together.
+var testApp = github.AppIdentity{Name: "default", ApplicationID: 111, InstallationID: 222}
+
 // cacheRequest wraps a ref the way the handler boundary would, for tests that
 // exercise the cache without depending on the resolved profile value.
 func cacheRequest(ref profile.ProfileRef) vendor.Resolved[cacheAttr] {
@@ -43,7 +50,7 @@ func cacheRequest(ref profile.ProfileRef) vendor.Resolved[cacheAttr] {
 // cacheRequestAt wraps a ref as cacheRequest does, pinning the configuration
 // generation the request was resolved from.
 func cacheRequestAt(ref profile.ProfileRef, digest string) vendor.Resolved[cacheAttr] {
-	return vendor.Resolved[cacheAttr]{Ref: ref, Digest: digest}
+	return vendor.Resolved[cacheAttr]{Ref: ref, Digest: digest, App: testApp}
 }
 
 // resolvedOrg builds the Resolved value the organization boundary resolver
@@ -52,7 +59,7 @@ func resolvedOrg(t *testing.T, store *profile.ProfileStore, ref profile.ProfileR
 	t.Helper()
 	authProfile, digest, err := store.GetOrganizationProfile(ref.Name)
 	require.NoError(t, err)
-	return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: ref, Profile: authProfile, Digest: digest}
+	return vendor.Resolved[profile.OrganizationProfileAttr]{Ref: ref, Profile: authProfile, Digest: digest, App: testApp}
 }
 
 // resolvedPipeline builds the Resolved value the pipeline boundary resolver
@@ -61,7 +68,15 @@ func resolvedPipeline(t *testing.T, store *profile.ProfileStore, ref profile.Pro
 	t.Helper()
 	authProfile, digest, err := store.GetPipelineProfile(ref.Name)
 	require.NoError(t, err)
-	return vendor.Resolved[profile.PipelineProfileAttr]{Ref: ref, Profile: authProfile, Digest: digest}
+	return vendor.Resolved[profile.PipelineProfileAttr]{Ref: ref, Profile: authProfile, Digest: digest, App: testApp}
+}
+
+// mintingThrough adapts a plain token vendor to the app-aware signature,
+// recording which identity each mint was requested through.
+func mintingThrough(mint vendor.TokenVendor) vendor.AppTokenVendor {
+	return func(ctx context.Context, _ github.AppIdentity, repoNames []string, scopes []string) (string, time.Time, error) {
+		return mint(ctx, repoNames, scopes)
+	}
 }
 
 // assertVendorSuccess verifies that vending succeeded and returns the expected token

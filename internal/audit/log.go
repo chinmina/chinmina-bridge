@@ -39,23 +39,30 @@ type Entry struct {
 	RequestedProfile    string
 	RequestedRepository string
 	VendedRepository    string
-	Authorized          bool
-	AuthSubject         string
-	AuthIssuer          string
-	AuthAudience        []string
-	AuthExpirySecs      int64
-	OrganizationSlug    string
-	PipelineSlug        string
-	JobID               string
-	BuildNumber         int
-	BuildBranch         string
-	Error               string
-	Repositories        []string
-	Permissions         []string
-	ExpirySecs          int64
-	HashedToken         string
-	ClaimsMatched       []ClaimMatch
-	ClaimsFailed        []ClaimFailure
+
+	// App is the name of the GitHub App the request resolved to, recorded at
+	// resolution rather than at vend so that every outcome downstream of
+	// resolution carries it — including failures. A profile invalid because
+	// its app is disabled fails before an app is resolved, so it is the Error
+	// field that names the reason in that case.
+	App              string
+	Authorized       bool
+	AuthSubject      string
+	AuthIssuer       string
+	AuthAudience     []string
+	AuthExpirySecs   int64
+	OrganizationSlug string
+	PipelineSlug     string
+	JobID            string
+	BuildNumber      int
+	BuildBranch      string
+	Error            string
+	Repositories     []string
+	Permissions      []string
+	ExpirySecs       int64
+	HashedToken      string
+	ClaimsMatched    []ClaimMatch
+	ClaimsFailed     []ClaimFailure
 }
 
 // Begin sets up the audit log entry for the current request with details from the request.
