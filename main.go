@@ -68,10 +68,18 @@ func validateConfiguration(cfg config.Config) (validatedConfig, error) {
 // the handlers would keep the old values.
 type upstreamClients struct {
 	buildkite buildkite.PipelineLookup
-	github    github.Client
+
+	// apps is the authority on which GitHub App a profile mints through. It
+	// includes the default app, so single-app deployments go through the same
+	// path as multi-app ones and there is no untested second code path.
+	apps github.Registry
 
 	// Token rather than app transport, because it reads repository content.
 	// Nil when unconfigured, which is what leaves the refresh task unstarted.
+	//
+	// Always the default app: the profile configuration decides which app a
+	// profile uses, so reading it through a profile-selected app would be
+	// circular.
 	profileSource *github.Client
 
 	tokenCache cache.TokenCache[vendor.ProfileToken]
@@ -79,7 +87,9 @@ type upstreamClients struct {
 
 // configureUpstreamClients must run after installOutboundTransport: clients
 // capture http.DefaultTransport as they are built, so one made earlier
-// silently loses pool tuning and tracing. Add new clients here.
+// silently loses pool tuning and tracing. That applies to the app registry's
+// clients too — built here, after the transport is installed, so registry
+// traffic is traced and pool-tuned like everything else. Add new clients here.
 func configureUpstreamClients(ctx context.Context, cfg config.Config, validated validatedConfig, hooks *server.ShutdownHooks) (upstreamClients, error) {
 	bk, err := buildkite.New(cfg.Buildkite)
 	if err != nil {
@@ -89,6 +99,14 @@ func configureUpstreamClients(ctx context.Context, cfg config.Config, validated 
 	gh, err := github.New(ctx, cfg.Github)
 	if err != nil {
 		return upstreamClients{}, fmt.Errorf("github configuration failed: %w", err)
+	}
+
+	// ctx is the long-lived server context by contract: it reaches KMS signing
+	// key construction, and a key built under a shorter-lived context boots
+	// cleanly and then fails every mint once that context expires.
+	apps, err := github.NewRegistry(ctx, cfg.Github, gh)
+	if err != nil {
+		return upstreamClients{}, fmt.Errorf("github app registry configuration failed: %w", err)
 	}
 
 	var profileSource *github.Client
@@ -115,7 +133,7 @@ func configureUpstreamClients(ctx context.Context, cfg config.Config, validated 
 
 	return upstreamClients{
 		buildkite:     bk,
-		github:        gh,
+		apps:          apps,
 		profileSource: profileSource,
 		tokenCache:    tokenCache,
 	}, nil
@@ -157,10 +175,18 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 
 	// Pipeline (repo) routes
 
+	// Until profiles can name an app, every token mints through the default
+	// app's identity. The registry is still the minting path so single-app and
+	// multi-app deployments share one code path.
+	defaultApp := clients.apps.DefaultIdentity()
+	mintDefault := func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error) {
+		return clients.apps.CreateAccessToken(ctx, defaultApp, repoNames, scopes)
+	}
+
 	repoVendor := vendor.Auditor(
 		vendor.Authorized(
 			vendor.Cached[profile.PipelineProfileAttr](clients.tokenCache)(
-				vendor.Vending(vendor.PipelineRepositories(clients.buildkite.RepositoryLookup), clients.github.CreateAccessToken),
+				vendor.Vending(vendor.PipelineRepositories(clients.buildkite.RepositoryLookup), mintDefault),
 			),
 		),
 	)
@@ -179,7 +205,7 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 	orgVendor := vendor.Auditor(
 		vendor.Authorized(
 			vendor.Cached[profile.OrganizationProfileAttr](clients.tokenCache)(
-				vendor.Vending(vendor.OrgRepositories, clients.github.CreateAccessToken),
+				vendor.Vending(vendor.OrgRepositories, mintDefault),
 			),
 		),
 	)

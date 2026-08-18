@@ -70,7 +70,6 @@ func TestAppTokenSource_Token_KMS(t *testing.T) {
 	}
 
 	key := kmsSigningKey{
-		ctx:    context.Background(),
 		client: mockClient,
 		arn:    "arn:aws:kms:us-east-1:123456789:key/test-key",
 	}
