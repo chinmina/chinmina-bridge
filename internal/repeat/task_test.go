@@ -34,6 +34,12 @@ type stubAction struct {
 func (s *stubAction) run(context.Context) error {
 	s.calls.Add(1)
 
+	return s.getErr()
+}
+
+// getErr and setErr guard err: it is written by the test goroutine and read by
+// the task goroutine.
+func (s *stubAction) getErr() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
