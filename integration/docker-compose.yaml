@@ -90,8 +90,40 @@ services:
       # DOCKER_SOCKET; it is /dev/null when a TCP endpoint is in use.
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
 
-  chinmina-bridge-worker:
-    scale: 1
+  # Not a running service: the shared definition every chinmina-bridge worker
+  # extends, so several worker pools can run side by side (for weighted routing,
+  # or to compare two builds). `scale: 0` keeps it from starting anything.
+  #
+  # IMPORTANT: every service extending this MUST declare its own `scale`.
+  # `extends` inherits `scale: 0`, so omitting it yields a service that silently
+  # starts no containers.
+  #
+  # Unlike YAML anchors, `extends` merges mappings at depth, so an extending
+  # service overrides individual keys without repeating the rest:
+  #
+  # ```yaml
+  #   chinmina-bridge-experiment:
+  #     extends:
+  #       service: chinmina-bridge-template
+  #     scale: 1
+  #     command: ["./dist/chinmina-bridge-experiment"]
+  #     environment:
+  #       CACHE_TYPE: memory
+  # ```
+  #
+  # It also reaches across files, which anchors cannot: a service declared in
+  # docker-compose.override.yaml extends this one by naming the file, since a
+  # bare `service:` only resolves within its own file:
+  #
+  # ```yaml
+  #     extends:
+  #       file: docker-compose.yaml
+  #       service: chinmina-bridge-template
+  # ```
+  #
+  # Environment keys with no value are passed through from the host.
+  chinmina-bridge-template:
+    scale: 0
     image: alpine
     depends_on:
       - openobserve
@@ -134,6 +166,18 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.chinmina.rule=PathPrefix(`/`)"
       - "traefik.http.services.chinmina.loadbalancer.server.port=80"
+
+  chinmina-bridge-worker:
+    extends:
+      service: chinmina-bridge-template
+    scale: 1
+
+  # a second worker pool, for comparing two configurations behind the ingress.
+  # Scaled to zero until an override (or the traefik weighted config) needs it.
+  chinmina-bridge-alternate:
+    extends:
+      service: chinmina-bridge-template
+    scale: 0
 
   # OpenObserve all-in-one: OTLP endpoint (traces, metrics, logs) plus UI. Data is written
   # inside the container only, so it is discarded with the stack.
