@@ -15,12 +15,9 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-// A name is a label on an identity, and an operator may repoint it. The YAML —
-// and so the digest — is unchanged when they do, so a key that carried only
-// the digest would keep serving tokens minted through the previous app. These
-// tests assert observable cache behaviour rather than the key string: the key
-// format is an implementation detail, but "these two requests must not share
-// an entry" is the guarantee.
+// An operator may repoint a name at a different app without touching the YAML,
+// so a key carrying only the digest would keep serving tokens minted through
+// the previous app. These tests assert entry sharing, not the key format.
 func TestCached_AppIdentityPartitionsTheCache(t *testing.T) {
 	ref := profile.ProfileRef{
 		Organization: "acme",
@@ -45,9 +42,6 @@ func TestCached_AppIdentityPartitionsTheCache(t *testing.T) {
 			second: github.AppIdentity{Name: "deploy", ApplicationID: 777, InstallationID: 444},
 		},
 		{
-			// The key carries identity rather than name, so two names for one
-			// application and installation are one cache entry, differing only
-			// in attribution.
 			name:   "two names for one identity share entries",
 			first:  github.AppIdentity{Name: "packages", ApplicationID: 333, InstallationID: 444},
 			second: github.AppIdentity{Name: "publishing", ApplicationID: 333, InstallationID: 444},
@@ -91,9 +85,8 @@ func TestCached_AppIdentityPartitionsTheCache(t *testing.T) {
 	}
 }
 
-// The cached payload is the response, so a cache hit and a cache miss must
-// carry the same attribution. Without this a caller could not tell which app
-// minted a token it was served warm.
+// The cached payload is the response, so a hit must carry the same attribution
+// as a miss: otherwise a caller cannot tell which app minted a warm token.
 func TestCached_HitCarriesTheMintingApp(t *testing.T) {
 	app := github.AppIdentity{Name: "packages", ApplicationID: 333, InstallationID: 444}
 
@@ -118,10 +111,9 @@ func TestCached_HitCarriesTheMintingApp(t *testing.T) {
 	assert.Equal(t, miss.Token(), hit.Token(), "a hit and a miss must return the same shape")
 }
 
-// An unresolved identity would key every app's entries together under zeroes,
-// which is precisely the collision the key exists to prevent. Refusing is the
-// only safe answer: defaulting would silently serve one app's token through
-// another's key.
+// A zero identity would key every app's entries together, which is the
+// collision the key exists to prevent. Defaulting would serve one app's token
+// through another's key.
 func TestCached_RefusesAnUnresolvedAppIdentity(t *testing.T) {
 	cached := newTestCached(t, 45*time.Minute)(func(context.Context, vendor.Resolved[cacheAttr], string) vendor.VendorResult {
 		t.Fatal("the wrapped vendor must not be reached")
@@ -136,9 +128,8 @@ func TestCached_RefusesAnUnresolvedAppIdentity(t *testing.T) {
 	assertVendorFailure(t, result, "no app identity resolved")
 }
 
-// The cache outcome metric is attributed with the app, so a partly-cold cache
-// can be attributed to the app whose entries were orphaned rather than read as
-// a service-wide regression.
+// The cache outcome metric carries the app, so a partly-cold cache reads as one
+// app's entries being orphaned rather than a service-wide regression.
 func TestCached_OutcomeMetricIsAttributedWithTheApp(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	previous := otel.GetMeterProvider()

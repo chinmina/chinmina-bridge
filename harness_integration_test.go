@@ -40,9 +40,8 @@ type APITestHarness struct {
 	BuildkiteMock       *testhelpers.MockBuildkiteServer
 	ProfileStore        *profile.ProfileStore
 
-	// Apps is the registry the routes were built with. Tests compile profiles
-	// against it so a profile naming an app agrees with what the running
-	// service considers usable.
+	// Apps is the registry the routes were built with, so tests can compile
+	// profiles against what the running service considers usable.
 	Apps           github.Registry
 	jwk            jwxtest.JWK
 	valkeyAddr     string
@@ -50,15 +49,13 @@ type APITestHarness struct {
 }
 
 // APITestHarnessOption configures the API test harness. It receives the
-// harness as well as the configuration because some options need the mock
-// servers, which exist before the service is configured — an app registry is
-// verified against the GitHub mock during construction, so a test must be able
-// to set up that mock's responses first.
+// harness as well as the configuration because the app registry is verified
+// against the GitHub mock during construction, so an option may need to set up
+// that mock's responses first.
 type APITestHarnessOption func(*APITestHarness, *config.Config)
 
 // WithGitHubApps configures additional named GitHub Apps, as GITHUB_APPS does
-// in a deployment. Entries inherit the mock's API URL, so their installation
-// verification and minting both resolve against it.
+// in a deployment. Entries inherit the mock's API URL.
 func WithGitHubApps(entries ...GitHubAppEntry) APITestHarnessOption {
 	return func(_ *APITestHarness, cfg *config.Config) {
 		encoded, err := json.Marshal(entries)
@@ -69,9 +66,8 @@ func WithGitHubApps(entries ...GitHubAppEntry) APITestHarnessOption {
 	}
 }
 
-// WithInstallation configures the GitHub mock's response for one installation
-// before the registry verifies it, which is the only way to exercise an app
-// that verification disables.
+// WithInstallation sets the GitHub mock's response for one installation before
+// the registry verifies it.
 func WithInstallation(installationID int64, installation testhelpers.MockInstallation) APITestHarnessOption {
 	return func(h *APITestHarness, _ *config.Config) {
 		h.GitHubMock.SetInstallation(installationID, installation)
@@ -194,10 +190,8 @@ func NewAPITestHarness(t *testing.T, options ...APITestHarnessOption) *APITestHa
 	return harness
 }
 
-// UpdateProfiles compiles profile YAML against this harness's app registry and
-// installs it as the current generation. Compiling against the registry is
-// what makes a profile naming an app valid in the same way it would be in a
-// deployment.
+// UpdateProfiles compiles profile YAML against this harness's app registry, as
+// a deployment does, and installs it as the current generation.
 func (h *APITestHarness) UpdateProfiles(t *testing.T, yamlContent string) {
 	t.Helper()
 

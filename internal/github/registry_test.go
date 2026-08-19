@@ -16,25 +16,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The registry's contract is: which names are usable, which installation each
-// mints through, and what reaches the log. Enabled state is deliberately not
-// readable except through a name failing to resolve, so these tests assert
-// resolution rather than internal flags.
+// Enabled state is deliberately not readable except through a name failing to
+// resolve, so these tests assert resolution rather than internal flags.
 
 const (
 	defaultAppID          = int64(111)
 	defaultInstallationID = int64(222)
 
-	// accountSameOrg is the default app's installation account. Apps are
-	// compared on account ID, never login, so tests distinguish organizations
-	// by ID alone.
+	// Apps are compared on account ID, never login.
 	accountSameOrg  = int64(9001)
 	accountOtherOrg = int64(9002)
 )
 
-// registryFixture is one GitHub mock plus the default app configuration
-// pointed at it. Registry entries inherit the API URL, so everything a test
-// configures resolves against the same mock.
+// registryFixture is a GitHub mock plus the default app configuration pointed
+// at it. Registry entries inherit the API URL, so everything resolves against
+// the same mock.
 type registryFixture struct {
 	mock *testhelpers.MockGitHubServer
 	cfg  config.GithubConfig
@@ -81,9 +77,8 @@ func (f registryFixture) buildWithContext(t *testing.T, ctx context.Context) (gi
 	return github.NewRegistry(ctx, f.cfg, defaultClient)
 }
 
-// appsJSON renders a GITHUB_APPS array from entries expressed as maps, so a
-// test can express a malformed entry (unknown field, missing key, wrong type)
-// as directly as a well-formed one.
+// appsJSON renders a GITHUB_APPS array from maps, so a test can express a
+// malformed entry as directly as a well-formed one.
 func appsJSON(t *testing.T, entries ...map[string]any) string {
 	t.Helper()
 
@@ -104,11 +99,8 @@ func validEntry(t *testing.T, name string, appID, installationID int64) map[stri
 	}
 }
 
-// --- Configuration validation (R5–R11, R15) ---
-
-// Every case here is deploy-blocking: configuration with no single
-// unambiguous meaning must fail identically on every instance rather than
-// being partially interpreted.
+// Configuration with no single unambiguous meaning must fail identically on
+// every instance rather than being partially interpreted.
 func TestRegistry_MalformedConfigurationPreventsStartup(t *testing.T) {
 	validKey := generateKey(t)
 
@@ -206,8 +198,7 @@ func TestRegistry_MalformedConfigurationPreventsStartup(t *testing.T) {
 	}
 }
 
-// A configuration error must never reproduce the credential it failed on: the
-// operator already has the key, and a log aggregator should not.
+// A configuration error must never reproduce the credential it failed on.
 func TestRegistry_ConfigurationErrorsOmitKeyMaterial(t *testing.T) {
 	const arn = "arn:aws:kms:ap-southeast-2:123456789012:key/super-secret-key-id"
 	badKey := "-----BEGIN RSA PRIVATE KEY-----\nQUJDREVGRw==\n-----END RSA PRIVATE KEY-----"
@@ -237,14 +228,11 @@ func TestRegistry_ConfigurationErrorsOmitKeyMaterial(t *testing.T) {
 
 			require.Error(t, err)
 			assert.NotContains(t, err.Error(), tt.secret)
-			// The entry is still identifiable: an error naming nothing is not
-			// actionable.
+			// An error naming nothing is not actionable.
 			assert.Contains(t, err.Error(), "packages")
 		})
 	}
 }
-
-// --- Verification outcomes (R12–R19) ---
 
 func TestRegistry_EnablesAppsOnTheDefaultAppsAccount(t *testing.T) {
 	fixture := newRegistryFixture(t, appsJSON(t,
@@ -267,10 +255,8 @@ func TestRegistry_EnablesAppsOnTheDefaultAppsAccount(t *testing.T) {
 		registry.DefaultIdentity())
 }
 
-// A registry app on another account is disabled rather than fatal: one
-// misconfigured credential must not take down vending for every other profile.
-// Disabled is indistinguishable from absent, so no caller can act on it by
-// forgetting to check a flag.
+// One misconfigured credential must not take down vending for every other
+// profile, so a mismatched app is disabled rather than fatal.
 func TestRegistry_DisablesAppOnADifferentAccount(t *testing.T) {
 	fixture := newRegistryFixture(t, appsJSON(t,
 		validEntry(t, "packages", 333, 444),
@@ -303,10 +289,9 @@ func TestRegistry_DisablesAppWhoseInstallationCannotBeQueried(t *testing.T) {
 	assert.True(t, registry.IsUsable("deploy"))
 }
 
-// The default app is the exception. If the service cannot query its own
-// installation it cannot authenticate as itself, so minting is broken
-// regardless and a process that continued would serve failures while
-// appearing healthy.
+// The default app is the exception: unable to query its own installation, the
+// service cannot authenticate as itself, and continuing would serve failures
+// while appearing healthy.
 func TestRegistry_FailsWhenTheDefaultAppsInstallationCannotBeQueried(t *testing.T) {
 	fixture := newRegistryFixture(t, appsJSON(t, validEntry(t, "packages", 333, 444)))
 	fixture.mock.SetInstallation(defaultInstallationID, testhelpers.MockInstallation{StatusCode: 401})
@@ -316,7 +301,7 @@ func TestRegistry_FailsWhenTheDefaultAppsInstallationCannotBeQueried(t *testing.
 	assert.ErrorContains(t, err, "default app installation could not be queried")
 }
 
-// R19: a deployment not using the feature pays nothing for its existence.
+// A deployment not using the feature pays nothing for its existence.
 func TestRegistry_QueriesNoInstallationWithoutAConfiguredRegistry(t *testing.T) {
 	fixture := newRegistryFixture(t, "")
 
@@ -327,8 +312,6 @@ func TestRegistry_QueriesNoInstallationWithoutAConfiguredRegistry(t *testing.T) 
 	assert.True(t, registry.IsUsable("default"))
 	assert.False(t, registry.IsUsable("packages"))
 }
-
-// --- Minting (R2, R33) ---
 
 func TestRegistry_MintsThroughTheResolvedAppsInstallation(t *testing.T) {
 	fixture := newRegistryFixture(t, appsJSON(t, validEntry(t, "packages", 333, 444)))
@@ -352,8 +335,7 @@ func TestRegistry_MintsThroughTheResolvedAppsInstallation(t *testing.T) {
 }
 
 // An identity may arrive from a long-lived request value, so the registry
-// re-resolves rather than trusting it. An unknown or repointed name must not
-// mint.
+// re-resolves rather than trusting it.
 func TestRegistry_RefusesToMintThroughAnUnresolvableIdentity(t *testing.T) {
 	fixture := newRegistryFixture(t, appsJSON(t, validEntry(t, "packages", 333, 444)))
 	fixture.mock.SetInstallation(444, testhelpers.MockInstallation{StatusCode: 500})
@@ -388,14 +370,11 @@ func TestRegistry_RefusesToMintThroughAnUnresolvableIdentity(t *testing.T) {
 	}
 }
 
-// --- Startup logging (R48, R49) ---
-
 func TestRegistry_LogsEveryEntryWithoutKeyMaterial(t *testing.T) {
 	const arn = "arn:aws:kms:ap-southeast-2:123456789012:key/super-secret-key-id"
 	privateKey := generateKey(t)
 
-	// A purposely unbound endpoint: KMS key construction contacts nothing, so
-	// this must not be reached during startup.
+	// Purposely unbound: KMS key construction must contact nothing at startup.
 	t.Setenv("AWS_ENDPOINT_URL", "http://localhost:20987/not-bound")
 
 	fixture := newRegistryFixture(t, appsJSON(t,
@@ -416,8 +395,6 @@ func TestRegistry_LogsEveryEntryWithoutKeyMaterial(t *testing.T) {
 
 	output := logged.String()
 
-	// R48: every configured app is identifiable, with its verified
-	// organization and enabled state.
 	for _, expected := range []string{
 		"name=packages", "applicationID=333", "installationID=444",
 		"name=deploy", "applicationID=555", "installationID=666",
@@ -426,8 +403,8 @@ func TestRegistry_LogsEveryEntryWithoutKeyMaterial(t *testing.T) {
 		assert.Contains(t, output, expected)
 	}
 
-	// R49: nothing else. The ARN is withheld along with the key — it names the
-	// credential and its account, which a log has no use for.
+	// The ARN is withheld along with the key: it names the credential and its
+	// account.
 	assert.NotContains(t, output, arn)
 	assert.NotContains(t, output, "super-secret-key-id")
 	assert.NotContains(t, output, privateKey)
@@ -454,7 +431,7 @@ func TestRegistry_LogsWhyAnAppIsDisabled(t *testing.T) {
 }
 
 // captureLog redirects the default logger into a buffer for the duration of
-// the test, so assertions can be made about what an operator would see.
+// the test.
 func captureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 

@@ -70,16 +70,15 @@ type upstreamClients struct {
 	buildkite buildkite.PipelineLookup
 
 	// apps is the authority on which GitHub App a profile mints through. It
-	// includes the default app, so single-app deployments go through the same
-	// path as multi-app ones and there is no untested second code path.
+	// includes the default app, so single-app deployments take the same path as
+	// multi-app ones.
 	apps github.Registry
 
 	// Token rather than app transport, because it reads repository content.
 	// Nil when unconfigured, which is what leaves the refresh task unstarted.
 	//
-	// Always the default app: the profile configuration decides which app a
-	// profile uses, so reading it through a profile-selected app would be
-	// circular.
+	// Always the default app: the profile configuration selects each profile's
+	// app, so reading that configuration through a selected app is circular.
 	profileSource *github.Client
 
 	tokenCache cache.TokenCache[vendor.ProfileToken]
@@ -87,9 +86,7 @@ type upstreamClients struct {
 
 // configureUpstreamClients must run after installOutboundTransport: clients
 // capture http.DefaultTransport as they are built, so one made earlier
-// silently loses pool tuning and tracing. That applies to the app registry's
-// clients too — built here, after the transport is installed, so registry
-// traffic is traced and pool-tuned like everything else. Add new clients here.
+// silently loses pool tuning and tracing. Add new clients here.
 func configureUpstreamClients(ctx context.Context, cfg config.Config, validated validatedConfig, hooks *server.ShutdownHooks) (upstreamClients, error) {
 	bk, err := buildkite.New(cfg.Buildkite)
 	if err != nil {
@@ -101,9 +98,9 @@ func configureUpstreamClients(ctx context.Context, cfg config.Config, validated 
 		return upstreamClients{}, fmt.Errorf("github configuration failed: %w", err)
 	}
 
-	// ctx is the long-lived server context by contract: it reaches KMS signing
-	// key construction, and a key built under a shorter-lived context boots
-	// cleanly and then fails every mint once that context expires.
+	// ctx must be the long-lived server context: it reaches KMS signing key
+	// construction, and a key built under a shorter-lived one boots cleanly
+	// then fails every mint once that context expires.
 	apps, err := github.NewRegistry(ctx, cfg.Github, gh)
 	if err != nil {
 		return upstreamClients{}, fmt.Errorf("github app registry configuration failed: %w", err)
@@ -175,10 +172,6 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 
 	// Pipeline (repo) routes
 
-	// Vending mints through whichever app the request resolved to. The
-	// registry is passed as a minting function rather than resolved per
-	// request inside the chain: Cached short-circuits before Vending runs, so
-	// the resolution that guards a warm entry has to happen in the resolver.
 	mint := clients.apps.CreateAccessToken
 	resolveApp := clients.apps.Resolve
 

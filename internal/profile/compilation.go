@@ -35,27 +35,21 @@ func resolveRepositoryScope(repos []string) RepositoryScope {
 	return NewSpecificScope(repos...)
 }
 
-// AppLookup reports whether a profile may name this app: present in the app
-// registry, and enabled. It is the registry's own resolution function, so a
-// compiled profile and a live request can never disagree about which apps are
-// usable.
+// AppLookup reports whether a profile may name this app: registered, and
+// enabled. It is the registry's own resolution function, so compiled profiles
+// and live requests cannot disagree about which apps are usable.
 type AppLookup func(name string) bool
 
-// DefaultAppOnly is the lookup for a deployment with no app registry: the
-// default app is usable and nothing else is. It is also what compilation
-// outside a running service (tests, tooling) should use.
+// DefaultAppOnly is the lookup for deployments with no app registry, and for
+// compilation outside a running service: only the default app is usable.
 func DefaultAppOnly(name string) bool {
 	return name == github.DefaultAppName
 }
 
-// resolveProfileApp normalises and validates a profile's declared app.
-//
-// Normalisation happens here rather than at the request boundary so that an
-// omitted `app` and an explicit `app: default` produce the same attribute
-// value: the two spellings are indistinguishable downstream, and so produce
-// identical audit attribution for identical behaviour. It also means a valid
-// profile's app name is never empty, which is what lets the resolver treat an
-// empty one as a defect rather than a default.
+// resolveProfileApp normalises and validates a profile's declared app. An
+// omitted `app` and an explicit `app: default` produce the same value, so a
+// valid profile's app name is never empty and the resolver can treat an empty
+// one as a defect.
 func resolveProfileApp(app *string, usable AppLookup) (string, error) {
 	if app == nil {
 		return github.DefaultAppName, nil
@@ -66,9 +60,6 @@ func resolveProfileApp(app *string, usable AppLookup) (string, error) {
 	}
 
 	if !usable(*app) {
-		// Unknown and disabled are one answer by design: the registry does not
-		// distinguish them, so that no caller can resolve a disabled app by
-		// forgetting to check a flag.
 		return "", fmt.Errorf("app %q is not a configured, enabled application", *app)
 	}
 
@@ -76,10 +67,7 @@ func resolveProfileApp(app *string, usable AppLookup) (string, error) {
 }
 
 // validateOrganizationProfile checks one profile in isolation and returns the
-// app its tokens mint through. Validation is separated from the loop so that
-// adding a rule does not make the compilation loop harder to read: the loop's
-// job is bookkeeping across profiles, this function's is one profile's
-// validity.
+// app its tokens mint through.
 func validateOrganizationProfile(prof organizationProfile, usableApp AppLookup) (string, error) {
 	// Reject names that would produce an ambiguous URN
 	if err := validateProfileName(prof.Name); err != nil {
@@ -268,10 +256,8 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 
 	// Add "default" profile from defaultPermissions
 	// Empty match rules means it matches all pipelines
-	//
-	// It always mints through the default app: it is synthesised rather than
-	// declared, so there is no YAML to carry an `app` property, and the
-	// reserved name means none can be declared to override it.
+	// Always the default app: it is synthesised, so there is no YAML to name
+	// one, and the reserved name prevents a declared override.
 	defaultMatcher, _ := compileMatchRules(nil) // Empty rules always succeed
 	validProfiles["default"] = NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
 		Permissions: ensureMetadataRead(defaultPermissions),
@@ -286,10 +272,8 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 // The digest is passed through to the returned Profiles.
 // Returns an error if the default pipeline permissions are invalid.
 //
-// usableApp is consulted on every compile, not only the first. Profile
-// validity is a function of both the YAML and the registry, and compilation
-// runs again on every background refresh, so a profile naming an enabled app
-// stays valid across refreshes and one naming a disabled app stays invalid.
+// Validity depends on the registry as well as the YAML: a profile naming an
+// app that usableApp rejects is compiled as invalid.
 func compile(config profileConfig, digest string, location string, usableApp AppLookup) (Profiles, error) {
 	// Compile organization profiles
 	orgProfiles := compileOrganizationProfiles(config.Organization.Profiles, usableApp)

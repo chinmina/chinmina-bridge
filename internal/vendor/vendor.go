@@ -35,11 +35,8 @@ type Resolved[T any] struct {
 	// App is the GitHub App identity this request's token is minted through,
 	// resolved from the profile's app name at the handler boundary.
 	//
-	// It is data rather than a closure over a client, so this whole value
-	// stays loggable and no credential is captured in something that flows
-	// into a cache payload. The stages downstream read it from here rather
-	// than consulting the registry themselves, which is what keeps the
-	// registry lookup on the one code path that runs for every request.
+	// It is data rather than a closure over a client, so this value stays
+	// loggable and no credential reaches the cache payload.
 	App github.AppIdentity
 }
 
@@ -53,9 +50,6 @@ type RepositoryLookup func(ctx context.Context, organizationSlug, pipelineSlug s
 type TokenVendor func(ctx context.Context, repoNames []string, scopes []string) (string, time.Time, error)
 
 // AppTokenVendor vends a token through a specific GitHub App installation.
-// Resolving the identity to a minting client is an O(1) lookup against the
-// immutable registry, so this stays a plain function call rather than
-// something a request has to carry a client for.
 type AppTokenVendor func(ctx context.Context, app github.AppIdentity, repoNames []string, scopes []string) (string, time.Time, error)
 
 type ProfileToken struct {
@@ -66,8 +60,7 @@ type ProfileToken struct {
 	Permissions         []string                `json:"permissions"`
 
 	// App names the GitHub App the token was minted through. It is part of the
-	// cached payload, not merely of the live response, so a cache hit and a
-	// cache miss return the same shape.
+	// cached payload, so hits and misses return the same shape.
 	App string `json:"app"`
 
 	Token       string    `json:"token"`

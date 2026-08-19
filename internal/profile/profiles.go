@@ -15,16 +15,12 @@ type OrganizationProfileAttr struct {
 	Scope       RepositoryScope
 	Permissions []string
 
-	// App is the name of the GitHub App this profile's tokens are minted
-	// through, never a live client: attributes are pure data, so nothing here
-	// can carry a credential into a cache payload or a log line. Compilation
-	// normalises it, so a valid profile's App is never empty.
+	// App is the app's name, never a live client: attributes are pure data and
+	// must not carry a credential into a cache payload or a log line.
 	App string
 }
 
 // AppName is the name of the app this profile's tokens are minted through.
-// The profile resolver is the only caller: it is the one stage that reads a
-// family-specific attribute, so it is the only one constrained by this method.
 func (attr OrganizationProfileAttr) AppName() string {
 	return attr.App
 }
@@ -45,8 +41,7 @@ func (attr OrganizationProfileAttr) RepositoryScope() RepositoryScope {
 type PipelineProfileAttr struct {
 	Permissions []string
 
-	// App is the name of the GitHub App this profile's tokens are minted
-	// through. See OrganizationProfileAttr.App.
+	// App is the app's name. See OrganizationProfileAttr.App.
 	App string
 }
 
@@ -56,10 +51,9 @@ func (attr PipelineProfileAttr) AppName() string {
 }
 
 // AppNamed is implemented by profile attribute types that declare which app
-// their tokens are minted through. It exists so the profile resolver — the
-// only stage that reads a family-specific attribute — can resolve the name
-// once at the handler boundary, while every stage downstream reads the
-// resolved identity from the request value and stays generic.
+// their tokens are minted through. Only the profile resolver reads it: it
+// resolves the name once at the handler boundary so that downstream stages
+// stay generic.
 type AppNamed interface {
 	AppName() string
 }

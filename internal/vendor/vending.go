@@ -45,11 +45,8 @@ type RepositoryResolver[T any] func(ctx context.Context, r Resolved[T], requeste
 // app identity supplies the installation, so the token can only ever describe
 // the profile generation the request was authorized against.
 //
-// It deliberately does not resolve the app itself. The chain is
-// Audit -> Authorized -> Cached -> Vending, and Cached short-circuits on a hit
-// before this runs, so a registry check here would be absent on exactly the
-// requests where it matters: a profile that was valid long enough to warm an
-// entry and has since had its app disabled. The resolver owns that lookup.
+// It deliberately does not resolve the app itself: Cached short-circuits
+// before this runs, so the lookup belongs at the request boundary.
 func Vending[T any](resolve RepositoryResolver[T], tokenVendor AppTokenVendor) ProfileTokenVendor[T] {
 	return func(ctx context.Context, r Resolved[T], requestedRepoURL string) VendorResult {
 		target, err := resolve(ctx, r, requestedRepoURL)

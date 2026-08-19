@@ -8,9 +8,7 @@ import (
 )
 
 // usableApps builds a lookup over a fixed set of enabled app names, plus the
-// default. It stands in for the registry: compilation only ever asks "may a
-// profile name this?", and the registry answers no for an unknown app and a
-// disabled one alike.
+// default. The registry answers no for an unknown app and a disabled one alike.
 func usableApps(names ...string) AppLookup {
 	usable := map[string]struct{}{"default": {}}
 	for _, name := range names {
@@ -36,8 +34,7 @@ func compileYAML(t *testing.T, yamlContent string, usableApp AppLookup) Profiles
 }
 
 // An omitted app and an explicit `app: default` must be indistinguishable
-// downstream: normalising in compilation rather than at the request boundary
-// is what makes identical behaviour produce identical audit attribution.
+// downstream, so compilation normalises rather than the request boundary.
 func TestCompile_AppNormalization(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -74,9 +71,8 @@ pipeline:
 	}
 }
 
-// The two spellings must compile to equal attributes, not merely to equal app
-// names: anything that distinguishes them is something a downstream stage can
-// accidentally act on.
+// Equality is asserted over the whole attribute set, not just the app name:
+// any remaining difference is something a downstream stage can act on.
 func TestCompile_OmittedAndExplicitDefaultProduceEqualAttributes(t *testing.T) {
 	omitted := compileYAML(t, `
 organization:
@@ -117,9 +113,8 @@ pipeline:
 	assert.Equal(t, omittedPipeline.Attrs, explicitPipeline.Attrs)
 }
 
-// A profile naming an unusable app is invalid, and only that profile is: the
-// isolation is the point, since one operator error must not withdraw every
-// other profile in the configuration.
+// A profile naming an unusable app is invalid, and only that profile is: one
+// operator error must not withdraw every other profile in the configuration.
 func TestCompile_RejectsUnusableApp(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -137,8 +132,6 @@ func TestCompile_RejectsUnusableApp(t *testing.T) {
 			expectedErr: `app "nonexistent" is not a configured, enabled application`,
 		},
 		{
-			// A disabled app is indistinguishable from an absent one by
-			// design: the registry does not expose enabled state to callers.
 			name:        "disabled app is not resolvable",
 			app:         `app: disabled-packages`,
 			expectedErr: `app "disabled-packages" is not a configured, enabled application`,
@@ -176,8 +169,6 @@ pipeline:
 			require.ErrorAs(t, err, &unavailable)
 			assert.ErrorContains(t, err, tt.expectedErr)
 
-			// Isolation: an unrelated profile in the same configuration is
-			// unaffected.
 			healthy, err := profiles.GetOrgProfile("healthy")
 			require.NoError(t, err)
 			assert.Equal(t, "packages", healthy.Attrs.App)
@@ -189,8 +180,8 @@ pipeline:
 	}
 }
 
-// The default pipeline profile is synthesised rather than declared, so it has
-// no YAML to carry an app property and always mints through the default app.
+// The default pipeline profile is synthesised, so it has no YAML to carry an
+// app property and always mints through the default app.
 func TestCompile_DefaultPipelineProfileUsesTheDefaultApp(t *testing.T) {
 	profiles := compileYAML(t, `
 pipeline:
@@ -206,7 +197,7 @@ pipeline:
 	require.NoError(t, err)
 	assert.Equal(t, "default", defaultProfile.Attrs.App)
 
-	// The reserved name is what prevents the YAML redefining it with an app.
+	// The reserved name prevents the YAML redefining it with an app.
 	reserved := compileYAML(t, `
 pipeline:
   profiles:
@@ -221,8 +212,6 @@ pipeline:
 	assert.Equal(t, []string{"contents:read", "metadata:read"}, stillDefault.Attrs.Permissions)
 }
 
-// The default app is usable without any registry, so an existing deployment's
-// profiles compile exactly as they did before this feature existed.
 func TestCompile_DefaultAppIsUsableWithoutARegistry(t *testing.T) {
 	profiles := compileYAML(t, `
 organization:

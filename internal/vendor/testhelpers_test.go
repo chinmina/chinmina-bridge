@@ -35,10 +35,8 @@ func newTestCached(t *testing.T, ttl time.Duration) func(vendor.ProfileTokenVend
 // so they all address one namespace.
 const testGeneration = "test-generation"
 
-// testApp stands in for the app identity the boundary resolver stamps. The
-// cache key includes it, so every helper here supplies one: a zero identity is
-// refused by Cached rather than defaulted, which is the behaviour that stops
-// an unresolved request keying every app's entries together.
+// testApp stands in for the app identity the boundary resolver stamps. Cached
+// refuses a zero identity, so every helper here supplies one.
 var testApp = github.AppIdentity{Name: "default", ApplicationID: 111, InstallationID: 222}
 
 // cacheRequest wraps a ref the way the handler boundary would, for tests that
@@ -71,8 +69,7 @@ func resolvedPipeline(t *testing.T, store *profile.ProfileStore, ref profile.Pro
 	return vendor.Resolved[profile.PipelineProfileAttr]{Ref: ref, Profile: authProfile, Digest: digest, App: testApp}
 }
 
-// mintingThrough adapts a plain token vendor to the app-aware signature,
-// recording which identity each mint was requested through.
+// mintingThrough adapts a plain token vendor to the app-aware signature.
 func mintingThrough(mint vendor.TokenVendor) vendor.AppTokenVendor {
 	return func(ctx context.Context, _ github.AppIdentity, repoNames []string, scopes []string) (string, time.Time, error) {
 		return mint(ctx, repoNames, scopes)

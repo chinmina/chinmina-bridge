@@ -38,20 +38,17 @@ type KMSClient interface {
 // KMS client needed for AWS KMS-based signing without exposing private key
 // material.
 //
-// It deliberately holds no context. Signing is lazy and recurring — a fresh
-// App JWT roughly every ten minutes for the life of the process — so a
-// context captured at construction (startup, or app registry verification)
-// would produce a clean boot followed by permanent `context canceled` on
-// every mint once that context expired. The failure reproduces only for
-// ARN-backed keys, never PEM, so it is invisible to most tests.
+// It must hold no context. JWTs are re-minted roughly every ten minutes for
+// the life of the process, so a context captured at construction gives a clean
+// boot then permanent `context canceled` on every mint. Only ARN-backed keys
+// are affected, so PEM-based tests will not catch a regression.
 type kmsSigningKey struct {
 	client KMSClient
 	arn    string
 }
 
-// kmsSignTimeout bounds a single KMS signing call. Sign has no caller-supplied
-// context (jws.Signer2 does not carry one), so the call supplies its own
-// rather than inheriting a lifetime it cannot reason about.
+// kmsSignTimeout bounds a single KMS signing call: jws.Signer2 gives Sign no
+// caller context, so the call must supply its own.
 const kmsSignTimeout = 30 * time.Second
 
 // kmsSigner implements jws.Signer2 for AWS KMS-based signing. The actual

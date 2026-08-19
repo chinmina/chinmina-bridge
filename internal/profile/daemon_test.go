@@ -122,15 +122,10 @@ func TestRefreshTask_ActionLoadsAGeneration(t *testing.T) {
 	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
 }
 
-// Profile validity is a function of both the YAML and the app registry, but
-// only the YAML is reflected in the digest. If the background refresh path
-// compiled without the registry, a profile naming a registry app would be
-// valid for exactly one refresh interval and invalid after it — with an
-// unchanged digest, so the generation swap would log at debug level while
-// those profiles silently became unavailable.
-//
-// This is the specific failure the requirement exists to prevent, so it is
-// asserted on the refresh path rather than on compilation.
+// Profile validity depends on both the YAML and the app registry, but only the
+// YAML feeds the digest. A refresh that compiled without the registry would
+// silently invalidate app-naming profiles under an unchanged digest, so the
+// generation swap would look like a no-op.
 func TestRefresh_ProfileNamingAnEnabledAppStaysValidAcrossRefreshes(t *testing.T) {
 	gh := &mockGitHubClientForDaemon{
 		yaml: `organization:
@@ -145,8 +140,7 @@ func TestRefresh_ProfileNamingAnEnabledAppStaysValidAcrossRefreshes(t *testing.T
 	store := NewProfileStore()
 	usableApp := usableApps("packages")
 
-	// Two refreshes of unchanged content: the second is the one that would
-	// have regressed, and its digest is identical to the first's.
+	// The second refresh is the one that would regress.
 	require.NoError(t, RefreshTask(store, gh, "acme:silk:profile.yaml", usableApp).Action(t.Context()))
 	firstDigest := store.Digest()
 
@@ -160,8 +154,8 @@ func TestRefresh_ProfileNamingAnEnabledAppStaysValidAcrossRefreshes(t *testing.T
 	assert.Equal(t, 2, gh.calls())
 }
 
-// The converse: an app disabled at startup keeps its profiles unavailable
-// across refreshes, because disabled is terminal until the process restarts.
+// Unusable is terminal until the process restarts: no refresh recovers the
+// profile.
 func TestRefresh_ProfileNamingAnUnusableAppStaysInvalidAcrossRefreshes(t *testing.T) {
 	gh := &mockGitHubClientForDaemon{
 		yaml: `organization:

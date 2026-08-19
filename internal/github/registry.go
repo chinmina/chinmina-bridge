@@ -19,51 +19,36 @@ import (
 // property resolves to the same identity.
 const DefaultAppName = "default"
 
-// maxAppNameLength bounds a registry entry's name. Names appear in log lines,
-// audit entries and metric attributes, so an unbounded one is an unbounded
-// cardinality and an unbounded log record.
+// maxAppNameLength bounds a registry entry's name: names become metric
+// attributes, so unbounded length is unbounded cardinality.
 const maxAppNameLength = 64
 
-// appNamePattern constrains a registry entry's name to a lower-case,
-// URL- and label-safe form. Names travel into metric attributes and audit
-// entries, so the set of accepted characters is deliberately small.
+// appNamePattern constrains a registry entry's name to a lower-case, URL- and
+// label-safe form.
 var appNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$`)
 
-// ErrPrivateKeyInvalid reports an unparseable private key.
-//
-// This is a deliberate, documented exception to the project's %w-wrapping
-// convention. The underlying error comes from a third-party parser whose
-// message content is outside our control and may change on any dependency
-// bump; a configuration error must never carry a substring of the key it
-// failed to parse. The entry is identified by name, and the operator has the
-// key — the library's message adds nothing they cannot reproduce.
+// ErrPrivateKeyInvalid reports an unparseable private key. A deliberate
+// exception to the %w convention: the parser's message may quote the key.
 var ErrPrivateKeyInvalid = errors.New("private key could not be parsed")
 
-// ErrAppUnknown reports a name that resolves to no usable app. A disabled app
-// is indistinguishable from an absent one here by design: enabled state is
-// exposed for logging only, so no caller can resolve a disabled app by
-// forgetting to check a flag.
+// ErrAppUnknown reports a name that resolves to no usable app. Disabled apps
+// are indistinguishable from absent ones: enabled state is for logging only.
 var ErrAppUnknown = errors.New("no such app")
 
-// AppIdentity is what a profile's app name resolves to: enough to mint through
-// an installation and to attribute the result, and nothing else. It is plain
-// data rather than a client or a closure, so it can travel on the resolved
-// request value and into a cache key without carrying a credential with it.
+// AppIdentity is what a profile's app name resolves to. It is plain data, not a
+// client, so it can travel on a request value or into a cache key.
 type AppIdentity struct {
 	Name           string
 	ApplicationID  int64
 	InstallationID int64
 }
 
-// IsZero reports whether the identity was never resolved. Callers that key on
-// an identity use this to refuse rather than silently key on zeroes.
+// IsZero reports whether the identity was never resolved.
 func (i AppIdentity) IsZero() bool {
 	return i == AppIdentity{}
 }
 
-// LogValue keeps the identity's log shape fixed at the three fields that
-// identify it. Key material never reaches this type, so there is nothing to
-// redact.
+// LogValue implements slog.LogValuer.
 func (i AppIdentity) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("name", i.Name),
@@ -72,10 +57,7 @@ func (i AppIdentity) LogValue() slog.Value {
 	)
 }
 
-// appEntryConfig is one GITHUB_APPS entry as configured. It is the only type
-// in the registry that holds key material, and its LogValue omits it: an
-// operator cannot leak a key by logging this value, whatever they add to the
-// struct later.
+// appEntryConfig is one GITHUB_APPS entry as configured.
 type appEntryConfig struct {
 	Name           string `json:"name"`
 	ApplicationID  int64  `json:"appId"`
@@ -84,8 +66,7 @@ type appEntryConfig struct {
 	PrivateKeyARN  string `json:"privateKeyArn"`
 }
 
-// keySource names where a key comes from without disclosing it. Exactly one
-// source is present by the time this is called.
+// keySource names where a key comes from without disclosing it.
 func keySource(privateKeyARN string) string {
 	if privateKeyARN != "" {
 		return "privateKeyArn"
@@ -93,9 +74,8 @@ func keySource(privateKeyARN string) string {
 	return "privateKey"
 }
 
-// LogValue deliberately omits PrivateKey and PrivateKeyARN. The ARN is
-// omitted as well as the key: it names the credential and its account, and an
-// operator reading a log has no use for it that justifies publishing it.
+// LogValue omits both the private key and its ARN: the ARN names the
+// credential and its account, and neither belongs in a log.
 func (e appEntryConfig) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("name", e.Name),
@@ -105,30 +85,25 @@ func (e appEntryConfig) LogValue() slog.Value {
 	)
 }
 
-// resolvedApp is a registry entry after verification. It holds no key
-// material: the client it wraps has already absorbed the key, so nothing that
-// survives construction can disclose one.
+// resolvedApp is a registry entry after verification.
 type resolvedApp struct {
 	identity  AppIdentity
 	client    Client
 	keySource string
 
-	// enabled is false for an app on a different account, or one whose
-	// installation could not be queried. Disabled is terminal until the
-	// process restarts: re-verification would make an instance's enabled set a
-	// function of when its timer fired rather than of its configuration.
+	// enabled is false for an app on another account, or one whose installation
+	// could not be queried. Disabled is terminal until restart: re-verification
+	// would make the enabled set depend on when a timer fired.
 	enabled bool
 
-	// accountLogin is the verified organization, for logging. Empty when
-	// verification failed.
+	// accountLogin is the verified organization. Empty when verification failed.
 	accountLogin string
 
 	// disabledReason explains a false enabled, for the startup log only.
 	disabledReason string
 }
 
-// LogValue is the R48 startup record: name, application ID, installation ID,
-// verified organization and enabled state.
+// LogValue is the startup record for one registry entry.
 func (a resolvedApp) LogValue() slog.Value {
 	attrs := []slog.Attr{
 		slog.String("name", a.identity.Name),
@@ -145,13 +120,9 @@ func (a resolvedApp) LogValue() slog.Value {
 }
 
 // Registry maps a profile's app name to the installation its tokens are minted
-// through. It is built once at startup and never written afterwards: methods
-// take value receivers over a map that the constructor is the only writer of,
-// so a handler that captured it cannot observe it change, and no request path
-// needs a lock.
-//
-// The default app is always present under DefaultAppName, whether or not
-// GITHUB_APPS is configured.
+// through. It is written only by the constructor and never afterwards, so the
+// request path needs no lock. The default app is always present under
+// DefaultAppName.
 type Registry struct {
 	apps map[string]resolvedApp
 }
@@ -159,19 +130,13 @@ type Registry struct {
 // NewRegistry builds the app registry from the default app's configuration and
 // the GITHUB_APPS entries alongside it.
 //
-// ctx must be the long-lived server context. It reaches KMS-backed signing key
-// construction, and a key built under a startup- or verification-scoped
-// context would boot cleanly and then fail every mint once that context
-// expired.
+// ctx must be the long-lived server context: it reaches KMS-backed signing key
+// construction, and a key built under a startup-scoped context would boot
+// cleanly and then fail every mint.
 //
-// defaultClient is the already-constructed client for the default app, reused
-// rather than rebuilt so the default app has exactly one minting identity.
-//
-// Errors here are deploy-blocking and deterministic: they describe
-// configuration with no single unambiguous meaning, or a default app that
-// cannot authenticate as itself. An individual registry app that cannot be
-// verified is disabled instead, so one unreachable credential does not take
-// down vending for every other profile.
+// Errors here are deploy-blocking: ambiguous configuration, or a default app
+// that cannot authenticate as itself. A registry app that cannot be verified is
+// disabled instead, so one unreachable credential does not stop the rest.
 func NewRegistry(ctx context.Context, cfg appconfig.GithubConfig, defaultClient Client) (Registry, error) {
 	defaultApp := resolvedApp{
 		identity: AppIdentity{
@@ -189,9 +154,8 @@ func NewRegistry(ctx context.Context, cfg appconfig.GithubConfig, defaultClient 
 		return Registry{}, err
 	}
 
-	// R19: with no registry configured the default app vends everything and
-	// startup queries no installation at all. Deployments not using the
-	// feature pay nothing for its existence.
+	// With no registry configured, startup queries no installation at all:
+	// deployments not using the feature pay nothing for it.
 	if len(entries) == 0 {
 		return Registry{apps: map[string]resolvedApp{DefaultAppName: defaultApp}}, nil
 	}
@@ -228,13 +192,8 @@ func NewRegistry(ctx context.Context, cfg appconfig.GithubConfig, defaultClient 
 	return registry, nil
 }
 
-// Resolve maps an app name to the identity its tokens are minted through.
-// A disabled app resolves to nothing: enabled state is not part of this
-// answer, so a caller cannot act on a disabled app by neglecting to check it.
-//
-// This is the single enforcement point shared by profile compilation and the
-// request path, which is what makes a compiled profile and a live request
-// agree on which apps are usable.
+// Resolve maps an app name to the identity its tokens are minted through. A
+// disabled app resolves to nothing.
 func (r Registry) Resolve(name string) (AppIdentity, bool) {
 	app, found := r.apps[name]
 	if !found || !app.enabled {
@@ -255,11 +214,9 @@ func (r Registry) DefaultIdentity() AppIdentity {
 	return r.apps[DefaultAppName].identity
 }
 
-// CreateAccessToken mints an installation token through the named app.
-//
-// The identity is re-resolved rather than trusted: it may have travelled
-// through a cache payload or a long-lived request value, and the registry is
-// the only authority on which apps are usable.
+// CreateAccessToken mints an installation token through the named app. The
+// identity is re-resolved rather than trusted: it may have arrived from a cache
+// payload, and the registry is the only authority on which apps are usable.
 func (r Registry) CreateAccessToken(ctx context.Context, app AppIdentity, repoNames []string, scopes []string) (string, time.Time, error) {
 	resolved, found := r.apps[app.Name]
 	if !found || !resolved.enabled {
@@ -277,13 +234,8 @@ func (r Registry) CreateAccessToken(ctx context.Context, app AppIdentity, repoNa
 }
 
 // verify establishes that every registry app is installed on the same account
-// as the default app.
-//
-// The default app's account is the reference, so no new variable is required
-// of an existing deployment. Queries are issued concurrently, so the phase
-// costs roughly the slowest one rather than their sum. No time budget governs
-// it: a budget's expiry would be evidence about this service rather than about
-// any app, which is the wrong basis on which to disable one.
+// as the default app. Queries run concurrently and under no time budget: an
+// expiring budget would be evidence about this service, not about an app.
 func (r Registry) verify(ctx context.Context) error {
 	type result struct {
 		name    string
@@ -314,10 +266,9 @@ func (r Registry) verify(ctx context.Context) error {
 		accounts[res.name] = res.account
 	}
 
-	// The default app is the exception to "disable, don't fail". If the
-	// service cannot query its own installation it cannot authenticate to
-	// GitHub as itself, so minting is broken regardless and a process that
-	// continued would serve failures while appearing healthy.
+	// The default app is the exception to "disable, don't fail": a service that
+	// cannot authenticate as itself would serve failures while appearing
+	// healthy.
 	if err, failed := failures[DefaultAppName]; failed {
 		return fmt.Errorf("default app installation could not be queried: %w", err)
 	}
@@ -354,19 +305,16 @@ func (r Registry) verify(ctx context.Context) error {
 	return nil
 }
 
-// logEntries records the whole registry once at startup: it is the operator's
-// only view of which apps a running instance considers usable, since disabled
-// is terminal until restart.
+// logEntries records the whole registry once at startup: the operator's only
+// view of which apps an instance considers usable.
 func (r Registry) logEntries() {
 	for _, app := range r.apps {
 		slog.Info("github app registry entry", "app", app)
 	}
 }
 
-// newRegistryClient builds the minting client for one registry entry.
-//
-// The entry inherits the default app's API URL: the registry is a set of
-// credentials against one GitHub deployment, not a set of GitHub deployments.
+// newRegistryClient builds the minting client for one registry entry. Entries
+// inherit the default app's API URL: one GitHub deployment, many credentials.
 func newRegistryClient(ctx context.Context, cfg appconfig.GithubConfig, entry appEntryConfig, loadAWS AWSConfigLoader) (Client, error) {
 	entryCfg := appconfig.GithubConfig{
 		APIURL:         cfg.APIURL,
@@ -377,8 +325,7 @@ func newRegistryClient(ctx context.Context, cfg appconfig.GithubConfig, entry ap
 	}
 
 	// Validate the key before building the client so an unparseable key is
-	// reported as such, rather than as a transport construction failure with
-	// the parser's message attached.
+	// reported as such, not as a transport construction failure.
 	if entry.PrivateKey != "" {
 		if _, err := parsePrivateKeyPEM(entry.PrivateKey); err != nil {
 			return Client{}, fmt.Errorf("app %q: %w", entry.Name, ErrPrivateKeyInvalid)
@@ -387,22 +334,15 @@ func newRegistryClient(ctx context.Context, cfg appconfig.GithubConfig, entry ap
 
 	client, err := New(ctx, entryCfg, WithAppTransport, WithAWSConfigLoader(loadAWS))
 	if err != nil {
-		// The wrapped error describes client construction, not key content:
-		// the key has already been parsed successfully above, and the KMS path
-		// contacts nothing here.
+		// Safe to wrap: the key has already parsed, so this cannot quote it.
 		return Client{}, fmt.Errorf("app %q: could not construct GitHub client: %w", entry.Name, err)
 	}
 
 	return client, nil
 }
 
-// parseAppEntries decodes and validates GITHUB_APPS.
-//
-// Every failure here is deploy-blocking rather than degrading: configuration
-// with no single unambiguous meaning fails identically on every instance,
-// where a partial interpretation would differ between them. Each message
-// identifies the offending entry by name, or by index when the name itself is
-// the problem, and never reproduces any part of a key or ARN.
+// parseAppEntries decodes and validates GITHUB_APPS. Failures are
+// deploy-blocking: ambiguous configuration must fail identically everywhere.
 func parseAppEntries(raw string) ([]appEntryConfig, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
@@ -410,9 +350,8 @@ func parseAppEntries(raw string) ([]appEntryConfig, error) {
 
 	decoder := json.NewDecoder(strings.NewReader(raw))
 
-	// An unrecognised field is rejected for the same reason the profile YAML
-	// rejects one: a typo that is silently ignored is a credential configured
-	// differently from how it reads.
+	// A silently ignored typo is a credential configured differently from how
+	// it reads.
 	decoder.DisallowUnknownFields()
 
 	var entries []appEntryConfig
