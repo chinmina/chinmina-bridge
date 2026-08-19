@@ -111,6 +111,9 @@ main() {
           # The daemon listens on this host, not in the container's netns.
           provider="tcp://${CONTAINER_HOST_ALIAS}:${port}"
           ;;
+        *:*) # bracket IPv6 literals; split_hostport stripped them
+          provider="tcp://[${host}]:${port}"
+          ;;
         *)
           provider="tcp://${host}:${port}"
           ;;
