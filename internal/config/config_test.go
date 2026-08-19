@@ -2,6 +2,8 @@ package config
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/sethvargo/go-envconfig"
@@ -459,4 +461,200 @@ func TestLoad_Errors(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.expectedErr)
 		})
 	}
+}
+
+func TestFileContentLookuper(t *testing.T) {
+	dir := t.TempDir()
+
+	pemPath := filepath.Join(dir, "private-key.pem")
+	require.NoError(t, os.WriteFile(pemPath, []byte("file-key\n"), 0o600))
+
+	missingPath := filepath.Join(dir, "does-not-exist")
+
+	blankPath := filepath.Join(dir, "blank")
+	require.NoError(t, os.WriteFile(blankPath, []byte("  \n\t\n"), 0o600))
+
+	tests := []struct {
+		name string
+		// base seeds the wrapped lookuper; allowedKeys restricts which keys the
+		// "_FILE" convention applies to.
+		base        map[string]string
+		allowedKeys []string
+		lookupKey   string
+		wantValue   string
+		wantOK      bool
+		wantErr     string
+	}{
+		{
+			name:        "allowed key with no value or file passes through unset",
+			base:        map[string]string{},
+			allowedKeys: []string{"GITHUB_APP_PRIVATE_KEY"},
+			lookupKey:   "GITHUB_APP_PRIVATE_KEY",
+			wantValue:   "",
+			wantOK:      false,
+		},
+		{
+			name:        "allowed key with inline value only passes through unchanged",
+			base:        map[string]string{"GITHUB_APP_PRIVATE_KEY": "inline-key"},
+			allowedKeys: []string{"GITHUB_APP_PRIVATE_KEY"},
+			lookupKey:   "GITHUB_APP_PRIVATE_KEY",
+			wantValue:   "inline-key",
+			wantOK:      true,
+		},
+		{
+			name:        "allowed key with _FILE only reads and trims file contents",
+			base:        map[string]string{"GITHUB_APP_PRIVATE_KEY_FILE": pemPath},
+			allowedKeys: []string{"GITHUB_APP_PRIVATE_KEY"},
+			lookupKey:   "GITHUB_APP_PRIVATE_KEY",
+			wantValue:   "file-key",
+			wantOK:      true,
+		},
+		{
+			name: "allowed key with both value and _FILE set is an error",
+			base: map[string]string{
+				"GITHUB_APP_PRIVATE_KEY":      "inline-key",
+				"GITHUB_APP_PRIVATE_KEY_FILE": pemPath,
+			},
+			allowedKeys: []string{"GITHUB_APP_PRIVATE_KEY"},
+			lookupKey:   "GITHUB_APP_PRIVATE_KEY",
+			wantValue:   "inline-key",
+			wantOK:      true,
+			wantErr:     "GITHUB_APP_PRIVATE_KEY and GITHUB_APP_PRIVATE_KEY_FILE are mutually exclusive",
+		},
+		{
+			name:        "allowed key with unreadable _FILE path is an error",
+			base:        map[string]string{"GITHUB_APP_PRIVATE_KEY_FILE": missingPath},
+			allowedKeys: []string{"GITHUB_APP_PRIVATE_KEY"},
+			lookupKey:   "GITHUB_APP_PRIVATE_KEY",
+			wantValue:   "",
+			wantOK:      false,
+			wantErr:     "read GITHUB_APP_PRIVATE_KEY_FILE",
+		},
+		{
+			name:        "key outside the allowlist ignores its _FILE variant",
+			base:        map[string]string{"VALKEY_PASSWORD_FILE": pemPath},
+			allowedKeys: []string{"GITHUB_APP_PRIVATE_KEY"},
+			lookupKey:   "VALKEY_PASSWORD",
+			wantValue:   "",
+			wantOK:      false,
+		},
+		{
+			name:        "empty _FILE value is treated as unset",
+			base:        map[string]string{"GITHUB_APP_PRIVATE_KEY_FILE": ""},
+			allowedKeys: []string{"GITHUB_APP_PRIVATE_KEY"},
+			lookupKey:   "GITHUB_APP_PRIVATE_KEY",
+			wantValue:   "",
+			wantOK:      false,
+		},
+		{
+			name:        "whitespace-only _FILE content is an error",
+			base:        map[string]string{"GITHUB_APP_PRIVATE_KEY_FILE": blankPath},
+			allowedKeys: []string{"GITHUB_APP_PRIVATE_KEY"},
+			lookupKey:   "GITHUB_APP_PRIVATE_KEY",
+			wantValue:   "",
+			wantOK:      false,
+			wantErr:     "is empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lookuper := newFileContentLookuper(envconfig.MapLookuper(tt.base), tt.allowedKeys...)
+
+			value, ok := lookuper.Lookup(tt.lookupKey)
+			assert.Equal(t, tt.wantValue, value)
+			assert.Equal(t, tt.wantOK, ok)
+
+			if tt.wantErr == "" {
+				assert.NoError(t, lookuper.Err())
+			} else {
+				require.Error(t, lookuper.Err())
+				assert.Contains(t, lookuper.Err().Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoad_FileOverrides(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "private-key.pem")
+	require.NoError(t, os.WriteFile(path, []byte("file-key\n"), 0o600))
+
+	configMap := map[string]string{
+		"JWT_BUILDKITE_ORGANIZATION_SLUG": "test-org",
+		"BUILDKITE_API_TOKEN":             "test-token",
+		"GITHUB_APP_ID":                   "123",
+		"GITHUB_APP_INSTALLATION_ID":      "456",
+		"GITHUB_APP_PRIVATE_KEY_FILE":     path,
+	}
+	lookuper := newFileContentLookuper(
+		envconfig.MapLookuper(configMap), "JWT_JWKS_STATIC", "GITHUB_APP_PRIVATE_KEY",
+	)
+
+	cfg, err := load(context.Background(), lookuper)
+	require.NoError(t, err)
+	assert.Equal(t, "file-key", cfg.Github.PrivateKey)
+}
+
+// TestLoad_FileOverrides_Error verifies that load surfaces a
+// fileContentLookuper failure (here: an unreadable GITHUB_APP_PRIVATE_KEY_FILE
+// path) as a wrapped "invalid configuration" error, rather than silently
+// proceeding with a zero-value field.
+func TestLoad_FileOverrides_Error(t *testing.T) {
+	configMap := map[string]string{
+		"JWT_BUILDKITE_ORGANIZATION_SLUG": "test-org",
+		"BUILDKITE_API_TOKEN":             "test-token",
+		"GITHUB_APP_ID":                   "123",
+		"GITHUB_APP_INSTALLATION_ID":      "456",
+		"GITHUB_APP_PRIVATE_KEY_FILE":     "/nonexistent/private-key.pem",
+	}
+	lookuper := newFileContentLookuper(
+		envconfig.MapLookuper(configMap), "JWT_JWKS_STATIC", "GITHUB_APP_PRIVATE_KEY",
+	)
+
+	_, err := load(context.Background(), lookuper)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid configuration")
+	assert.Contains(t, err.Error(), "read GITHUB_APP_PRIVATE_KEY_FILE")
+}
+
+// TestLoad_RealEnvironment exercises the public Load entrypoint end to end:
+// Load wires up the real OS environment lookuper (unlike load, which every
+// other test drives with an explicit envconfig.Lookuper), so this is the
+// only test that proves GITHUB_APP_PRIVATE_KEY_FILE and JWT_JWKS_STATIC_FILE
+// actually reach the process environment main.go reads from in production.
+//
+// t.Setenv scopes every variable to this test and restores the prior
+// environment on cleanup, so it cannot leak state into other tests even
+// under `go test` process reuse.
+func TestLoad_RealEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "private-key.pem")
+	require.NoError(t, os.WriteFile(path, []byte("file-key\n"), 0o600))
+
+	for key, value := range requiredConfig {
+		if key == "GITHUB_APP_PRIVATE_KEY" {
+			continue // sourced from GITHUB_APP_PRIVATE_KEY_FILE below instead
+		}
+		t.Setenv(key, value)
+	}
+	unsetEnv(t, "GITHUB_APP_PRIVATE_KEY")
+	t.Setenv("GITHUB_APP_PRIVATE_KEY_FILE", path)
+
+	cfg, err := Load(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "file-key", cfg.Github.PrivateKey)
+}
+
+// unsetEnv removes key from the environment for the duration of the test,
+// restoring whatever value (or absence) preceded it on cleanup. This guards
+// against the ambient test environment already defining key, which would
+// otherwise make it look "set" to fileContentLookuper and falsely trip its
+// mutual-exclusion check against a "_FILE" counterpart.
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+
+	if prior, ok := os.LookupEnv(key); ok {
+		t.Cleanup(func() { require.NoError(t, os.Setenv(key, prior)) })
+	}
+	require.NoError(t, os.Unsetenv(key))
 }

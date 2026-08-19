@@ -2,7 +2,10 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/sethvargo/go-envconfig"
 )
@@ -131,7 +134,16 @@ type ObserveConfig struct {
 }
 
 func Load(ctx context.Context) (Config, error) {
-	return load(ctx, nil) // load from OS environment
+	lookup := newFileContentLookuper(envconfig.OsLookuper(), "JWT_JWKS_STATIC", "GITHUB_APP_PRIVATE_KEY")
+	return load(ctx, lookup)
+}
+
+// errLookuper is implemented by lookupers that may accumulate an error while
+// resolving values (e.g. a "_FILE" decoder failing to read its target file).
+// load checks for this after ProcessWith completes, since [envconfig.Lookuper.Lookup]
+// itself has no way to report an error.
+type errLookuper interface {
+	Err() error
 }
 
 func load(ctx context.Context, lookup envconfig.Lookuper) (Config, error) {
@@ -142,6 +154,9 @@ func load(ctx context.Context, lookup envconfig.Lookuper) (Config, error) {
 	})
 	if err != nil {
 		return cfg, err
+	}
+	if el, ok := lookup.(errLookuper); ok && el.Err() != nil {
+		return cfg, fmt.Errorf("invalid configuration: %w", el.Err())
 	}
 
 	err = cfg.Cache.Validate()
@@ -233,4 +248,72 @@ func (v *ValkeyConfig) validateIAM() error {
 	// treating a mismatch as a configuration error.
 	v.TLS = true
 	return nil
+}
+
+// fileContentLookuper decorates a [envconfig.Lookuper] with the "_FILE"
+// convention for a fixed allowlist of keys: for each allowed key K, if K
+// itself is unset, K_FILE is checked; when present, its value is treated as
+// a path and the file's contents (trimmed of surrounding whitespace) are
+// used as K's value. This lets specific secret-bearing fields — currently
+// GITHUB_APP_PRIVATE_KEY and JWT_JWKS_STATIC — be supplied via a mounted
+// secret file instead of an inline environment variable. Keys outside the
+// allowlist pass straight through to the wrapped lookuper.
+//
+// Setting both K and K_FILE is rejected, since the intended source is
+// ambiguous. Lookup cannot itself return an error, so failures (a bad path,
+// or both variants set) are accumulated and surfaced via Err, which the
+// caller must check after processing completes.
+type fileContentLookuper struct {
+	next    envconfig.Lookuper
+	allowed map[string]struct{}
+	err     error
+}
+
+func newFileContentLookuper(next envconfig.Lookuper, allowedKeys ...string) *fileContentLookuper {
+	allowed := make(map[string]struct{}, len(allowedKeys))
+	for _, key := range allowedKeys {
+		allowed[key] = struct{}{}
+	}
+
+	return &fileContentLookuper{next: next, allowed: allowed}
+}
+
+// Err returns the accumulated errors from all Lookup calls, joined via
+// [errors.Join], if any.
+func (f *fileContentLookuper) Err() error {
+	return f.err
+}
+
+func (f *fileContentLookuper) Lookup(key string) (string, bool) {
+	value, valueSet := f.next.Lookup(key)
+
+	if _, ok := f.allowed[key]; !ok {
+		return value, valueSet
+	}
+
+	path, pathSet := f.next.Lookup(key + "_FILE")
+	if !pathSet || path == "" {
+		return value, valueSet
+	}
+
+	if valueSet {
+		f.err = errors.Join(f.err, fmt.Errorf("%s and %s_FILE are mutually exclusive", key, key))
+		return value, valueSet
+	}
+
+	//nolint:gosec // G304: path is an operator-supplied config value (an
+	// allowlisted "<KEY>_FILE" environment variable), not user input.
+	content, err := os.ReadFile(path)
+	if err != nil {
+		f.err = errors.Join(f.err, fmt.Errorf("read %s_FILE: %w", key, err))
+		return "", false
+	}
+
+	trimmed := strings.TrimSpace(string(content))
+	if trimmed == "" {
+		f.err = errors.Join(f.err, fmt.Errorf("%s_FILE at %q is empty", key, path))
+		return "", false
+	}
+
+	return trimmed, true
 }
