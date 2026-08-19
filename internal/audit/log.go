@@ -40,11 +40,8 @@ type Entry struct {
 	RequestedRepository string
 	VendedRepository    string
 
-	// App is the name of the GitHub App the request resolved to, recorded at
-	// resolution rather than at vend so that every outcome downstream of
-	// resolution carries it — including failures. A profile invalid because
-	// its app is disabled fails before an app is resolved, so it is the Error
-	// field that names the reason in that case.
+	// App is the name of the GitHub App the request resolved to. Empty when the
+	// request failed before resolution; Error names the reason in that case.
 	App              string
 	Authorized       bool
 	AuthSubject      string

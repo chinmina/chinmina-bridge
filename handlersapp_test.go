@@ -42,9 +42,8 @@ var (
 	packagesAppIdentity = github.AppIdentity{Name: "packages", ApplicationID: 333, InstallationID: 444}
 )
 
-// registryResolver stands in for the app registry: a set of resolvable
-// identities, mutable between requests so a test can withdraw one the way
-// a restart with different configuration would.
+// registryResolver stands in for the app registry. Its identities are mutable
+// between requests, so a test can withdraw one mid-test.
 type registryResolver struct {
 	apps map[string]github.AppIdentity
 }
@@ -66,16 +65,10 @@ func newRegistryResolver(apps ...github.AppIdentity) *registryResolver {
 	return &registryResolver{apps: byName}
 }
 
-// TestRoutes_WarmCacheEntryDoesNotBypassAppResolution is the acceptance
-// observable for resolving the app at the handler boundary rather than inside
-// the vendor chain.
-//
-// The chain is Audit -> Authorized -> Cached -> Vending, and Cached
-// short-circuits on a hit before Vending runs. A registry check placed inside
-// the chain would therefore be absent on exactly the requests that need it:
-// those whose profile was valid long enough to warm an entry and has since had
-// its app disabled. This test fails if resolution is ever moved into the
-// vendor chain, which is the reason it exists.
+// Cached short-circuits on a hit before Vending runs, so a registry check
+// placed inside the vendor chain would be skipped on exactly the requests that
+// need it: those warmed while the profile was valid, whose app has since been
+// disabled. Resolution therefore belongs at the handler boundary.
 func TestRoutes_WarmCacheEntryDoesNotBypassAppResolution(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, appProfilesYAML, usableApps("packages"))
 	registry := newRegistryResolver(defaultAppIdentity, packagesAppIdentity)
@@ -103,8 +96,7 @@ func TestRoutes_WarmCacheEntryDoesNotBypassAppResolution(t *testing.T) {
 	require.Equal(t, http.StatusOK, warm.Code, "the entry must be warm before the app is withdrawn")
 	require.Equal(t, 1, vends)
 
-	// The app becomes unresolvable — an operator removed it, or this instance
-	// restarted and disabled it at verification.
+	// In production this is a restart that disables the app at verification.
 	registry.withdraw("packages")
 
 	after := serve()
@@ -116,8 +108,6 @@ func TestRoutes_WarmCacheEntryDoesNotBypassAppResolution(t *testing.T) {
 	assert.Equal(t, 1, vends, "no new token may be minted either")
 }
 
-// A request against a profile bound to a non-default app mints through that
-// app and is attributed to it in both the response and the audit entry.
 func TestRoutes_MintThroughTheResolvedApp(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -130,8 +120,6 @@ func TestRoutes_MintThroughTheResolvedApp(t *testing.T) {
 			expectedApp: packagesAppIdentity,
 		},
 		{
-			// An omitted app property compiles to the default app, so this is
-			// indistinguishable from an explicit `app: default`.
 			name:        "a profile with no app property",
 			profileName: "default-app-profile",
 			expectedApp: defaultAppIdentity,
@@ -176,10 +164,8 @@ func TestRoutes_MintThroughTheResolvedApp(t *testing.T) {
 	}
 }
 
-// The app is stamped at resolution rather than at vend, so an outcome reached
-// after resolution still names the app it was attempted through. Without this
-// a failed mint would be the one case with no attribution — exactly the case
-// an operator is looking at.
+// The app is stamped at resolution rather than at vend, so a failed mint is
+// still attributed to the app it was attempted through.
 func TestRoutes_AuditEntryNamesTheAppWhenMintingFails(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, appProfilesYAML, usableApps("packages"))
 	registry := newRegistryResolver(defaultAppIdentity, packagesAppIdentity)
@@ -203,8 +189,8 @@ func TestRoutes_AuditEntryNamesTheAppWhenMintingFails(t *testing.T) {
 	assert.NotEmpty(t, entry.Error)
 }
 
-// A profile invalid because its app is disabled fails before an app is
-// resolved, so the audit entry carries the reason rather than an app name.
+// A profile invalid because its app is disabled fails before any app is
+// resolved: the audit entry carries the reason, not an app name.
 func TestRoutes_DisabledAppMakesTheProfileUnavailable(t *testing.T) {
 	// Compiled with no registry: `app: packages` names nothing usable.
 	store := profiletest.CreateTestProfileStore(t, appProfilesYAML)

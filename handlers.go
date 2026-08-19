@@ -107,17 +107,12 @@ type ProfileResolver[T any] struct {
 	Resolve func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[T], error)
 }
 
-// AppResolver maps a profile's declared app name to the identity its tokens
-// are minted through. It is the app registry's own resolution function, and a
-// disabled app resolves to nothing.
+// AppResolver maps a profile's declared app name to the identity its tokens are
+// minted through; a disabled app resolves to nothing.
 //
-// It is consulted in the profile resolver, and nowhere else on the request
-// path. The vendor chain is Audit -> Authorized -> Cached -> Vending, and
-// Cached short-circuits on a hit before Vending runs, so a registry check
-// inside the chain would be absent on exactly the requests that need it: those
-// whose profile was valid long enough to warm a cache entry and has since had
-// its app disabled. Resolving at the boundary makes this lookup the guard that
-// runs on every request, warm cache or cold.
+// It is consulted in the profile resolver, not inside the vendor chain: Cached
+// short-circuits before Vending, so a check in the chain would be skipped on
+// exactly the warm-cache requests whose app has since been disabled.
 type AppResolver func(name string) (github.AppIdentity, bool)
 
 // NewOrgProfileResolver returns the resolver for the /organization/* routes,
@@ -189,9 +184,8 @@ func NewPipelineProfileResolver(lookup ProfileLookup[profile.PipelineProfileAttr
 // audit entry, and nothing downstream of a failed resolution may read a
 // half-populated value.
 //
-// T is constrained to AppNamed because this is the one stage that reads a
-// family-specific attribute. Every stage downstream reads the resolved
-// identity from the request value and stays generic.
+// T is constrained to AppNamed because this is the only stage that reads a
+// family-specific attribute; downstream stages read the resolved app instead.
 func resolveProfile[T profile.AppNamed](ctx context.Context, pv PathValuer, lookup ProfileLookup[T], resolveApp AppResolver, expectedType profile.ProfileType) (vendor.Resolved[T], error) {
 	claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
 
@@ -209,10 +203,8 @@ func resolveProfile[T profile.AppNamed](ctx context.Context, pv PathValuer, look
 
 	app, resolvable := resolveApp(appName)
 	if !resolvable {
-		// Reaching this means a profile was served that compilation should
-		// already have invalidated, so it is our defect rather than GitHub's
-		// denial: a 500, not a 403 or a 404. The existing guards for an
-		// unresolved scope and an uncompiled matcher have the same shape.
+		// A served profile naming an unresolvable app is our defect rather
+		// than GitHub's denial: a 500, not a 403 or a 404.
 		return vendor.Resolved[T]{}, profile.AppUnresolvedError{ProfileName: ref.Name, AppName: appName}
 	}
 
@@ -234,9 +226,8 @@ func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[
 	entry.RequestedProfile = resolved.Ref.String()
 	entry.RequestedRepository = requestedRepo
 
-	// Recorded at resolution rather than at vend, so every outcome reached
-	// after this point — including a failed mint — names the app it was
-	// attempted through.
+	// Recorded at resolution rather than at vend, so a failed mint still names
+	// the app it was attempted through.
 	entry.App = resolved.App.Name
 }
 

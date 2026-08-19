@@ -14,36 +14,27 @@ import (
 	"github.com/google/go-github/v90/github"
 )
 
-// MockInstallation is the mocked response for one installation: the account it
-// belongs to, and whether querying it succeeds at all.
-//
-// The account ID is what the app registry compares on, so a test distinguishes
-// "same organization" from "different organization" purely by choosing IDs.
-// Login exists so a test can assert what was logged, not what was decided.
+// MockInstallation is the mocked response for one installation. The app
+// registry compares account IDs, so a test makes apps share or differ in
+// organisation purely by choosing IDs.
 type MockInstallation struct {
 	AccountID    int64
 	AccountLogin string
 
 	// StatusCode is the response status for this installation's endpoints.
-	// Zero means 200. A non-2xx here is how a test drives "this app's
-	// installation cannot be queried" for one app without affecting the rest.
+	// Zero means 200; a non-2xx fails one app's installation only.
 	StatusCode int
 
-	// Token overrides the token minted for this installation, so an end-to-end
-	// test can tell which app a response was minted through.
+	// Token overrides the token minted for this installation, so a test can
+	// attribute a response to an app.
 	Token string
 }
 
 // MockGitHubServer provides a configurable mock GitHub API server for testing.
-//
-// Responses are configurable per installation so one server can serve an app
-// on the default account, an app on a different account, and an app whose
-// installation cannot be queried, in a single boot. Counters are per
-// installation as well as global, so a test can assert which installations
-// were contacted and not merely how many calls were made.
-//
-// Counters and the installation table are guarded: tests may drive the server
-// concurrently.
+// Responses and counters are per installation as well as server-wide, so one
+// server can serve several apps and a test can assert which installations were
+// contacted. Counters and the installation table are guarded: tests may drive
+// the server concurrently.
 type MockGitHubServer struct {
 	Server     *httptest.Server
 	Token      string    // Token to return from CreateAccessToken
@@ -51,7 +42,7 @@ type MockGitHubServer struct {
 	StatusCode int       // HTTP status code to return (200 if not set)
 
 	// DefaultInstallation answers any installation a test has not configured
-	// explicitly, which keeps single-app tests working unchanged.
+	// explicitly.
 	DefaultInstallation MockInstallation
 
 	requestCount           atomic.Int64
@@ -69,8 +60,6 @@ func (m *MockGitHubServer) RequestCount() int {
 }
 
 // InstallationQueryCount reports how many installation lookups were made.
-// R19 is asserted on this: a deployment with no app registry configured must
-// query no installation at startup.
 func (m *MockGitHubServer) InstallationQueryCount() int {
 	return int(m.installationQueryCount.Load())
 }
@@ -89,8 +78,7 @@ func (m *MockGitHubServer) CallsForInstallation(installationID int64) int {
 	return m.perInstallCalls[installationID]
 }
 
-// SetInstallation configures the response for one installation, overriding
-// DefaultInstallation for it.
+// SetInstallation overrides DefaultInstallation for one installation.
 func (m *MockGitHubServer) SetInstallation(installationID int64, installation MockInstallation) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -98,8 +86,8 @@ func (m *MockGitHubServer) SetInstallation(installationID int64, installation Mo
 	m.installations[installationID] = installation
 }
 
-// installationFor returns the configured response for an installation, falling
-// back to DefaultInstallation, and records the call against it.
+// installationFor returns the configured response for an installation, or
+// DefaultInstallation, and records the call against it.
 func (m *MockGitHubServer) installationFor(installationID int64) MockInstallation {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -137,8 +125,6 @@ func SetupMockGitHubServer(t *testing.T) *MockGitHubServer {
 
 		installation := mock.installationFor(installationIDFromPath(r))
 
-		// The server-wide StatusCode remains the single-app control it has
-		// always been; a per-installation status narrows it to one app.
 		if status := effectiveStatus(mock.StatusCode, installation.StatusCode); status != http.StatusOK {
 			w.WriteHeader(status)
 			return
@@ -184,7 +170,7 @@ func SetupMockGitHubServer(t *testing.T) *MockGitHubServer {
 }
 
 // effectiveStatus prefers a per-installation status over the server-wide one,
-// so a test can fail one app's installation while the others succeed.
+// so a test can fail one app while the others succeed.
 func effectiveStatus(serverStatus, installationStatus int) int {
 	if installationStatus != 0 {
 		return installationStatus

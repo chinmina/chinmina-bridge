@@ -54,10 +54,9 @@ type organizationProfile struct {
 	Repositories []string    `yaml:"repositories"`
 	Permissions  []string    `yaml:"permissions"`
 
-	// App names the GitHub App this profile's tokens are minted through. A
-	// pointer distinguishes an omitted property from an explicitly empty one:
-	// omitted means the default app, while `app: ""` names nothing and is a
-	// mistake worth reporting rather than silently reading as the default.
+	// App names the GitHub App this profile's tokens are minted through. The
+	// pointer separates an omitted property, meaning the default app, from
+	// `app: ""`, which is reported as a mistake rather than read as the default.
 	App *string `yaml:"app"`
 }
 
@@ -66,8 +65,8 @@ type pipelineProfile struct {
 	Match       []matchRule `yaml:"match"`
 	Permissions []string    `yaml:"permissions"`
 
-	// App names the GitHub App this profile's tokens are minted through. See
-	// organizationProfile.App for why this is a pointer.
+	// App names the GitHub App this profile's tokens are minted through.
+	// Pointer for the reason given on organizationProfile.App.
 	App *string `yaml:"app"`
 }
 
@@ -102,14 +101,10 @@ func (e ProfileUnavailableError) Status() (int, string) {
 	return http.StatusNotFound, "profile unavailable: validation failed"
 }
 
-// AppUnresolvedError indicates a profile was resolved but the GitHub App it
-// names could not be resolved in the registry.
-//
-// This is a 500 rather than a 403 or 404: reaching it means compilation should
-// already have invalidated the profile, so it describes a defect in this
-// service rather than a denial by GitHub or a name the caller got wrong. It is
-// also the guard that stops a warm cache entry being served after its app is
-// disabled, so it must never be softened into a success.
+// AppUnresolvedError indicates a profile names a GitHub App that the registry
+// cannot resolve. It is a 500 because compilation should already have
+// invalidated such a profile; it also stops a warm cache entry being served
+// after its app is disabled, so it must not be softened into a success.
 type AppUnresolvedError struct {
 	ProfileName string
 	AppName     string

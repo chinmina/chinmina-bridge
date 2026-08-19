@@ -22,12 +22,9 @@ const (
 // RefreshTask keeps the store's profile generation current. Callers gate
 // startup on its first success.
 //
-// usableApp is threaded through to compilation on every refresh, not applied
-// once at startup: a profile's validity depends on the app registry as well as
-// the YAML, and the digest reflects only the YAML. Without this, a profile
-// naming a registry app would be valid for one refresh interval and invalid
-// after it, with an unchanged digest — so the generation swap would log at
-// debug level while profiles silently became unavailable.
+// usableApp is applied at every refresh, not once at startup: profile validity
+// depends on the app registry as well as the YAML, and the digest covers only
+// the YAML, so a registry change would otherwise go unnoticed.
 func RefreshTask(profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string, usableApp AppLookup) repeat.Task {
 	return repeat.Task{
 		Name:          "organization profile refresh",

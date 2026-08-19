@@ -17,8 +17,8 @@ const (
 	packagesAppID          = int64(333)
 	packagesInstallationID = int64(444)
 
-	// defaultAccountID matches the mock's default installation account, which
-	// the default app resolves to. Registry apps sharing it are enabled.
+	// defaultAccountID matches the mock's default installation account.
+	// Registry apps sharing it are enabled by verification.
 	defaultAccountID = int64(1)
 	otherAccountID   = int64(99)
 )
@@ -38,9 +38,8 @@ const multiAppProfiles = `organization:
         - contents:read
 `
 
-// packagesApp is a registry entry pointed at the harness's mock. Its key is
-// any valid RSA key: the mock does not verify the App JWT, and what is under
-// test is which installation was contacted, not how it was authenticated.
+// packagesApp is a registry entry pointed at the harness's mock. Any valid RSA
+// key will do: the mock does not verify the App JWT.
 func packagesApp(t *testing.T) GitHubAppEntry {
 	t.Helper()
 
@@ -53,8 +52,7 @@ func packagesApp(t *testing.T) GitHubAppEntry {
 }
 
 // enabledPackagesInstallation puts the packages app on the default app's
-// account, so verification enables it, and gives it its own token so a
-// response can be attributed to it.
+// account, which is what verification requires to enable it.
 func enabledPackagesInstallation() testhelpers.MockInstallation {
 	return testhelpers.MockInstallation{
 		AccountID:    defaultAccountID,
@@ -63,9 +61,6 @@ func enabledPackagesInstallation() testhelpers.MockInstallation {
 	}
 }
 
-// A profile bound to a second app must mint through that app's installation,
-// and say so: the response body is how an operator attributes a credential to
-// the app that issued it.
 func TestIntegrationMultiApp_VendsThroughTheProfilesApp(t *testing.T) {
 	harness := NewAPITestHarness(t,
 		WithInstallation(packagesInstallationID, enabledPackagesInstallation()),
@@ -82,8 +77,6 @@ func TestIntegrationMultiApp_VendsThroughTheProfilesApp(t *testing.T) {
 	assert.Positive(t, harness.GitHubMock.CallsForInstallation(packagesInstallationID))
 }
 
-// A profile with no app property mints through the default app, unchanged from
-// how the service behaved before an app could be named at all.
 func TestIntegrationMultiApp_ProfileWithoutAnAppUsesTheDefault(t *testing.T) {
 	harness := NewAPITestHarness(t,
 		WithInstallation(packagesInstallationID, enabledPackagesInstallation()),
@@ -98,10 +91,9 @@ func TestIntegrationMultiApp_ProfileWithoutAnAppUsesTheDefault(t *testing.T) {
 	assert.Equal(t, "default", token.App)
 }
 
-// An app on a different account is disabled at startup, so a profile naming it
-// is invalid and the request is refused. Falling back to a different
-// credential is the hazard this feature exists to avoid, so "unavailable" is
-// the correct answer even though a working default app is right there.
+// A profile naming a disabled app is refused rather than falling back to the
+// default app: silently vending a different credential is the hazard this
+// feature exists to avoid.
 func TestIntegrationMultiApp_ProfileNamingADisabledAppIsUnavailable(t *testing.T) {
 	harness := NewAPITestHarness(t,
 		WithInstallation(packagesInstallationID, testhelpers.MockInstallation{
@@ -118,13 +110,12 @@ func TestIntegrationMultiApp_ProfileNamingADisabledAppIsUnavailable(t *testing.T
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, http.StatusNotFound, apiErr.StatusCode)
 
-	// Isolation: one disabled app must not withdraw every other profile.
+	// One disabled app must not withdraw every other profile.
 	_, err = harness.Client().OrganizationToken(harness.PipelineToken(), "read-source")
 	assert.NoError(t, err)
 }
 
-// An app whose installation cannot be queried is disabled rather than fatal,
-// so the service starts and every other profile keeps working.
+// A failed installation query disables that app rather than failing startup.
 func TestIntegrationMultiApp_UnreachableInstallationDisablesOnlyThatApp(t *testing.T) {
 	harness := NewAPITestHarness(t,
 		WithInstallation(packagesInstallationID, testhelpers.MockInstallation{
@@ -144,9 +135,8 @@ func TestIntegrationMultiApp_UnreachableInstallationDisablesOnlyThatApp(t *testi
 	assert.Equal(t, "default", token.App)
 }
 
-// Two profiles resolving through different apps must not share cache entries:
-// each response has to carry the token its own app minted, however many times
-// the pair is requested.
+// Repeated interleaved requests: a cache key that ignored the app would return
+// one app's token for the other.
 func TestIntegrationMultiApp_AppsDoNotShareCacheEntries(t *testing.T) {
 	harness := NewAPITestHarness(t,
 		WithInstallation(packagesInstallationID, enabledPackagesInstallation()),
@@ -165,9 +155,8 @@ func TestIntegrationMultiApp_AppsDoNotShareCacheEntries(t *testing.T) {
 	}
 }
 
-// The registry is built once and never written afterwards, so parallel
-// requests across apps need no synchronisation. Under -race this fails if a
-// future change introduces lazily-populated registry state.
+// The registry is built once and never written afterwards. Under -race this
+// fails if a change introduces lazily-populated registry state.
 func TestIntegrationMultiApp_ParallelRequestsAcrossApps(t *testing.T) {
 	harness := NewAPITestHarness(t,
 		WithInstallation(packagesInstallationID, enabledPackagesInstallation()),
@@ -194,8 +183,7 @@ func TestIntegrationMultiApp_ParallelRequestsAcrossApps(t *testing.T) {
 	wg.Wait()
 }
 
-// A deployment not using the feature must pay nothing for its existence: no
-// GITHUB_APPS means no installation is queried at startup.
+// No GITHUB_APPS means no installation is queried at startup.
 func TestIntegrationMultiApp_NoRegistryQueriesNoInstallation(t *testing.T) {
 	harness := NewAPITestHarness(t)
 

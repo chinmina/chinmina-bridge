@@ -606,9 +606,7 @@ func TestProfileStore_Update_ProfileCountSpanAttributes(t *testing.T) {
 		expected []attribute.KeyValue
 	}{
 		{
-			// two of the three organization profiles are invalid; of the
-			// pipeline profiles one is invalid, and the synthesised "default"
-			// joins the valid one
+			// pipeline valid_count includes the synthesised "default" profile
 			name:    "mixed validity",
 			fixture: "testdata/profile/profile_mixed_validity.yaml",
 			expected: []attribute.KeyValue{
@@ -619,8 +617,8 @@ func TestProfileStore_Update_ProfileCountSpanAttributes(t *testing.T) {
 			},
 		},
 		{
-			// nothing invalid: the zero counts must still be present, so a
-			// consumer can distinguish "none invalid" from "not reported"
+			// the zero counts must still be reported, so a consumer can
+			// distinguish "none invalid" from "not reported"
 			name:    "all valid",
 			fixture: "testdata/profile/valid_profile.yaml",
 			expected: []attribute.KeyValue{

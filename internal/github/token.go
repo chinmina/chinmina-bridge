@@ -109,19 +109,15 @@ func (c Client) GetFileContent(ctx context.Context, owner string, repo string, p
 	return "", fmt.Errorf("path %s in repo %s/%s returned no content", path, owner, repo)
 }
 
-// installationAccount identifies the account a GitHub App installation belongs
-// to. The numeric ID is what installations are compared on: a login is
-// renameable and, once released, claimable by another account, so comparing
-// logins would let an unrelated account inherit an app's association. The
-// login is carried for logging only.
+// installationAccount identifies the account an installation belongs to.
+// Installations are compared on the numeric ID: a login is renameable and, once
+// released, claimable by another account. Login is carried for logging only.
 type installationAccount struct {
 	ID    int64
 	Login string
 }
 
-// InstallationAccount queries the account this client's installation belongs
-// to. It is the only call the registry makes to verify that every configured
-// app shares one organization.
+// InstallationAccount queries the account this client's installation belongs to.
 func (c Client) InstallationAccount(ctx context.Context) (installationAccount, error) {
 	installation, _, err := c.client.Apps.GetInstallation(ctx, c.installationID)
 	if err != nil {
@@ -158,9 +154,8 @@ func (c Client) CreateAccessToken(ctx context.Context, repoNames []string, scope
 type ClientConfig struct {
 	TransportFactory func(context.Context, appconfig.GithubConfig, http.RoundTripper, AWSConfigLoader) (http.RoundTripper, error)
 
-	// LoadAWS is shared across every client built from one registry, so a
-	// multi-app deployment resolves AWS credentials once rather than once per
-	// app. Nil means "resolve privately", which is correct for a lone client.
+	// LoadAWS is nil for a lone client, which then resolves AWS configuration
+	// privately. Callers building several clients pass a shared loader.
 	LoadAWS AWSConfigLoader
 }
 
@@ -228,9 +223,7 @@ func createAppTransport(_ context.Context, cfg appconfig.GithubConfig, wrapped h
 // Returns either a jwk.Key for PEM-based signing or a kmsSigningKey for AWS
 // KMS-based signing.
 //
-// loadAWS resolves the AWS configuration for KMS-backed keys. Callers building
-// more than one key share a single loader so credentials are resolved once for
-// every app rather than once per app.
+// loadAWS resolves the AWS configuration for KMS-backed keys.
 func createSigningKey(cfg appconfig.GithubConfig, loadAWS AWSConfigLoader) (any, error) {
 	if cfg.PrivateKeyARN != "" {
 		return createKMSSigningKey(cfg.PrivateKeyARN, loadAWS)
@@ -248,13 +241,10 @@ func createSigningKey(cfg appconfig.GithubConfig, loadAWS AWSConfigLoader) (any,
 // path may capture one.
 type AWSConfigLoader func() (aws.Config, error)
 
-// newAWSConfigLoader resolves the default AWS configuration at most once, on
-// first use. Deployments with no ARN-backed key never resolve credentials at
-// all, and a registry of several ARN-backed apps resolves them once between
-// them.
+// newAWSConfigLoader resolves the default AWS configuration once, on first use:
+// a deployment with no ARN-backed key never resolves credentials at all.
 //
-// ctx governs the resolution only; the resulting aws.Config outlives it, and
-// each SDK operation supplies its own context.
+// ctx governs the resolution only; the resulting aws.Config outlives it.
 func newAWSConfigLoader(ctx context.Context) AWSConfigLoader {
 	return sync.OnceValues(func() (aws.Config, error) {
 		return config.LoadDefaultConfig(ctx)
@@ -262,9 +252,8 @@ func newAWSConfigLoader(ctx context.Context) AWSConfigLoader {
 }
 
 // createKMSSigningKey creates a KMS signing key using the AWS SDK. It contacts
-// nothing: the first network call a KMS-backed app makes is the signing
-// operation itself, so a bad ARN, an IAM denial or a KMS outage surfaces on
-// the verification or minting path, never here.
+// nothing, so a bad ARN, an IAM denial or a KMS outage surfaces on the first
+// signing attempt rather than here.
 func createKMSSigningKey(arn string, loadAWS AWSConfigLoader) (kmsSigningKey, error) {
 	awsCfg, err := loadAWS()
 	if err != nil {

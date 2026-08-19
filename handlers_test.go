@@ -35,13 +35,11 @@ type (
 	orgAttr      = profile.OrganizationProfileAttr
 )
 
-// testApp is the identity every test profile resolves to. Production passes
-// the app registry's own resolver; these tests care about handler plumbing,
-// not about which app was chosen.
+// testApp is the identity every test profile resolves to.
 var testApp = github.AppIdentity{Name: "default", ApplicationID: 111, InstallationID: 222}
 
-// testAppResolver resolves the default app and nothing else, matching a
-// deployment with no app registry configured.
+// testAppResolver matches a deployment with no app registry: the default app
+// resolves and nothing else does.
 func testAppResolver(name string) (github.AppIdentity, bool) {
 	if name != testApp.Name {
 		return github.AppIdentity{}, false
@@ -1532,8 +1530,8 @@ func gitCredentialsBody(t *testing.T, org, repo string) io.Reader {
 	return b
 }
 
-// mintingThrough adapts a plain token vendor to the app-aware signature for
-// tests that do not care which app was resolved.
+// mintingThrough adapts a plain token vendor to the app-aware signature,
+// discarding the app.
 func mintingThrough(mint vendor.TokenVendor) vendor.AppTokenVendor {
 	return func(ctx context.Context, _ github.AppIdentity, repoNames []string, scopes []string) (string, time.Time, error) {
 		return mint(ctx, repoNames, scopes)
