@@ -80,7 +80,7 @@ services:
       TRAEFIK_METRICS_OTLP_ADDENTRYPOINTSLABELS: "true"  # Adds port info (port 80 vs 443)
       TRAEFIK_METRICS_OTLP_ADDSERVICESLABELS: "true"     # Adds service info (whoami, etc.)
     ports:
-      - "18889:8080"  # dashboard
+      - "127.0.0.1:18889:8080"  # dashboard
     extra_hosts:
       # so a daemon listening on a port of this host is dialable (native on
       # Docker Desktop and OrbStack, needs the mapping on Linux)
@@ -139,6 +139,8 @@ services:
       JWT_AUDIENCE: github-app-auth:chinmina
       GITHUB_APP_PRIVATE_KEY_ARN:
       GITHUB_APP_PRIVATE_KEY:
+      # only ../ (repo root) is mounted below, as /src: a host path given here
+      # must resolve under the repo tree, or the container won't see the file
       GITHUB_APP_PRIVATE_KEY_FILE:
       GITHUB_APP_ID:
       GITHUB_APP_INSTALLATION_ID:
@@ -188,8 +190,8 @@ services:
   openobserve:
     image: openobserve/openobserve:latest
     ports:
-      - "5080:5080" # UI and OTLP/HTTP ingestion
-      - "5081:5081" # OTLP/gRPC ingestion
+      - "127.0.0.1:5080:5080" # UI and OTLP/HTTP ingestion
+      - "127.0.0.1:5081:5081" # OTLP/gRPC ingestion
     environment:
       ZO_ROOT_USER_EMAIL: *openobserve-email
       ZO_ROOT_USER_PASSWORD: *openobserve-password
@@ -215,7 +217,7 @@ services:
     volumes:
       - apk-cache:/app/cache
     ports:
-      - "23412:3142"
+      - "127.0.0.1:23412:3142"
     environment:
       - CACHE_DIR=/app/cache
       - INDEX_CACHE=24h
