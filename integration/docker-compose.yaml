@@ -56,6 +56,10 @@ services:
       TRAEFIK_API_INSECURE: "true"                       # Enable Dashboard
       TRAEFIK_PROVIDERS_DOCKER: "true"                   # Enable Docker Auto-discovery
       TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT: "false" # Don't expose containers unless explicitly told
+      # `just docker` resolves this from the local docker CLI's endpoint: either
+      # the socket bound in below, or tcp://host.docker.internal for a daemon
+      # listening on a port of this host.
+      TRAEFIK_PROVIDERS_DOCKER_ENDPOINT: ${DOCKER_ENDPOINT:-unix:///var/run/docker.sock}
       # --- TRACING (OTLP gRPC) ---
       # OpenObserve requires basic auth on ingestion, and identifies the target
       # organization and stream by gRPC metadata headers.
@@ -76,8 +80,15 @@ services:
       TRAEFIK_METRICS_OTLP_ADDSERVICESLABELS: "true"     # Adds service info (whoami, etc.)
     ports:
       - "18889:8080"  # dashboard
+    extra_hosts:
+      # so a daemon listening on a port of this host is dialable (native on
+      # Docker Desktop and OrbStack, needs the mapping on Linux)
+      - "host.docker.internal:host-gateway"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock # allows traefik to see other containers
+      # allows traefik to see other containers. The host socket path varies by
+      # docker implementation, so `just docker` resolves it and exports
+      # DOCKER_SOCKET; it is /dev/null when a TCP endpoint is in use.
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
 
   chinmina-bridge-worker:
     scale: 1

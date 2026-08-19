@@ -98,17 +98,27 @@ build-oidc:
 run: build-local
     dist/chinmina-bridge-local
 
-# Run integration tests against docker-compose
+# Run docker compose against the integration stack, e.g. `just docker down`, `just docker logs -f`
 [group('dev')]
 [working-directory('integration')]
-docker: build
-    docker compose up --abort-on-container-exit
+docker *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
 
-# Stop the docker-compose stack
+    # Traefik needs a route to the Docker API from inside its container: see
+    # ./resolve-docker-endpoint.sh, which works out the socket to bind and the
+    # endpoint to dial.
+    resolved="$(./resolve-docker-endpoint.sh)"
+    read -r DOCKER_SOCKET DOCKER_ENDPOINT <<<"${resolved}"
+    export DOCKER_SOCKET DOCKER_ENDPOINT
+
+    echo "Resolved docker endpoint: ${DOCKER_ENDPOINT} (mount: ${DOCKER_SOCKET})" >&2
+
+    docker compose {{ args }}
+
+# Build, then bring the integration stack up; extra `docker compose up` args are forwarded
 [group('dev')]
-[working-directory('integration')]
-docker-down:
-    docker compose down
+docker-up *args: build (docker "up" "--abort-on-container-exit" args)
 
 # Generate a JWKS key pair for local testing
 [group('dev')]
