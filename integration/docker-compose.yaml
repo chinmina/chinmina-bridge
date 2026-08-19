@@ -41,6 +41,7 @@ services:
       - apk-cache
     command: ["start"]
     environment:
+      - BUILDKITE_AGENT_PING_MODE=poll-only
       - BUILDKITE_AGENT_TOKEN
       - BUILDKITE_AGENT_TAGS
       - TMPDIR=/tmp
