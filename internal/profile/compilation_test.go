@@ -279,7 +279,12 @@ func TestCompile_GracefulDegradation(t *testing.T) {
 	assert.Equal(t, "invalid-regex-pattern", unavailErr.Name)
 }
 
-func TestCompile_DuplicateNameHandling(t *testing.T) {
+// A duplicate name is served entirely from the first entry that claimed it: no
+// attribute may be taken from the rejected later entry. Compilation used to
+// build the matcher and app from the accepted entry but the scope and
+// permissions from whichever entry was visited last, splicing two different
+// YAML entries into one served profile.
+func TestCompile_DuplicateNameServesTheFirstEntryOnly(t *testing.T) {
 	yamlContent, err := os.ReadFile("testdata/profile/profile_with_duplicate_names.yaml")
 	require.NoError(t, err)
 
@@ -290,11 +295,22 @@ func TestCompile_DuplicateNameHandling(t *testing.T) {
 	require.NoError(t, err)
 	orgProfiles := profiles.orgProfiles
 
-	// With duplicate names, the last profile with that name wins in the current implementation
-	// (first is validated, but second's attributes overwrite in the profile map)
 	profile, err := orgProfiles.Get("production")
 	require.NoError(t, err)
-	assert.Equal(t, NewSpecificScope("cotton"), profile.Attrs.Scope)
+	assert.Equal(t, OrganizationProfileAttr{
+		Scope:       NewSpecificScope("silk"),
+		Permissions: []string{"contents:write", "metadata:read"},
+		App:         "default",
+	}, profile.Attrs)
+
+	// The matcher is the first entry's too: the second entry's claim value must
+	// not authorize this profile.
+	assert.True(t, profile.Match(mapClaimLookup{"pipeline_slug": "silk-prod"}).Matched)
+	assert.False(t, profile.Match(mapClaimLookup{"pipeline_slug": "cotton-prod"}).Matched)
+
+	// The rejected entry is recorded as invalid, with the reason.
+	assert.Equal(t, 1, orgProfiles.InvalidProfileCount())
+	assert.ErrorContains(t, orgProfiles.invalidProfiles["production"], `duplicate profile name: "production"`)
 
 	// "staging" should also be accessible
 	_, err = orgProfiles.Get("staging")
@@ -667,15 +683,21 @@ func TestCompilePipelineProfiles_EmptyPermissionsRejection(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// As for organization profiles, the first entry to claim a name is the one
+// served in full: the rejected duplicate contributes no attribute.
 func TestCompilePipelineProfiles_DuplicateNames(t *testing.T) {
+	app := "packages"
 	profiles := []pipelineProfile{
 		{
 			Name:        "duplicate",
 			Permissions: []string{"contents:read"},
+			Match:       []matchRule{{Claim: "pipeline_slug", Value: "silk"}},
 		},
 		{
 			Name:        "duplicate",
 			Permissions: []string{"pull_requests:write"},
+			App:         &app,
+			Match:       []matchRule{{Claim: "pipeline_slug", Value: "cotton"}},
 		},
 		{
 			Name:        "unique",
@@ -683,15 +705,21 @@ func TestCompilePipelineProfiles_DuplicateNames(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, usableApps(app))
 
-	// With duplicate names, the last profile wins (second's attributes overwrite first)
 	duplicateProfile, err := result.Get("duplicate")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"pull_requests:write", "metadata:read"}, duplicateProfile.Attrs.Permissions)
+	assert.Equal(t, PipelineProfileAttr{
+		Permissions: []string{"contents:read", "metadata:read"},
+		App:         "default",
+	}, duplicateProfile.Attrs)
+
+	assert.True(t, duplicateProfile.Match(mapClaimLookup{"pipeline_slug": "silk"}).Matched)
+	assert.False(t, duplicateProfile.Match(mapClaimLookup{"pipeline_slug": "cotton"}).Matched)
 
 	// Second duplicate was rejected, verify invalid count
 	assert.Equal(t, 1, result.InvalidProfileCount(), "second duplicate should be marked invalid")
+	assert.ErrorContains(t, result.invalidProfiles["duplicate"], `duplicate profile name: "duplicate"`)
 
 	// "unique" should be accessible
 	_, err = result.Get("unique")
