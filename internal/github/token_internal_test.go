@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 
@@ -29,7 +28,9 @@ func TestAWSConfigLoader_RetriesAfterAFailedLoad(t *testing.T) {
 	_, err := load()
 	require.Error(t, err)
 
-	require.NoError(t, os.Unsetenv("AWS_MAX_ATTEMPTS"))
+	// A tracked t.Setenv, not a raw unset: the latter bypasses the
+	// testing package's env synchronization and escapes its cleanup.
+	t.Setenv("AWS_MAX_ATTEMPTS", "3")
 
 	cfg, err := load()
 
