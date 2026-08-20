@@ -57,11 +57,10 @@ type APITestHarnessOption func(*APITestHarness, *config.Config)
 // WithGitHubApps configures additional named GitHub Apps, as GITHUB_APPS does
 // in a deployment. Entries inherit the mock's API URL.
 func WithGitHubApps(entries ...GitHubAppEntry) APITestHarnessOption {
-	return func(_ *APITestHarness, cfg *config.Config) {
+	return func(h *APITestHarness, cfg *config.Config) {
 		encoded, err := json.Marshal(entries)
-		if err != nil {
-			panic(fmt.Sprintf("could not encode GITHUB_APPS: %v", err))
-		}
+		require.NoError(h.t, err, "could not encode GITHUB_APPS")
+
 		cfg.Github.Apps = string(encoded)
 	}
 }
