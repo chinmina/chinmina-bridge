@@ -66,103 +66,163 @@ func resolveProfileApp(app *string, usable AppLookup) (string, error) {
 	return *app, nil
 }
 
-// validateOrganizationProfile checks one profile in isolation and returns the
-// app its tokens mint through.
-func validateOrganizationProfile(prof organizationProfile, usableApp AppLookup) (string, error) {
+// appNameValidator resolves a profile's declared app (nil meaning "default")
+// to the name its tokens mint through, or explains why it can't. It is
+// resolveProfileApp curried with the registry's usability check, so
+// compileProfile itself carries no registry-shaped dependency — only a
+// function from "declared app" to "resolved name or error".
+type appNameValidator func(app *string) (string, error)
+
+func newAppNameValidator(usable AppLookup) appNameValidator {
+	return func(app *string) (string, error) {
+		return resolveProfileApp(app, usable)
+	}
+}
+
+// compileOrganizationProfile compiles one profile in isolation: it either
+// produces a complete AuthorizedProfile, or fails, so no attribute of the
+// result can come from a different configuration entry.
+func compileOrganizationProfile(
+	prof organizationProfile,
+	checkDuplicate duplicateNameValidator,
+	checkAppName appNameValidator,
+) (AuthorizedProfile[OrganizationProfileAttr], error) {
+	if err := checkDuplicate(prof.Name); err != nil {
+		return AuthorizedProfile[OrganizationProfileAttr]{}, err
+	}
+
 	// Reject names that would produce an ambiguous URN
 	if err := validateProfileName(prof.Name); err != nil {
-		return "", err
+		return AuthorizedProfile[OrganizationProfileAttr]{}, err
 	}
 
 	if len(prof.Repositories) == 0 {
-		return "", fmt.Errorf("repositories list must be non-empty")
+		return AuthorizedProfile[OrganizationProfileAttr]{}, fmt.Errorf("repositories list must be non-empty")
 	}
 
 	if err := validateRepositories(prof.Repositories); err != nil {
-		return "", fmt.Errorf("invalid repositories: %w", err)
+		return AuthorizedProfile[OrganizationProfileAttr]{}, fmt.Errorf("invalid repositories: %w", err)
 	}
 
 	if len(prof.Permissions) == 0 {
-		return "", fmt.Errorf("permissions list must be non-empty")
+		return AuthorizedProfile[OrganizationProfileAttr]{}, fmt.Errorf("permissions list must be non-empty")
 	}
 
 	if err := validatePermissions(prof.Permissions); err != nil {
-		return "", fmt.Errorf("invalid permissions: %w", err)
+		return AuthorizedProfile[OrganizationProfileAttr]{}, fmt.Errorf("invalid permissions: %w", err)
 	}
 
-	return resolveProfileApp(prof.App, usableApp)
+	app, err := checkAppName(prof.App)
+	if err != nil {
+		return AuthorizedProfile[OrganizationProfileAttr]{}, err
+	}
+
+	matcher, err := compileMatchRules(prof.Match)
+	if err != nil {
+		return AuthorizedProfile[OrganizationProfileAttr]{}, err
+	}
+
+	// Emit deprecation warning for "*" wildcard
+	if len(prof.Repositories) == 1 && prof.Repositories[0] == LiteralDeprecatedWildcard {
+		slog.Warn("organization profile: '*' is deprecated, use '{{all-repositories}}' instead",
+			"profile", prof.Name,
+		)
+	}
+
+	attrs := OrganizationProfileAttr{
+		Scope:       resolveRepositoryScope(prof.Repositories),
+		Permissions: ensureMetadataRead(prof.Permissions),
+		App:         app,
+	}
+
+	return NewAuthorizedProfile(matcher, attrs), nil
 }
 
 // compileOrganizationProfiles compiles organization profiles from config.
 // Returns a ProfileStoreOf containing valid and invalid profiles.
 func compileOrganizationProfiles(profiles []organizationProfile, usableApp AppLookup) ProfileStoreOf[OrganizationProfileAttr] {
-	validMatchers := make(map[string]Matcher)
-	validApps := make(map[string]string)
+	validProfiles := make(map[string]AuthorizedProfile[OrganizationProfileAttr])
 	invalidProfiles := make(map[string]error)
-	duplicateNameCheck := duplicateNameValidator()
+	checkDuplicate := newDuplicateNameValidator()
+	checkAppName := newAppNameValidator(usableApp)
 
 	for _, prof := range profiles {
-		// Check for duplicate profile names
-		if err := duplicateNameCheck(prof.Name); err != nil {
-			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		app, err := validateOrganizationProfile(prof, usableApp)
+		compiled, err := compileOrganizationProfile(prof, checkDuplicate, checkAppName)
 		if err != nil {
 			invalidProfiles[prof.Name] = err
 			continue
 		}
 
-		matcher, err := compileMatchRules(prof.Match)
-		if err != nil {
-			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		validMatchers[prof.Name] = matcher
-		validApps[prof.Name] = app
+		validProfiles[prof.Name] = compiled
 	}
 
-	// Log warnings for invalid profiles
-	if len(invalidProfiles) > 0 {
-		attrs := make([]slog.Attr, 0, len(invalidProfiles))
-		for name, err := range invalidProfiles {
-			attrs = append(attrs, slog.String(name, err.Error()))
-		}
-		slog.Warn("organization profile: some profiles failed validation and were ignored",
-			slog.Attr{Key: "invalid_profiles", Value: slog.GroupValue(attrs...)})
-	}
-
-	// Build maps for ProfileStoreOf
-	validProfiles := make(map[string]AuthorizedProfile[OrganizationProfileAttr])
-
-	// Convert valid profiles to AuthorizedProfile format
-	for _, p := range profiles {
-		matcher, ok := validMatchers[p.Name]
-		if !ok {
-			// Profile was invalid, skip it
-			continue
-		}
-
-		// Emit deprecation warning for "*" wildcard
-		if len(p.Repositories) == 1 && p.Repositories[0] == LiteralDeprecatedWildcard {
-			slog.Warn("organization profile: '*' is deprecated, use '{{all-repositories}}' instead",
-				"profile", p.Name,
-			)
-		}
-
-		scope := resolveRepositoryScope(p.Repositories)
-		attrs := OrganizationProfileAttr{
-			Scope:       scope,
-			Permissions: ensureMetadataRead(p.Permissions),
-			App:         validApps[p.Name],
-		}
-
-		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
-	}
+	logInvalidProfiles("organization", invalidProfiles)
 
 	return NewProfileStoreOf(validProfiles, invalidProfiles)
+}
+
+// logInvalidProfiles reports the profiles that failed validation, so an
+// operator sees the rejections that a successful load would otherwise hide.
+func logInvalidProfiles(kind string, invalidProfiles map[string]error) {
+	if len(invalidProfiles) == 0 {
+		return
+	}
+
+	attrs := make([]slog.Attr, 0, len(invalidProfiles))
+	for name, err := range invalidProfiles {
+		attrs = append(attrs, slog.String(name, err.Error()))
+	}
+
+	slog.Warn(kind+" profile: some profiles failed validation and were ignored",
+		slog.Attr{Key: "invalid_profiles", Value: slog.GroupValue(attrs...)})
+}
+
+// compilePipelineProfile compiles one profile in isolation. As for
+// organization profiles, the result is either complete or absent.
+func compilePipelineProfile(
+	prof pipelineProfile,
+	checkDuplicate duplicateNameValidator,
+	checkAppName appNameValidator,
+) (AuthorizedProfile[PipelineProfileAttr], error) {
+	// Check for reserved "default" name
+	if prof.Name == "default" {
+		return AuthorizedProfile[PipelineProfileAttr]{}, fmt.Errorf("profile name %q is reserved", "default")
+	}
+
+	if err := checkDuplicate(prof.Name); err != nil {
+		return AuthorizedProfile[PipelineProfileAttr]{}, err
+	}
+
+	// Reject names that would produce an ambiguous URN
+	if err := validateProfileName(prof.Name); err != nil {
+		return AuthorizedProfile[PipelineProfileAttr]{}, err
+	}
+
+	if len(prof.Permissions) == 0 {
+		return AuthorizedProfile[PipelineProfileAttr]{}, fmt.Errorf("permissions list must be non-empty")
+	}
+
+	if err := validatePermissions(prof.Permissions); err != nil {
+		return AuthorizedProfile[PipelineProfileAttr]{}, fmt.Errorf("invalid permissions: %w", err)
+	}
+
+	app, err := checkAppName(prof.App)
+	if err != nil {
+		return AuthorizedProfile[PipelineProfileAttr]{}, err
+	}
+
+	// Compile match rules (empty rules are allowed)
+	matcher, err := compileMatchRules(prof.Match)
+	if err != nil {
+		return AuthorizedProfile[PipelineProfileAttr]{}, err
+	}
+
+	attrs := PipelineProfileAttr{
+		Permissions: ensureMetadataRead(prof.Permissions),
+		App:         app,
+	}
+
+	return NewAuthorizedProfile(matcher, attrs), nil
 }
 
 // compilePipelineProfiles compiles pipeline profiles from config.
@@ -170,89 +230,22 @@ func compileOrganizationProfiles(profiles []organizationProfile, usableApp AppLo
 // Validates that user-defined profiles don't use the reserved "default" name.
 // Returns a ProfileStoreOf containing valid and invalid profiles.
 func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []string, usableApp AppLookup) ProfileStoreOf[PipelineProfileAttr] {
-	validMatchers := make(map[string]Matcher)
-	validApps := make(map[string]string)
+	validProfiles := make(map[string]AuthorizedProfile[PipelineProfileAttr])
 	invalidProfiles := make(map[string]error)
-	duplicateNameCheck := duplicateNameValidator()
+	checkDuplicate := newDuplicateNameValidator()
+	checkAppName := newAppNameValidator(usableApp)
 
 	for _, prof := range profiles {
-		// Check for reserved "default" name
-		if prof.Name == "default" {
-			err := fmt.Errorf("profile name %q is reserved", "default")
-			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		// Check for duplicate profile names
-		if err := duplicateNameCheck(prof.Name); err != nil {
-			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		// Reject names that would produce an ambiguous URN
-		if err := validateProfileName(prof.Name); err != nil {
-			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		// Check for empty permissions list
-		if len(prof.Permissions) == 0 {
-			err := fmt.Errorf("permissions list must be non-empty")
-			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		// Validate permissions format
-		if err := validatePermissions(prof.Permissions); err != nil {
-			invalidProfiles[prof.Name] = fmt.Errorf("invalid permissions: %w", err)
-			continue
-		}
-
-		app, err := resolveProfileApp(prof.App, usableApp)
+		compiled, err := compilePipelineProfile(prof, checkDuplicate, checkAppName)
 		if err != nil {
 			invalidProfiles[prof.Name] = err
 			continue
 		}
 
-		// Compile match rules (empty rules are allowed)
-		matcher, err := compileMatchRules(prof.Match)
-		if err != nil {
-			invalidProfiles[prof.Name] = err
-			continue
-		}
-
-		validMatchers[prof.Name] = matcher
-		validApps[prof.Name] = app
+		validProfiles[prof.Name] = compiled
 	}
 
-	// Log warnings for invalid profiles
-	if len(invalidProfiles) > 0 {
-		attrs := make([]slog.Attr, 0, len(invalidProfiles))
-		for name, err := range invalidProfiles {
-			attrs = append(attrs, slog.String(name, err.Error()))
-		}
-		slog.Warn("pipeline profile: some profiles failed validation and were ignored",
-			slog.Attr{Key: "invalid_profiles", Value: slog.GroupValue(attrs...)})
-	}
-
-	// Build maps for ProfileStoreOf
-	validProfiles := make(map[string]AuthorizedProfile[PipelineProfileAttr])
-
-	// Convert valid profiles to AuthorizedProfile format
-	for _, p := range profiles {
-		matcher, ok := validMatchers[p.Name]
-		if !ok {
-			// Profile was invalid, skip it
-			continue
-		}
-
-		attrs := PipelineProfileAttr{
-			Permissions: ensureMetadataRead(p.Permissions),
-			App:         validApps[p.Name],
-		}
-
-		validProfiles[p.Name] = NewAuthorizedProfile(matcher, attrs)
-	}
+	logInvalidProfiles("pipeline", invalidProfiles)
 
 	// Add "default" profile from defaultPermissions
 	// Empty match rules means it matches all pipelines
@@ -355,8 +348,12 @@ func validateRepositories(repos []string) error {
 	return nil
 }
 
-// duplicateNameValidator creates a validator function that checks for duplicate profile names.
-func duplicateNameValidator() func(string) error {
+// duplicateNameValidator rejects a profile name already seen by an earlier
+// call, so a second entry sharing a name never reaches the maps a first entry
+// already populated.
+type duplicateNameValidator func(name string) error
+
+func newDuplicateNameValidator() duplicateNameValidator {
 	seenNames := make(map[string]struct{})
 
 	return func(name string) error {
