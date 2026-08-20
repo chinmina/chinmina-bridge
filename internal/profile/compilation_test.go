@@ -243,7 +243,7 @@ func TestCompile_GracefulDegradation(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Valid profiles should be accessible
@@ -279,22 +279,38 @@ func TestCompile_GracefulDegradation(t *testing.T) {
 	assert.Equal(t, "invalid-regex-pattern", unavailErr.Name)
 }
 
-func TestCompile_DuplicateNameHandling(t *testing.T) {
+// A duplicate name is served entirely from the first entry that claimed it: no
+// attribute may be taken from the rejected later entry. Compilation used to
+// build the matcher and app from the accepted entry but the scope and
+// permissions from whichever entry was visited last, splicing two different
+// YAML entries into one served profile.
+func TestCompile_DuplicateNameServesTheFirstEntryOnly(t *testing.T) {
 	yamlContent, err := os.ReadFile("testdata/profile/profile_with_duplicate_names.yaml")
 	require.NoError(t, err)
 
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 	orgProfiles := profiles.orgProfiles
 
-	// With duplicate names, the last profile with that name wins in the current implementation
-	// (first is validated, but second's attributes overwrite in the profile map)
 	profile, err := orgProfiles.Get("production")
 	require.NoError(t, err)
-	assert.Equal(t, NewSpecificScope("cotton"), profile.Attrs.Scope)
+	assert.Equal(t, OrganizationProfileAttr{
+		Scope:       NewSpecificScope("silk"),
+		Permissions: []string{"contents:write", "metadata:read"},
+		App:         "default",
+	}, profile.Attrs)
+
+	// The matcher is the first entry's too: the second entry's claim value must
+	// not authorize this profile.
+	assert.True(t, profile.Match(mapClaimLookup{"pipeline_slug": "silk-prod"}).Matched)
+	assert.False(t, profile.Match(mapClaimLookup{"pipeline_slug": "cotton-prod"}).Matched)
+
+	// The rejected entry is recorded as invalid, with the reason.
+	assert.Equal(t, 1, orgProfiles.InvalidProfileCount())
+	assert.ErrorContains(t, orgProfiles.invalidProfiles["production"], `duplicate profile name: "production"`)
 
 	// "staging" should also be accessible
 	_, err = orgProfiles.Get("staging")
@@ -308,7 +324,7 @@ func TestCompile_EmptyListsHandling(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 	orgProfiles := profiles.orgProfiles
 
@@ -340,7 +356,7 @@ func TestCompile_DigestPreservation(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	assert.Equal(t, digest, profiles.digest, "digest should be preserved through compilation")
@@ -354,7 +370,7 @@ func TestCompile_LocationPreservation(t *testing.T) {
 	require.NoError(t, err)
 
 	location := "github://acme/profiles/main/profiles.yaml"
-	profiles, err := compile(config, digest, location)
+	profiles, err := compile(config, digest, location, DefaultAppOnly)
 	require.NoError(t, err)
 
 	stats := profiles.Stats()
@@ -390,7 +406,7 @@ func TestCompile_PipelineDefaultsFallback(t *testing.T) {
 			config, digest, err := parse(string(yamlContent))
 			require.NoError(t, err)
 
-			profiles, err := compile(config, digest, "local")
+			profiles, err := compile(config, digest, "local", DefaultAppOnly)
 			require.NoError(t, err)
 
 			defaultProfile, err := profiles.GetPipelineProfile("default")
@@ -407,7 +423,7 @@ func TestProfileMatching_ExactMatch_Success(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -431,7 +447,7 @@ func TestProfileMatching_ExactMatch_Failure(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -458,7 +474,7 @@ func TestProfileMatching_RegexMatch_Success(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -482,7 +498,7 @@ func TestProfileMatching_RegexMatch_Failure(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -508,7 +524,7 @@ func TestProfileMatching_MultipleRules_AllPass(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -537,7 +553,7 @@ func TestProfileMatching_MultipleRules_OneFails(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -567,7 +583,7 @@ func TestProfileMatching_EmptyRules_AlwaysPasses(t *testing.T) {
 	config, digest, err := parse(string(yamlContent))
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Get the profile and test matching
@@ -605,7 +621,7 @@ func TestCompilePipelineProfiles_ReservedNameRejection(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	// "default" should be invalid
 	_, err := result.Get("default")
@@ -629,7 +645,7 @@ func TestCompilePipelineProfiles_EmptyMatchRulesPass(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	profile, err := result.Get("open-profile")
 	require.NoError(t, err)
@@ -653,7 +669,7 @@ func TestCompilePipelineProfiles_EmptyPermissionsRejection(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	// "no-permissions" should be invalid
 	_, err := result.Get("no-permissions")
@@ -667,15 +683,21 @@ func TestCompilePipelineProfiles_EmptyPermissionsRejection(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// As for organization profiles, the first entry to claim a name is the one
+// served in full: the rejected duplicate contributes no attribute.
 func TestCompilePipelineProfiles_DuplicateNames(t *testing.T) {
+	app := "packages"
 	profiles := []pipelineProfile{
 		{
 			Name:        "duplicate",
 			Permissions: []string{"contents:read"},
+			Match:       []matchRule{{Claim: "pipeline_slug", Value: "silk"}},
 		},
 		{
 			Name:        "duplicate",
 			Permissions: []string{"pull_requests:write"},
+			App:         &app,
+			Match:       []matchRule{{Claim: "pipeline_slug", Value: "cotton"}},
 		},
 		{
 			Name:        "unique",
@@ -683,15 +705,21 @@ func TestCompilePipelineProfiles_DuplicateNames(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, usableApps(app))
 
-	// With duplicate names, the last profile wins (second's attributes overwrite first)
 	duplicateProfile, err := result.Get("duplicate")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"pull_requests:write", "metadata:read"}, duplicateProfile.Attrs.Permissions)
+	assert.Equal(t, PipelineProfileAttr{
+		Permissions: []string{"contents:read", "metadata:read"},
+		App:         "default",
+	}, duplicateProfile.Attrs)
+
+	assert.True(t, duplicateProfile.Match(mapClaimLookup{"pipeline_slug": "silk"}).Matched)
+	assert.False(t, duplicateProfile.Match(mapClaimLookup{"pipeline_slug": "cotton"}).Matched)
 
 	// Second duplicate was rejected, verify invalid count
 	assert.Equal(t, 1, result.InvalidProfileCount(), "second duplicate should be marked invalid")
+	assert.ErrorContains(t, result.invalidProfiles["duplicate"], `duplicate profile name: "duplicate"`)
 
 	// "unique" should be accessible
 	_, err = result.Get("unique")
@@ -732,7 +760,7 @@ func TestCompilePipelineProfiles_DefaultProfileCreation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions)
+			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions, DefaultAppOnly)
 
 			// "default" profile should exist
 			defaultProfile, err := result.Get("default")
@@ -758,7 +786,7 @@ func TestCompilePipelineProfiles_WithMatchRules(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	profile, err := result.Get("specific-pipeline")
 	require.NoError(t, err)
@@ -789,7 +817,7 @@ func TestCompilePipelineProfiles_InvalidMatchRule(t *testing.T) {
 		},
 	}
 
-	result := compilePipelineProfiles(profiles, []string{"contents:read"})
+	result := compilePipelineProfiles(profiles, []string{"contents:read"}, DefaultAppOnly)
 
 	// "bad-regex-profile" should be marked invalid due to bad regex
 	_, err := result.Get("bad-regex-profile")
@@ -862,7 +890,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	result := profiles.orgProfiles
@@ -938,7 +966,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	result := profiles.orgProfiles
@@ -1015,7 +1043,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	result := profiles.pipelineProfiles
@@ -1067,7 +1095,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	_, err = compile(config, digest, "local")
+	_, err = compile(config, digest, "local", DefaultAppOnly)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid default permissions")
 	assert.Contains(t, err.Error(), "invalid permission field")
@@ -1164,7 +1192,7 @@ func TestCompilePipelineProfiles_MetadataReadAutoAdded(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions)
+			result := compilePipelineProfiles(tt.profiles, tt.defaultPermissions, DefaultAppOnly)
 
 			profile, err := result.Get(tt.profileName)
 			require.NoError(t, err)
@@ -1220,7 +1248,7 @@ func TestCompileOrganizationProfiles_MetadataReadAutoAdded(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := compileOrganizationProfiles(tt.profiles)
+			result := compileOrganizationProfiles(tt.profiles, DefaultAppOnly)
 
 			profile, err := result.Get(tt.profileName)
 			require.NoError(t, err)
@@ -1250,7 +1278,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	p, err := profiles.GetOrgProfile("scoped-profile")
@@ -1276,7 +1304,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	p, err := profiles.GetOrgProfile("all-repos-profile")
@@ -1329,7 +1357,7 @@ pipeline:
 			config, digest, err := parse(yamlContent)
 			require.NoError(t, err)
 
-			profiles, err := compile(config, digest, "local")
+			profiles, err := compile(config, digest, "local", DefaultAppOnly)
 			require.NoError(t, err)
 
 			_, err = profiles.GetOrgProfile(tt.profileName)
@@ -1358,7 +1386,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	p, err := profiles.GetOrgProfile("old-wildcard")
@@ -1398,7 +1426,7 @@ pipeline:
 			config, digest, err := parse(yamlContent)
 			require.NoError(t, err)
 
-			profiles, err := compile(config, digest, "local")
+			profiles, err := compile(config, digest, "local", DefaultAppOnly)
 			require.NoError(t, err)
 
 			_, err = profiles.GetOrgProfile(tt.profileName)
@@ -1423,7 +1451,7 @@ pipeline:
 	config, digest, err := parse(yamlContent)
 	require.NoError(t, err)
 
-	profiles, err := compile(config, digest, "local")
+	profiles, err := compile(config, digest, "local", DefaultAppOnly)
 	require.NoError(t, err)
 
 	_, err = profiles.GetPipelineProfile("team/deploy")

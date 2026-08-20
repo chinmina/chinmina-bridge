@@ -6,6 +6,7 @@ import (
 
 	"log/slog"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -26,10 +27,12 @@ func NewDefaultProfiles() Profiles {
 	// Create universal matcher (empty match rules always match)
 	defaultMatcher := CompositeMatcher()
 
-	// Create pipeline profiles map with only "default"
+	// Create pipeline profiles map with only "default": no configuration has
+	// been loaded, so no app other than the default one can have been named.
 	pipelineProfiles := map[string]AuthorizedProfile[PipelineProfileAttr]{
-		"default": NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
+		ProfileNameDefault: NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
 			Permissions: []string{"contents:read", "metadata:read"},
+			App:         github.DefaultAppName,
 		}),
 	}
 
@@ -92,34 +95,40 @@ func (p *ProfileStore) Update(ctx context.Context, profiles Profiles) {
 	oldDigest := p.profiles.Digest()
 	newDigest := profiles.Digest()
 
+	stats := profiles.Stats()
+
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(
 		attribute.String("profile.digest_current", oldDigest),
 		attribute.String("profile.digest_updated", newDigest),
 		attribute.Bool("profile.digest_changed", oldDigest != newDigest),
+		attribute.Int("profile.organization.valid_count", stats.OrganizationProfileCount),
+		attribute.Int("profile.organization.invalid_count", stats.OrganizationInvalidProfileCount),
+		attribute.Int("profile.pipeline.valid_count", stats.PipelineProfileCount),
+		attribute.Int("profile.pipeline.invalid_count", stats.PipelineInvalidProfileCount),
 	)
 
 	// by default, only log when the source has actually changed content
 	if oldDigest != newDigest {
 		slog.Info("profiles: updated",
-			"stats", profiles.Stats(),
+			"stats", stats,
 			"previousStats", p.profiles.Stats())
 	} else {
 		slog.Debug("profiles: no changes detected",
-			"stats", profiles.Stats())
+			"stats", stats)
 	}
 
 	p.profiles = profiles
 }
 
-// FetchOrganizationProfile loads organization profile configuration from GitHub.
-// This is the main entry point for production code.
-func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh GitHubClient) (Profiles, error) {
-	return load(ctx, gh, orgProfileLocation)
+// FetchOrganizationProfile loads organization profile configuration from
+// GitHub. This is the main entry point for production code.
+func FetchOrganizationProfile(ctx context.Context, orgProfileLocation string, gh GitHubClient, usableApp AppLookup) (Profiles, error) {
+	return load(ctx, gh, orgProfileLocation, usableApp)
 }
 
 // load retrieves, parses, and compiles profile configuration from GitHub.
-func load(ctx context.Context, gh GitHubClient, orgProfileLocation string) (Profiles, error) {
+func load(ctx context.Context, gh GitHubClient, orgProfileLocation string, usableApp AppLookup) (Profiles, error) {
 	yamlContent, err := retrieve(ctx, gh, orgProfileLocation)
 	if err != nil {
 		return Profiles{}, err
@@ -130,7 +139,7 @@ func load(ctx context.Context, gh GitHubClient, orgProfileLocation string) (Prof
 		return Profiles{}, err
 	}
 
-	profiles, err := compile(config, digest, orgProfileLocation)
+	profiles, err := compile(config, digest, orgProfileLocation, usableApp)
 	if err != nil {
 		return Profiles{}, err
 	}

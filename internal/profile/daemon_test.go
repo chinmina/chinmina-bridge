@@ -61,7 +61,7 @@ func TestRefresh_Success(t *testing.T) {
 	store := NewProfileStore()
 	ctx := context.Background()
 
-	err := refresh(ctx, store, gh, "acme:silk:profile.yaml")
+	err := refresh(ctx, store, gh, "acme:silk:profile.yaml", DefaultAppOnly)
 	require.NoError(t, err)
 
 	// Verify the profile was fetched and store was updated
@@ -97,7 +97,7 @@ func TestRefresh_Failure(t *testing.T) {
 			store := NewProfileStore()
 			initialDigest := store.Digest()
 
-			err := refresh(context.Background(), store, tt.gh, "acme:silk:profile.yaml")
+			err := refresh(context.Background(), store, tt.gh, "acme:silk:profile.yaml", DefaultAppOnly)
 
 			require.Error(t, err)
 			assert.Equal(t, 1, tt.gh.calls(), "fetch should have been attempted")
@@ -114,10 +114,66 @@ func TestRefreshTask_ActionLoadsAGeneration(t *testing.T) {
 
 	store := NewProfileStore()
 
-	err := RefreshTask(store, gh, "acme:silk:profile.yaml").Action(context.Background())
+	err := RefreshTask(store, gh, "acme:silk:profile.yaml", DefaultAppOnly).Action(context.Background())
 	require.NoError(t, err)
 
 	profile, _, err := store.GetOrganizationProfile("test-profile")
 	require.NoError(t, err, "the action should have loaded the generation")
 	assert.Equal(t, NewSpecificScope("silk"), profile.Attrs.Scope)
+}
+
+// Profile validity depends on both the YAML and the app registry, but only the
+// YAML feeds the digest. A refresh that compiled without the registry would
+// silently invalidate app-naming profiles under an unchanged digest, so the
+// generation swap would look like a no-op.
+func TestRefresh_ProfileNamingAnEnabledAppStaysValidAcrossRefreshes(t *testing.T) {
+	gh := &mockGitHubClientForDaemon{
+		yaml: `organization:
+  profiles:
+    - name: "publish-packages"
+      app: packages
+      repositories: ["silk"]
+      permissions: ["contents:read"]
+`,
+	}
+
+	store := NewProfileStore()
+	usableApp := usableApps("packages")
+
+	// The second refresh is the one that would regress.
+	require.NoError(t, RefreshTask(store, gh, "acme:silk:profile.yaml", usableApp).Action(t.Context()))
+	firstDigest := store.Digest()
+
+	require.NoError(t, RefreshTask(store, gh, "acme:silk:profile.yaml", usableApp).Action(t.Context()))
+
+	assert.Equal(t, firstDigest, store.Digest(), "the YAML is unchanged, so the digest must be too")
+
+	published, _, err := store.GetOrganizationProfile("publish-packages")
+	require.NoError(t, err, "a profile naming an enabled app must survive a refresh")
+	assert.Equal(t, "packages", published.Attrs.App)
+	assert.Equal(t, 2, gh.calls())
+}
+
+// Unusable is terminal until the process restarts: no refresh recovers the
+// profile.
+func TestRefresh_ProfileNamingAnUnusableAppStaysInvalidAcrossRefreshes(t *testing.T) {
+	gh := &mockGitHubClientForDaemon{
+		yaml: `organization:
+  profiles:
+    - name: "publish-packages"
+      app: packages
+      repositories: ["silk"]
+      permissions: ["contents:read"]
+`,
+	}
+
+	store := NewProfileStore()
+
+	require.NoError(t, RefreshTask(store, gh, "acme:silk:profile.yaml", DefaultAppOnly).Action(t.Context()))
+	require.NoError(t, RefreshTask(store, gh, "acme:silk:profile.yaml", DefaultAppOnly).Action(t.Context()))
+
+	_, _, err := store.GetOrganizationProfile("publish-packages")
+
+	var unavailable ProfileUnavailableError
+	require.ErrorAs(t, err, &unavailable)
 }

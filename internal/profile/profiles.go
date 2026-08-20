@@ -14,6 +14,15 @@ import (
 type OrganizationProfileAttr struct {
 	Scope       RepositoryScope
 	Permissions []string
+
+	// App is the app's name, never a live client: attributes are pure data and
+	// must not carry a credential into a cache payload or a log line.
+	App string
+}
+
+// AppName is the name of the app this profile's tokens are minted through.
+func (attr OrganizationProfileAttr) AppName() string {
+	return attr.App
 }
 
 // HasRepository checks if the given repository is included in the profile's
@@ -31,6 +40,22 @@ func (attr OrganizationProfileAttr) RepositoryScope() RepositoryScope {
 // Slice fields are expected to be treated as immutable after construction.
 type PipelineProfileAttr struct {
 	Permissions []string
+
+	// App is the app's name. See OrganizationProfileAttr.App.
+	App string
+}
+
+// AppName is the name of the app this profile's tokens are minted through.
+func (attr PipelineProfileAttr) AppName() string {
+	return attr.App
+}
+
+// AppNamed is implemented by profile attribute types that declare which app
+// their tokens are minted through. Only the profile resolver reads it: it
+// resolves the name once at the handler boundary so that downstream stages
+// stay generic.
+type AppNamed interface {
+	AppName() string
 }
 
 // --- AuthorizedProfile (uses attribute types) ---

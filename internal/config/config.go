@@ -112,6 +112,11 @@ type GithubConfig struct {
 
 	ApplicationID  int64 `env:"GITHUB_APP_ID, required"`
 	InstallationID int64 `env:"GITHUB_APP_INSTALLATION_ID, required"`
+
+	// Apps holds the named GitHub App registry as raw JSON: its schema,
+	// validation and redaction rules belong with the registry, not with
+	// environment loading. Empty means the default app above vends every token.
+	Apps string `env:"GITHUB_APPS"`
 }
 
 type ObserveConfig struct {
@@ -134,7 +139,13 @@ type ObserveConfig struct {
 }
 
 func Load(ctx context.Context) (Config, error) {
-	lookup := newFileContentLookuper(envconfig.OsLookuper(), "JWT_JWKS_STATIC", "GITHUB_APP_PRIVATE_KEY")
+	// GITHUB_APPS is allowlisted alongside the single-app private key: its
+	// entries can carry an inline PEM, and an environment variable is readable
+	// from process listings, container inspection and rendered task
+	// definitions.
+	lookup := newFileContentLookuper(envconfig.OsLookuper(),
+		"JWT_JWKS_STATIC", "GITHUB_APP_PRIVATE_KEY", "GITHUB_APPS",
+	)
 	return load(ctx, lookup)
 }
 

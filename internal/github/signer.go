@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
@@ -34,13 +35,21 @@ type KMSClient interface {
 }
 
 // kmsSigningKey is the key type passed to kmsSigner.Sign(). It carries the
-// context and KMS client needed for AWS KMS-based signing without exposing
-// private key material.
+// KMS client needed for AWS KMS-based signing without exposing private key
+// material.
+//
+// It must hold no context. JWTs are re-minted roughly every ten minutes for
+// the life of the process, so a context captured at construction gives a clean
+// boot then permanent `context canceled` on every mint. Only ARN-backed keys
+// are affected, so PEM-based tests will not catch a regression.
 type kmsSigningKey struct {
-	ctx    context.Context // startup context for cancellation
 	client KMSClient
 	arn    string
 }
+
+// kmsSignTimeout bounds a single KMS signing call: jws.Signer2 gives Sign no
+// caller context, so the call must supply its own.
+const kmsSignTimeout = 30 * time.Second
 
 // kmsSigner implements jws.Signer2 for AWS KMS-based signing. The actual
 // signing parameters are extracted from the kmsSigningKey passed to Sign().
@@ -59,8 +68,11 @@ func (kmsSigner) Sign(key any, payload []byte) ([]byte, error) {
 		return nil, fmt.Errorf("kmsSigner requires kmsSigningKey, got %T", key)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), kmsSignTimeout)
+	defer cancel()
+
 	hash := sha256.Sum256(payload)
-	out, err := k.client.Sign(k.ctx, &kms.SignInput{
+	out, err := k.client.Sign(ctx, &kms.SignInput{
 		KeyId:            aws.String(k.arn),
 		Message:          hash[:],
 		MessageType:      types.MessageTypeDigest,

@@ -41,10 +41,13 @@ func noRepositories() (RepositoryTarget, error) {
 type RepositoryResolver[T any] func(ctx context.Context, r Resolved[T], requestedRepoURL string) (RepositoryTarget, error)
 
 // Vending issues the token for a resolved request. It holds no configuration:
-// the resolved profile supplies the scope and permissions, so the token can
-// only ever describe the profile generation the request was authorized
-// against.
-func Vending[T any](resolve RepositoryResolver[T], tokenVendor TokenVendor) ProfileTokenVendor[T] {
+// the resolved profile supplies the scope and permissions, and the resolved
+// app identity supplies the installation, so the token can only ever describe
+// the profile generation the request was authorized against.
+//
+// It deliberately does not resolve the app itself: Cached short-circuits
+// before this runs, so the lookup belongs at the request boundary.
+func Vending[T any](resolve RepositoryResolver[T], tokenVendor AppTokenVendor) ProfileTokenVendor[T] {
 	return func(ctx context.Context, r Resolved[T], requestedRepoURL string) VendorResult {
 		target, err := resolve(ctx, r, requestedRepoURL)
 		if err != nil {
@@ -67,7 +70,7 @@ func Vending[T any](resolve RepositoryResolver[T], tokenVendor TokenVendor) Prof
 		// A wildcard scope carries a nil repository list, and GitHub reads nil
 		// as "every repository in the installation" — the intended
 		// all-repositories behaviour. Do not "fix" this into an empty slice.
-		token, expiry, err := tokenVendor(ctx, target.Scope.Names, target.Permissions)
+		token, expiry, err := tokenVendor(ctx, r.App, target.Scope.Names, target.Permissions)
 		if err != nil {
 			return NewVendorFailed(fmt.Errorf("could not issue token for profile %s (repositories %v): %w", r.Ref, target.Scope.NamesForDisplay(), err))
 		}
@@ -75,6 +78,7 @@ func Vending[T any](resolve RepositoryResolver[T], tokenVendor TokenVendor) Prof
 		slog.Info("profile token issued",
 			"organization", r.Ref.Organization,
 			"profile", r.Ref.ShortString(),
+			"app", r.App.Name,
 		)
 
 		return NewVendorSuccess(ProfileToken{
@@ -83,6 +87,7 @@ func Vending[T any](resolve RepositoryResolver[T], tokenVendor TokenVendor) Prof
 			Repositories:        target.Scope,
 			Permissions:         target.Permissions,
 			Profile:             r.Ref.ShortString(),
+			App:                 r.App.Name,
 			Token:               token,
 			HashedToken:         HashToken(token),
 			Expiry:              expiry,

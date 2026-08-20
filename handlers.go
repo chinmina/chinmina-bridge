@@ -107,6 +107,14 @@ type ProfileResolver[T any] struct {
 	Resolve func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[T], error)
 }
 
+// AppResolver maps a profile's declared app name to the identity its tokens are
+// minted through; a disabled app resolves to nothing.
+//
+// It is consulted in the profile resolver, not inside the vendor chain: Cached
+// short-circuits before Vending, so a check in the chain would be skipped on
+// exactly the warm-cache requests whose app has since been disabled.
+type AppResolver func(name string) (github.AppIdentity, bool)
+
 // NewOrgProfileResolver returns the resolver for the /organization/* routes,
 // enforcing the bidirectional scope rules below; they require the profile's
 // declared scope, so they can only run once the profile is resolved.
@@ -124,11 +132,11 @@ type ProfileResolver[T any] struct {
 // allow-list by design; the only controls are the match rules, the granted
 // permissions, and the App's installation scope. Pair caller-scoped
 // profiles with narrow permissions and tight match rules.
-func NewOrgProfileResolver(lookup ProfileLookup[profile.OrganizationProfileAttr]) ProfileResolver[profile.OrganizationProfileAttr] {
+func NewOrgProfileResolver(lookup ProfileLookup[profile.OrganizationProfileAttr], resolveApp AppResolver) ProfileResolver[profile.OrganizationProfileAttr] {
 	return ProfileResolver[profile.OrganizationProfileAttr]{
 		AcceptsRepositoryScope: true,
 		Resolve: func(ctx context.Context, pv PathValuer, explicitScope, implicitScope string) (vendor.Resolved[profile.OrganizationProfileAttr], error) {
-			resolved, err := resolveProfile(ctx, pv, lookup, profile.ProfileTypeOrg)
+			resolved, err := resolveProfile(ctx, pv, lookup, resolveApp, profile.ProfileTypeOrg)
 			if err != nil {
 				return resolved, err
 			}
@@ -162,19 +170,23 @@ func NewOrgProfileResolver(lookup ProfileLookup[profile.OrganizationProfileAttr]
 // NewPipelineProfileResolver returns the resolver for the /token and
 // /git-credentials routes. Pipeline profiles are never scoped, so both scope
 // signals are ignored.
-func NewPipelineProfileResolver(lookup ProfileLookup[profile.PipelineProfileAttr]) ProfileResolver[profile.PipelineProfileAttr] {
+func NewPipelineProfileResolver(lookup ProfileLookup[profile.PipelineProfileAttr], resolveApp AppResolver) ProfileResolver[profile.PipelineProfileAttr] {
 	return ProfileResolver[profile.PipelineProfileAttr]{
 		Resolve: func(ctx context.Context, pv PathValuer, _, _ string) (vendor.Resolved[profile.PipelineProfileAttr], error) {
-			return resolveProfile(ctx, pv, lookup, profile.ProfileTypeRepo)
+			return resolveProfile(ctx, pv, lookup, resolveApp, profile.ProfileTypeRepo)
 		},
 	}
 }
 
-// resolveProfile parses the profile path parameter and reads the named profile
-// from configuration exactly once. Failure returns an empty Resolved: the raw
-// requested name is already on the audit entry, and nothing downstream of a
-// failed resolution may read a half-populated value.
-func resolveProfile[T any](ctx context.Context, pv PathValuer, lookup ProfileLookup[T], expectedType profile.ProfileType) (vendor.Resolved[T], error) {
+// resolveProfile parses the profile path parameter, reads the named profile
+// from configuration exactly once, and resolves the app it mints through.
+// Failure returns an empty Resolved: the raw requested name is already on the
+// audit entry, and nothing downstream of a failed resolution may read a
+// half-populated value.
+//
+// T is constrained to AppNamed because this is the only stage that reads a
+// family-specific attribute; downstream stages read the resolved app instead.
+func resolveProfile[T profile.AppNamed](ctx context.Context, pv PathValuer, lookup ProfileLookup[T], resolveApp AppResolver, expectedType profile.ProfileType) (vendor.Resolved[T], error) {
 	claims := jwt.RequireBuildkiteClaimsFromContext(ctx)
 
 	ref, err := profile.NewProfileRef(claims, expectedType, pv.PathValue("profile"))
@@ -187,7 +199,16 @@ func resolveProfile[T any](ctx context.Context, pv PathValuer, lookup ProfileLoo
 		return vendor.Resolved[T]{}, err
 	}
 
-	return vendor.Resolved[T]{Ref: ref, Profile: authProfile, Digest: digest}, nil
+	appName := authProfile.Attrs.AppName()
+
+	app, resolvable := resolveApp(appName)
+	if !resolvable {
+		// A served profile naming an unresolvable app is our defect rather
+		// than GitHub's denial: a 500, not a 403 or a 404.
+		return vendor.Resolved[T]{}, profile.AppUnresolvedError{ProfileName: ref.Name, AppName: appName}
+	}
+
+	return vendor.Resolved[T]{Ref: ref, Profile: authProfile, Digest: digest, App: app}, nil
 }
 
 // recordResolvedRequest stamps the request's intent on the audit entry once
@@ -200,10 +221,14 @@ func resolveProfile[T any](ctx context.Context, pv PathValuer, lookup ProfileLoo
 // name can itself be URN-shaped. Distinguish a served request from a
 // rejected one via the entry's error field, never the shape of
 // requestedProfile.
-func recordResolvedRequest(ctx context.Context, ref profile.ProfileRef, requestedRepo string) {
+func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[T], requestedRepo string) {
 	entry := audit.Log(ctx)
-	entry.RequestedProfile = ref.String()
+	entry.RequestedProfile = resolved.Ref.String()
 	entry.RequestedRepository = requestedRepo
+
+	// Recorded at resolution rather than at vend, so a failed mint still names
+	// the app it was attempted through.
+	entry.App = resolved.App.Name
 }
 
 // recordRequestedName stamps the raw profile path parameter before anything can
@@ -299,7 +324,7 @@ func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve Pr
 			writeJSONError(r.Context(), w, resolveError{err: err})
 			return
 		}
-		recordResolvedRequest(r.Context(), resolved.Ref, "")
+		recordResolvedRequest(r.Context(), resolved, "")
 
 		result := tokenVendor(r.Context(), resolved, "")
 
@@ -369,7 +394,7 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			writeTextError(r.Context(), w, resolveError{err: err})
 			return
 		}
-		recordResolvedRequest(r.Context(), resolved.Ref, requestedRepoURL)
+		recordResolvedRequest(r.Context(), resolved, requestedRepoURL)
 
 		result := tokenVendor(r.Context(), resolved, requestedRepoURL)
 
