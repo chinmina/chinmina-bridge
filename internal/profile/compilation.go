@@ -145,7 +145,7 @@ func compilePipelineProfiles(profiles []pipelineProfile, defaultPermissions []st
 	// Always the default app: it is synthesised, so there is no YAML to name
 	// one, and the reserved name prevents a declared override.
 	defaultMatcher, _ := compileMatchRules(nil) // Empty rules always succeed
-	validProfiles["default"] = NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
+	validProfiles[ProfileNameDefault] = NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
 		Permissions: ensureMetadataRead(defaultPermissions),
 		App:         github.DefaultAppName,
 	})
@@ -160,8 +160,8 @@ func compilePipelineProfile(
 	checkDuplicate duplicateNameValidator,
 	checkAppName appNameValidator,
 ) (AuthorizedProfile[PipelineProfileAttr], error) {
-	if prof.Name == "default" {
-		return AuthorizedProfile[PipelineProfileAttr]{}, fmt.Errorf("profile name %q is reserved", "default")
+	if prof.Name == ProfileNameDefault {
+		return AuthorizedProfile[PipelineProfileAttr]{}, fmt.Errorf("profile name %q is reserved", ProfileNameDefault)
 	}
 
 	if err := checkDuplicate(prof.Name); err != nil {
