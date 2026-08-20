@@ -253,11 +253,37 @@ type AWSConfigLoader func() (aws.Config, error)
 // newAWSConfigLoader resolves the default AWS configuration once, on first use:
 // a deployment with no ARN-backed key never resolves credentials at all.
 //
+// Only success is remembered. A failure is returned uncached so the next caller
+// tries again: every KMS-backed app in the registry shares one loader, and a
+// remembered error would disable all of them for the process lifetime.
+//
+// Resolution runs under the lock, so concurrent callers wait for the first
+// attempt rather than each starting their own.
+//
 // ctx governs the resolution only; the resulting aws.Config outlives it.
 func newAWSConfigLoader(ctx context.Context) AWSConfigLoader {
-	return sync.OnceValues(func() (aws.Config, error) {
-		return config.LoadDefaultConfig(ctx)
-	})
+	var (
+		mu       sync.Mutex
+		resolved *aws.Config
+	)
+
+	return func() (aws.Config, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if resolved != nil {
+			return *resolved, nil
+		}
+
+		cfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			return aws.Config{}, err
+		}
+
+		resolved = &cfg
+
+		return cfg, nil
+	}
 }
 
 // createKMSSigningKey creates a KMS signing key using the AWS SDK. It contacts
