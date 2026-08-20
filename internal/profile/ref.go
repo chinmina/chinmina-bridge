@@ -16,7 +16,11 @@ const (
 )
 
 const (
-	ProfileNameDefault = "default" // Default profile name
+	// ProfileNameDefault is the reserved pipeline profile name: it names the
+	// synthesised profile that always exists, so a declared profile may not
+	// claim it. Distinct from github.DefaultAppName, which happens to share
+	// the same string but names an application, not a profile.
+	ProfileNameDefault = "default"
 )
 
 // String returns the string representation of the ProfileType.

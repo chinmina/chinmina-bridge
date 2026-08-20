@@ -30,7 +30,7 @@ func NewDefaultProfiles() Profiles {
 	// Create pipeline profiles map with only "default": no configuration has
 	// been loaded, so no app other than the default one can have been named.
 	pipelineProfiles := map[string]AuthorizedProfile[PipelineProfileAttr]{
-		"default": NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
+		ProfileNameDefault: NewAuthorizedProfile(defaultMatcher, PipelineProfileAttr{
 			Permissions: []string{"contents:read", "metadata:read"},
 			App:         github.DefaultAppName,
 		}),
