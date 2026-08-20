@@ -129,6 +129,15 @@ func (c Client) InstallationAccount(ctx context.Context) (installationAccount, e
 		return installationAccount{}, fmt.Errorf("installation %d has no account", c.installationID)
 	}
 
+	// Comparing installations by account ID is only safe because GitHub
+	// documents user and organization accounts as sharing one numeric ID
+	// space. Enterprise accounts are a separate object with no such
+	// guarantee, so one could collide with an unrelated user or
+	// organization's ID.
+	if targetType := installation.GetTargetType(); targetType != "User" && targetType != "Organization" {
+		return installationAccount{}, fmt.Errorf("installation %d is installed on a %q account, not a user or organization", c.installationID, targetType)
+	}
+
 	return installationAccount{ID: account.GetID(), Login: account.GetLogin()}, nil
 }
 

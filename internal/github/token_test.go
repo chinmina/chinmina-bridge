@@ -532,6 +532,63 @@ func TestValidateScope(t *testing.T) {
 	}
 }
 
+// User and organization accounts are documented by GitHub as sharing one
+// numeric ID space; enterprise accounts are not part of that guarantee, so an
+// installation reporting itself as enterprise-owned must not be trusted to
+// compare safely against another app's account ID.
+func TestInstallationAccount_TargetType(t *testing.T) {
+	tests := []struct {
+		name        string
+		targetType  string
+		errContains string
+	}{
+		{name: "organization is accepted", targetType: "Organization"},
+		{name: "user is accepted", targetType: "User"},
+		{name: "enterprise is rejected", targetType: "Enterprise", errContains: `installation 20 is installed on a "Enterprise" account, not a user or organization`},
+		{name: "unrecognised type is rejected", targetType: "Bot", errContains: `installation 20 is installed on a "Bot" account, not a user or organization`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := http.NewServeMux()
+			router.HandleFunc("GET /app/installations/{installationID}", func(w http.ResponseWriter, r *http.Request) {
+				JSON(w, &api.Installation{
+					ID:         new(int64(20)),
+					TargetType: new(tt.targetType),
+					Account: &api.User{
+						ID:    new(int64(1)),
+						Login: new("acme"),
+					},
+				})
+			})
+
+			svr := httptest.NewServer(router)
+			defer svr.Close()
+
+			gh, err := github.New(
+				context.Background(),
+				config.GithubConfig{
+					APIURL:         svr.URL,
+					PrivateKey:     generateKey(t),
+					ApplicationID:  10,
+					InstallationID: 20,
+				},
+			)
+			require.NoError(t, err)
+
+			account, err := gh.InstallationAccount(context.Background())
+
+			if tt.errContains != "" {
+				assert.ErrorContains(t, err, tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), account.ID)
+		})
+	}
+}
+
 func JSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	res, _ := json.Marshal(payload)
