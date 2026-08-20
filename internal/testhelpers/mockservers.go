@@ -21,6 +21,10 @@ type MockInstallation struct {
 	AccountID    int64
 	AccountLogin string
 
+	// AccountType is the installation's target_type. Empty defaults to
+	// "Organization", the only type most tests care about.
+	AccountType string
+
 	// StatusCode is the response status for this installation's endpoints.
 	// Zero means 200; a non-2xx fails one app's installation only.
 	StatusCode int
@@ -156,8 +160,14 @@ func SetupMockGitHubServer(t *testing.T) *MockGitHubServer {
 			return
 		}
 
+		accountType := installation.AccountType
+		if accountType == "" {
+			accountType = "Organization"
+		}
+
 		WriteJSON(w, &github.Installation{
-			ID: &installationID,
+			ID:         &installationID,
+			TargetType: &accountType,
 			Account: &github.User{
 				ID:    &installation.AccountID,
 				Login: &installation.AccountLogin,

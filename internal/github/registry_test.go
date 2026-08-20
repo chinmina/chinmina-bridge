@@ -275,6 +275,45 @@ func TestRegistry_DisablesAppOnADifferentAccount(t *testing.T) {
 	assert.True(t, registry.IsUsable("default"))
 }
 
+// User and organization accounts share one numeric ID space by GitHub's own
+// documentation; enterprise accounts are a different object with no such
+// guarantee, so an enterprise-owned installation must never be trusted to
+// compare safely against another app's account ID.
+func TestRegistry_DisablesAppInstalledOnAnEnterprise(t *testing.T) {
+	fixture := newRegistryFixture(t, appsJSON(t,
+		validEntry(t, "packages", 333, 444),
+		validEntry(t, "deploy", 555, 666),
+	))
+	fixture.mock.SetInstallation(444, testhelpers.MockInstallation{
+		AccountID:    accountSameOrg,
+		AccountLogin: "acme",
+		AccountType:  "Enterprise",
+	})
+
+	registry, err := fixture.build(t)
+	require.NoError(t, err, "one misconfigured app must not prevent startup")
+
+	assert.False(t, registry.IsUsable("packages"))
+	assert.True(t, registry.IsUsable("deploy"), "an unrelated app must be unaffected")
+	assert.True(t, registry.IsUsable("default"))
+}
+
+// The default app is held to the same rule as any other: if its own
+// installation turns out to be enterprise-owned, the numeric ID comparison
+// every other app relies on is meaningless, so the service must not start.
+func TestRegistry_FailsWhenTheDefaultAppIsInstalledOnAnEnterprise(t *testing.T) {
+	fixture := newRegistryFixture(t, appsJSON(t, validEntry(t, "packages", 333, 444)))
+	fixture.mock.SetInstallation(defaultInstallationID, testhelpers.MockInstallation{
+		AccountID:    accountSameOrg,
+		AccountLogin: "acme",
+		AccountType:  "Enterprise",
+	})
+
+	_, err := fixture.build(t)
+
+	assert.ErrorContains(t, err, "default app installation could not be queried")
+}
+
 func TestRegistry_DisablesAppWhoseInstallationCannotBeQueried(t *testing.T) {
 	fixture := newRegistryFixture(t, appsJSON(t,
 		validEntry(t, "packages", 333, 444),
