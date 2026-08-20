@@ -234,6 +234,32 @@ func TestRegistry_ConfigurationErrorsOmitKeyMaterial(t *testing.T) {
 	}
 }
 
+// An entry whose signing key cannot be built blocks startup rather than being
+// disabled. Unlike an installation that cannot be queried, nothing about this
+// can recover without a configuration change, and a disabled app would hide it
+// behind per-profile failures instead of a failed deploy.
+func TestRegistry_FailsWhenAnEntrysSigningKeyCannotBeBuilt(t *testing.T) {
+	const arn = "arn:aws:kms:ap-southeast-2:123456789012:key/super-secret-key-id"
+
+	// A malformed AWS_MAX_ATTEMPTS fails the load in the SDK's environment
+	// parsing, with no credentials, network or region lookup involved.
+	t.Setenv("AWS_REGION", "ap-southeast-2")
+	t.Setenv("AWS_MAX_ATTEMPTS", "not-a-number")
+
+	fixture := newRegistryFixture(t, appsJSON(t, map[string]any{
+		"name":           "packages",
+		"appId":          333,
+		"installationId": 444,
+		"privateKeyArn":  arn,
+	}))
+
+	_, err := fixture.build(t)
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, `app "packages": could not construct GitHub client`)
+	assert.NotContains(t, err.Error(), arn)
+}
+
 func TestRegistry_EnablesAppsOnTheDefaultAppsAccount(t *testing.T) {
 	fixture := newRegistryFixture(t, appsJSON(t,
 		validEntry(t, "packages", 333, 444),
