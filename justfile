@@ -57,12 +57,12 @@ fuzz secs=env('FUZZING_LOCAL_SECS', "30"):
 # CI: run unit tests with race detection, coverage output for codecov
 [group('ci')]
 ci-unit:
-    CGO_ENABLED=1 go test -race -coverprofile=coverage.out -covermode=atomic ./...
+    CGO_ENABLED=1 go test -race -coverprofile=coverage.out -coverpkg=./... -covermode=atomic ./...
 
 # CI: run integration tests with race detection, coverage output for codecov
 [group('ci')]
 ci-integration:
-    CGO_ENABLED=1 go test -tags=integration -run='^TestIntegration' -race -coverprofile=coverage.out -covermode=atomic ./...
+    CGO_ENABLED=1 go test -tags=integration -run='^TestIntegration' -race -coverprofile=coverage.out -coverpkg=./... -covermode=atomic ./...
 
 # CI: run fuzz tests (seconds per target, default 10s)
 [group('ci')]
