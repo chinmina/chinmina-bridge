@@ -129,7 +129,8 @@ func SetupMockGitHubServer(t *testing.T) *MockGitHubServer {
 
 		installation := mock.installationFor(installationIDFromPath(r))
 
-		if status := effectiveStatus(mock.StatusCode, installation.StatusCode); status != http.StatusOK {
+		status := effectiveStatus(mock.StatusCode, installation.StatusCode)
+		if !isSuccess(status) {
 			w.WriteHeader(status)
 			return
 		}
@@ -145,7 +146,7 @@ func SetupMockGitHubServer(t *testing.T) *MockGitHubServer {
 			ExpiresAt: &expiryTimestamp,
 		}
 
-		WriteJSON(w, token)
+		WriteJSONStatus(w, status, token)
 	})
 
 	router.HandleFunc("GET /app/installations/{installationID}", func(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +156,8 @@ func SetupMockGitHubServer(t *testing.T) *MockGitHubServer {
 		installationID := installationIDFromPath(r)
 		installation := mock.installationFor(installationID)
 
-		if status := effectiveStatus(mock.StatusCode, installation.StatusCode); status != http.StatusOK {
+		status := effectiveStatus(mock.StatusCode, installation.StatusCode)
+		if !isSuccess(status) {
 			w.WriteHeader(status)
 			return
 		}
@@ -165,7 +167,7 @@ func SetupMockGitHubServer(t *testing.T) *MockGitHubServer {
 			accountType = "Organization"
 		}
 
-		WriteJSON(w, &github.Installation{
+		WriteJSONStatus(w, status, &github.Installation{
 			ID:         &installationID,
 			TargetType: &accountType,
 			Account: &github.User{
@@ -189,6 +191,13 @@ func effectiveStatus(serverStatus, installationStatus int) int {
 		return http.StatusOK
 	}
 	return serverStatus
+}
+
+// isSuccess reports whether a configured status asks the mock to answer as
+// GitHub does on success. The whole 2xx range counts: the real API answers
+// some requests with 201, and those responses still carry a body.
+func isSuccess(status int) bool {
+	return status >= 200 && status <= 299
 }
 
 func installationIDFromPath(r *http.Request) int64 {
@@ -278,15 +287,24 @@ func (m *MockBuildkiteServer) Close() {
 	m.Server.Close()
 }
 
-// WriteJSON is a helper function that writes a JSON response.
-// It sets the Content-Type header and marshals the payload to JSON.
+// WriteJSON is a helper function that writes a JSON response with a 200
+// status. It sets the Content-Type header and marshals the payload to JSON.
 func WriteJSON(w http.ResponseWriter, payload any) {
-	w.Header().Set("Content-Type", "application/json")
+	WriteJSONStatus(w, http.StatusOK, payload)
+}
+
+// WriteJSONStatus writes a JSON response under the given status code, so a
+// mock can reproduce a success status other than 200 without dropping the
+// body that goes with it.
+func WriteJSONStatus(w http.ResponseWriter, status int, payload any) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		// In test context, this should never happen with valid test data
 		http.Error(w, fmt.Sprintf("failed to marshal JSON: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	_, _ = w.Write(data)
 }
