@@ -589,6 +589,52 @@ func TestInstallationAccount_TargetType(t *testing.T) {
 	}
 }
 
+// Installations are compared on the account's numeric ID, so an absent or zero
+// ID must be rejected rather than carried forward: a zero would compare equal
+// to every other account whose ID was also unreadable, making two unrelated
+// installations look like the same one.
+func TestInstallationAccount_RejectsAnUnidentifiableAccount(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *api.User
+	}{
+		{name: "no account object"},
+		{name: "account with no id", account: &api.User{Login: new("acme")}},
+		{name: "account with a zero id", account: &api.User{ID: new(int64(0)), Login: new("acme")}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := http.NewServeMux()
+			router.HandleFunc("GET /app/installations/{installationID}", func(w http.ResponseWriter, r *http.Request) {
+				JSON(w, &api.Installation{
+					ID:         new(int64(20)),
+					TargetType: new("Organization"),
+					Account:    tt.account,
+				})
+			})
+
+			svr := httptest.NewServer(router)
+			defer svr.Close()
+
+			gh, err := github.New(
+				context.Background(),
+				config.GithubConfig{
+					APIURL:         svr.URL,
+					PrivateKey:     generateKey(t),
+					ApplicationID:  10,
+					InstallationID: 20,
+				},
+			)
+			require.NoError(t, err)
+
+			_, err = gh.InstallationAccount(context.Background())
+
+			assert.ErrorContains(t, err, "installation 20 has no account")
+		})
+	}
+}
+
 func JSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	res, _ := json.Marshal(payload)
