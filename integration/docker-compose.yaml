@@ -13,6 +13,24 @@
 # ```
 #
 
+# OpenObserve credentials, in one place. The root user signs in to the UI, and
+# ingestion is authenticated with the same credentials as HTTP basic auth, so
+# the base64 blobs below must be regenerated whenever the email or password
+# changes:
+#
+#   printf 'chinmina@example.com:Swimming-Penguin-42' | base64
+#
+# YAML anchors can substitute a whole scalar but cannot concatenate, so the
+# derived values are spelled out here rather than built at the point of use.
+x-openobserve-credentials:
+  email: &openobserve-email chinmina@example.com
+  password: &openobserve-password Swimming-Penguin-42
+  # base64(email:password), as consumed by Traefik's OTLP exporters
+  authorization: &openobserve-authorization "Basic Y2hpbm1pbmFAZXhhbXBsZS5jb206U3dpbW1pbmctUGVuZ3Vpbi00Mg=="
+  # the same credential, plus routing metadata, in OTEL_EXPORTER_OTLP_HEADERS form
+  otel-headers: &openobserve-otel-headers "Authorization=Basic Y2hpbm1pbmFAZXhhbXBsZS5jb206U3dpbW1pbmctUGVuZ3Vpbi00Mg==,organization=default,stream-name=default"
+  organization: &openobserve-organization "default"
+  stream-name: &openobserve-stream-name "default"
 
 services:
   buildkite-agent:
@@ -23,6 +41,7 @@ services:
       - apk-cache
     command: ["start"]
     environment:
+      - BUILDKITE_AGENT_PING_MODE=poll-only
       - BUILDKITE_AGENT_TOKEN
       - BUILDKITE_AGENT_TAGS
       - TMPDIR=/tmp
@@ -35,60 +54,115 @@ services:
     depends_on:
       - chinmina-bridge-worker
     environment:
-      - TRAEFIK_API_INSECURE=true                            # Enable Dashboard
-      - TRAEFIK_PROVIDERS_DOCKER=true                        # Enable Docker Auto-discovery
-      - TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT=false      # Don't expose containers unless explicitly told
+      TRAEFIK_API_INSECURE: "true"                       # Enable Dashboard
+      TRAEFIK_PROVIDERS_DOCKER: "true"                   # Enable Docker Auto-discovery
+      TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT: "false" # Don't expose containers unless explicitly told
+      # `just docker` resolves this from the local docker CLI's endpoint: either
+      # the socket bound in below, or tcp://host.docker.internal for a daemon
+      # listening on a port of this host.
+      TRAEFIK_PROVIDERS_DOCKER_ENDPOINT: ${DOCKER_ENDPOINT:-unix:///var/run/docker.sock}
       # --- TRACING (OTLP gRPC) ---
-      - TRAEFIK_TRACING_OTLP=true
-      - TRAEFIK_TRACING_OTLP_GRPC_ENDPOINT=aspire:18889     # Aspire OTLP
-      - TRAEFIK_TRACING_OTLP_GRPC_INSECURE=true
+      # OpenObserve requires basic auth on ingestion, and identifies the target
+      # organization and stream by gRPC metadata headers.
+      TRAEFIK_TRACING_OTLP: "true"
+      TRAEFIK_TRACING_OTLP_GRPC_ENDPOINT: "openobserve:5081" # OpenObserve OTLP
+      TRAEFIK_TRACING_OTLP_GRPC_INSECURE: "true"
+      TRAEFIK_TRACING_OTLP_GRPC_HEADERS_AUTHORIZATION: *openobserve-authorization
+      TRAEFIK_TRACING_OTLP_GRPC_HEADERS_ORGANIZATION: *openobserve-organization
+      TRAEFIK_TRACING_OTLP_GRPC_HEADERS_STREAM-NAME: *openobserve-stream-name
       # --- METRICS (OTLP gRPC) ---
-      - TRAEFIK_METRICS_OTLP=true
-      - TRAEFIK_METRICS_OTLP_GRPC_ENDPOINT=aspire:18889
-      - TRAEFIK_METRICS_OTLP_GRPC_INSECURE=true
-      - TRAEFIK_METRICS_OTLP_ADDENTRYPOINTSLABELS=true       # Adds port info (port 80 vs 443)
-      - TRAEFIK_METRICS_OTLP_ADDSERVICESLABELS=true          # Adds service info (whoami, etc.)
+      TRAEFIK_METRICS_OTLP: "true"
+      TRAEFIK_METRICS_OTLP_GRPC_ENDPOINT: "openobserve:5081"
+      TRAEFIK_METRICS_OTLP_GRPC_INSECURE: "true"
+      TRAEFIK_METRICS_OTLP_GRPC_HEADERS_AUTHORIZATION: *openobserve-authorization
+      TRAEFIK_METRICS_OTLP_GRPC_HEADERS_ORGANIZATION: *openobserve-organization
+      TRAEFIK_METRICS_OTLP_GRPC_HEADERS_STREAM-NAME: *openobserve-stream-name
+      TRAEFIK_METRICS_OTLP_ADDENTRYPOINTSLABELS: "true"  # Adds port info (port 80 vs 443)
+      TRAEFIK_METRICS_OTLP_ADDSERVICESLABELS: "true"     # Adds service info (whoami, etc.)
     ports:
-      - "18889:8080"  # dashboard
+      - "127.0.0.1:18889:8080"  # dashboard
+    extra_hosts:
+      # so a daemon listening on a port of this host is dialable (native on
+      # Docker Desktop and OrbStack, needs the mapping on Linux)
+      - "host.docker.internal:host-gateway"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock # allows traefik to see other containers
+      # allows traefik to see other containers. The host socket path varies by
+      # docker implementation, so `just docker` resolves it and exports
+      # DOCKER_SOCKET; it is /dev/null when a TCP endpoint is in use.
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
 
-  chinmina-bridge-worker:
-    scale: 1
+  # Not a running service: the shared definition every chinmina-bridge worker
+  # extends, so several worker pools can run side by side (for weighted routing,
+  # or to compare two builds). `scale: 0` keeps it from starting anything.
+  #
+  # IMPORTANT: every service extending this MUST declare its own `scale`.
+  # `extends` inherits `scale: 0`, so omitting it yields a service that silently
+  # starts no containers.
+  #
+  # Unlike YAML anchors, `extends` merges mappings at depth, so an extending
+  # service overrides individual keys without repeating the rest:
+  #
+  # ```yaml
+  #   chinmina-bridge-experiment:
+  #     extends:
+  #       service: chinmina-bridge-template
+  #     scale: 1
+  #     command: ["./dist/chinmina-bridge-experiment"]
+  #     environment:
+  #       CACHE_TYPE: memory
+  # ```
+  #
+  # It also reaches across files, which anchors cannot: a service declared in
+  # docker-compose.override.yaml extends this one by naming the file, since a
+  # bare `service:` only resolves within its own file:
+  #
+  # ```yaml
+  #     extends:
+  #       file: docker-compose.yaml
+  #       service: chinmina-bridge-template
+  # ```
+  #
+  # Environment keys with no value are passed through from the host.
+  chinmina-bridge-template:
+    scale: 0
     image: alpine
     depends_on:
-      - aspire
+      - openobserve
       - valkey
     working_dir: "/src"
     command: ["./dist/chinmina-bridge"]
     environment:
-      - ENV=development
-      - SERVER_PORT=80
-      - BUILDKITE_API_TOKEN
-      - JWT_BUILDKITE_ORGANIZATION_SLUG
-      - JWT_AUDIENCE=github-app-auth:chinmina
-      - GITHUB_APP_PRIVATE_KEY_ARN
-      - GITHUB_APP_PRIVATE_KEY
-      - GITHUB_APP_ID
-      - GITHUB_APP_INSTALLATION_ID
-      - GITHUB_ORG_PROFILE
-      - CACHE_TYPE=${CACHE_TYPE:-valkey} # valkey or memory
-      - VALKEY_ADDRESS=valkey:6379
-      - VALKEY_USE_IAM_AUTH=false
-      - VALKEY_TLS=false
-      - VALKEY_USERNAME=default
-      - VALKEY_PASSWORD=swimming-penguin-42
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire:18889
-      - OBSERVE_ENABLED=true
-      - OBSERVE_METRICS_ENABLED=true
-      - OBSERVE_TYPE=grpc
-      - OBSERVE_OTEL_LOG_LEVEL=${OBSERVE_OTEL_LOG_LEVEL:-}
+      ENV: development
+      SERVER_PORT: "80"
+      BUILDKITE_API_TOKEN:
+      JWT_BUILDKITE_ORGANIZATION_SLUG:
+      JWT_AUDIENCE: github-app-auth:chinmina
+      GITHUB_APP_PRIVATE_KEY_ARN:
+      GITHUB_APP_PRIVATE_KEY:
+      # only ../ (repo root) is mounted below, as /src: a host path given here
+      # must resolve under the repo tree, or the container won't see the file
+      GITHUB_APP_PRIVATE_KEY_FILE:
+      GITHUB_APP_ID:
+      GITHUB_APP_INSTALLATION_ID:
+      GITHUB_ORG_PROFILE:
+      CACHE_TYPE: ${CACHE_TYPE:-valkey} # valkey or memory
+      VALKEY_ADDRESS: valkey:6379
+      VALKEY_USE_IAM_AUTH: "false"
+      VALKEY_TLS: "false"
+      VALKEY_USERNAME: default
+      VALKEY_PASSWORD: swimming-penguin-42
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://openobserve:5081
+      OTEL_EXPORTER_OTLP_HEADERS: *openobserve-otel-headers
+      OBSERVE_ENABLED: "true"
+      OBSERVE_METRICS_ENABLED: "true"
+      OBSERVE_TYPE: grpc
+      OBSERVE_OTEL_LOG_LEVEL: ${OBSERVE_OTEL_LOG_LEVEL:-}
       # pass through AWS credentials (allows for KMS signing to be used)
-      - AWS_ACCESS_KEY_ID
-      - AWS_SECRET_ACCESS_KEY
-      - AWS_SESSION_TOKEN
-      - AWS_REGION
-      - AWS_DEFAULT_REGION
+      AWS_ACCESS_KEY_ID:
+      AWS_SECRET_ACCESS_KEY:
+      AWS_SESSION_TOKEN:
+      AWS_REGION:
+      AWS_DEFAULT_REGION:
     volumes:
       - "..:/src"
     labels: # labelling allows scaled replicas to be routed via traefik
@@ -96,15 +170,35 @@ services:
       - "traefik.http.routers.chinmina.rule=PathPrefix(`/`)"
       - "traefik.http.services.chinmina.loadbalancer.server.port=80"
 
-  # .NET Aspire dashboard all in one for local OTEL tracing, using in-memory storage which is
-  # not persisted.
-  aspire:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+  chinmina-bridge-worker:
+    extends:
+      service: chinmina-bridge-template
+    scale: 1
+
+  # a second worker pool, for comparing two configurations behind the ingress.
+  # Scaled to zero until an override (or the traefik weighted config) needs it.
+  chinmina-bridge-alternate:
+    extends:
+      service: chinmina-bridge-template
+    scale: 0
+
+  # OpenObserve all-in-one: OTLP endpoint (traces, metrics, logs) plus UI. Data is written
+  # inside the container only, so it is discarded with the stack.
+  #
+  # UI: http://localhost:5080, sign in with the root credentials defined in
+  # `x-openobserve-credentials` at the top of this file.
+  openobserve:
+    image: openobserve/openobserve:latest
     ports:
-      - "18888:18888" # dashboard
+      - "127.0.0.1:5080:5080" # UI and OTLP/HTTP ingestion
+      - "127.0.0.1:5081:5081" # OTLP/gRPC ingestion
     environment:
-      - ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
-      - LOG_LEVEL=debug
+      ZO_ROOT_USER_EMAIL: *openobserve-email
+      ZO_ROOT_USER_PASSWORD: *openobserve-password
+      ZO_DATA_DIR: /data
+      ZO_TELEMETRY: "false" # don't report local dev usage upstream
+      RUST_LOG: info
+    # NB: no healthcheck, the image has no shell or HTTP client to probe with.
 
   valkey:
     image: valkey/valkey:9-alpine
@@ -123,7 +217,7 @@ services:
     volumes:
       - apk-cache:/app/cache
     ports:
-      - "23412:3142"
+      - "127.0.0.1:23412:3142"
     environment:
       - CACHE_DIR=/app/cache
       - INDEX_CACHE=24h

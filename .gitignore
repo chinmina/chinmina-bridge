@@ -8,4 +8,4 @@
 !.development/**/.gitkeep
 
 dist/
-docker-compose.override.y?ml
+docker-compose.*.y?ml

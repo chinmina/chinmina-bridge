@@ -20,9 +20,15 @@ just build-container    # Build only the Linux container binary
 just build-local        # Build only the local dev binary; extra `go build` args are forwarded
 just build-oidc         # Build only the oidc-local test helper
 just run                # Build and run locally
-just docker             # Run integration tests with docker-compose
-just docker-down        # Stop docker-compose
+just docker-up          # Build, then run integration tests with docker-compose
+just docker down        # Stop the stack; `docker` forwards any args to `docker compose`
+just docker logs -f     # ...so `ps`, `logs`, `exec` and the rest work the same way
 ```
+
+Both recipes work out how traefik reaches the Docker API (see
+`integration/resolve-docker-endpoint.sh`), since the daemon socket is rarely at
+`/var/run/docker.sock` on a non-admin macOS install. Set `DOCKER_HOST` to point
+elsewhere; a TCP endpoint on this host is rewritten to `host.docker.internal`.
 
 ### Testing
 
