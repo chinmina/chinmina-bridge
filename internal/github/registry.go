@@ -256,49 +256,37 @@ func (r Registry) verify(ctx context.Context) error {
 	wg.Wait()
 	close(results)
 
-	accounts := make(map[string]installationAccount, len(r.apps))
-	failures := make(map[string]error, len(r.apps))
+	queried := make(map[string]result, len(r.apps))
 	for res := range results {
-		if res.err != nil {
-			failures[res.name] = res.err
-			continue
-		}
-		accounts[res.name] = res.account
+		queried[res.name] = res
 	}
 
 	// The default app is the exception to "disable, don't fail": a service that
 	// cannot authenticate as itself would serve failures while appearing
 	// healthy.
-	if err, failed := failures[DefaultAppName]; failed {
+	if err := queried[DefaultAppName].err; err != nil {
 		return fmt.Errorf("default app installation could not be queried: %w", err)
 	}
 
-	reference := accounts[DefaultAppName]
+	// The default app is the reference, so it passes the comparison below
+	// against itself: it needs no case of its own.
+	reference := queried[DefaultAppName].account
 
 	for name, app := range r.apps {
-		if name == DefaultAppName {
-			app.accountLogin = reference.Login
-			r.apps[name] = app
-			continue
-		}
+		res := queried[name]
 
-		if err, failed := failures[name]; failed {
+		switch {
+		case res.err != nil:
 			app.enabled = false
-			app.disabledReason = fmt.Sprintf("installation could not be queried: %v", err)
-			r.apps[name] = app
-			continue
-		}
-
-		account := accounts[name]
-		if account.ID != reference.ID {
+			app.disabledReason = fmt.Sprintf("installation could not be queried: %v", res.err)
+		case res.account.ID != reference.ID:
 			app.enabled = false
-			app.disabledReason = fmt.Sprintf("installed on account %q, expected %q", account.Login, reference.Login)
-			r.apps[name] = app
-			continue
+			app.disabledReason = fmt.Sprintf("installed on account %q, expected %q", res.account.Login, reference.Login)
+		default:
+			app.enabled = true
+			app.accountLogin = res.account.Login
 		}
 
-		app.enabled = true
-		app.accountLogin = account.Login
 		r.apps[name] = app
 	}
 
