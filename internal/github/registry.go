@@ -48,15 +48,6 @@ func (i AppIdentity) IsZero() bool {
 	return i == AppIdentity{}
 }
 
-// LogValue implements slog.LogValuer.
-func (i AppIdentity) LogValue() slog.Value {
-	return slog.GroupValue(
-		slog.String("name", i.Name),
-		slog.Int64("applicationID", i.ApplicationID),
-		slog.Int64("installationID", i.InstallationID),
-	)
-}
-
 // appEntryConfig is one GITHUB_APPS entry as configured.
 type appEntryConfig struct {
 	Name           string `json:"name"`
@@ -75,7 +66,9 @@ func keySource(privateKeyARN string) string {
 }
 
 // LogValue omits both the private key and its ARN: the ARN names the
-// credential and its account, and neither belongs in a log.
+// credential and its account, and neither belongs in a log. Nothing logs an
+// entry today; this exists so that the first thing to do so cannot print a
+// private key by default.
 func (e appEntryConfig) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("name", e.Name),
