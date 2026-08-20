@@ -56,7 +56,14 @@ func recordOutcome(ctx context.Context, result string, appName string) {
 // minted through the previous app. Keying on the identity rather than the name
 // means two names for one application and installation share entries.
 //
-// Numeric identifiers cannot contain the separator, so the key is unambiguous.
+// The two identifiers are integers and so never contain the separator. The
+// digest can: the synthetic default-profile digest is "default-profile:v1".
+// That is still unambiguous, because the key is only ever compared, never
+// parsed, and the digest cannot absorb the fields after it — doing so would
+// require it to supply two further separator-delimited integers of its own,
+// which neither a content hash nor that fixed literal does.
+// TestCacheKeyIsUnambiguous covers the cases.
+//
 // Changing this format orphans every existing entry; nothing reaps them, they
 // expire.
 func cacheKey[T any](r Resolved[T]) string {
