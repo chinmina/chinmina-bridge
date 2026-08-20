@@ -631,18 +631,74 @@ func TestLoad_RealEnvironment(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "private-key.pem")
 	require.NoError(t, os.WriteFile(path, []byte("file-key\n"), 0o600))
 
+	clearFileVars(t)
 	for key, value := range requiredConfig {
 		if key == "GITHUB_APP_PRIVATE_KEY" {
 			continue // sourced from GITHUB_APP_PRIVATE_KEY_FILE below instead
 		}
 		t.Setenv(key, value)
 	}
-	unsetEnv(t, "GITHUB_APP_PRIVATE_KEY")
 	t.Setenv("GITHUB_APP_PRIVATE_KEY_FILE", path)
 
 	cfg, err := Load(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "file-key", cfg.Github.PrivateKey)
+}
+
+// TestLoad_RealEnvironment_GithubAppsFile proves GITHUB_APPS is in the
+// allowlist Load builds, not just in a test-supplied one. Registry entries can
+// carry an inline PEM private key, so an operator needs the same escape hatch
+// from the process environment that the single-app private key has.
+func TestLoad_RealEnvironment_GithubAppsFile(t *testing.T) {
+	apps := `[{"name":"packages","appId":1,"installationId":2,"privateKey":"key"}]`
+
+	path := filepath.Join(t.TempDir(), "apps.json")
+	require.NoError(t, os.WriteFile(path, []byte(apps+"\n"), 0o600))
+
+	clearFileVars(t)
+	for key, value := range requiredConfig {
+		t.Setenv(key, value)
+	}
+	t.Setenv("GITHUB_APPS_FILE", path)
+
+	cfg, err := Load(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, apps, cfg.Github.Apps)
+}
+
+// TestLoad_RealEnvironment_GithubAppsConflict confirms GITHUB_APPS follows the
+// same mutual-exclusion rule as the other allowlisted keys: two sources for one
+// value leaves which app mints tokens ambiguous, so it fails rather than
+// silently preferring one.
+func TestLoad_RealEnvironment_GithubAppsConflict(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "apps.json")
+	require.NoError(t, os.WriteFile(path, []byte("[]\n"), 0o600))
+
+	clearFileVars(t)
+	for key, value := range requiredConfig {
+		t.Setenv(key, value)
+	}
+	t.Setenv("GITHUB_APPS", "[]")
+	t.Setenv("GITHUB_APPS_FILE", path)
+
+	_, err := Load(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid configuration")
+	assert.Contains(t, err.Error(), "GITHUB_APPS and GITHUB_APPS_FILE are mutually exclusive")
+}
+
+// clearFileVars removes every allowlisted key and its "_FILE" counterpart for
+// the duration of the test. Load reads the real process environment, so a
+// developer shell that already points one of these at a file (the repository's
+// direnv profile sets JWT_JWKS_STATIC_FILE, for one) would otherwise decide
+// the outcome of a test about a different variable.
+func clearFileVars(t *testing.T) {
+	t.Helper()
+
+	for _, key := range []string{"JWT_JWKS_STATIC", "GITHUB_APP_PRIVATE_KEY", "GITHUB_APPS"} {
+		unsetEnv(t, key)
+		unsetEnv(t, key+"_FILE")
+	}
 }
 
 // unsetEnv removes key from the environment for the duration of the test,

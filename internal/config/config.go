@@ -139,7 +139,13 @@ type ObserveConfig struct {
 }
 
 func Load(ctx context.Context) (Config, error) {
-	lookup := newFileContentLookuper(envconfig.OsLookuper(), "JWT_JWKS_STATIC", "GITHUB_APP_PRIVATE_KEY")
+	// GITHUB_APPS is allowlisted alongside the single-app private key: its
+	// entries can carry an inline PEM, and an environment variable is readable
+	// from process listings, container inspection and rendered task
+	// definitions.
+	lookup := newFileContentLookuper(envconfig.OsLookuper(),
+		"JWT_JWKS_STATIC", "GITHUB_APP_PRIVATE_KEY", "GITHUB_APPS",
+	)
 	return load(ctx, lookup)
 }
 
