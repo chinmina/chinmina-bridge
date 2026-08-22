@@ -9,3 +9,4 @@
 
 dist/
 docker-compose.*.y?ml
+integration/.docker-endpoint.env

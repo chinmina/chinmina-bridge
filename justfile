@@ -98,23 +98,18 @@ build-oidc:
 run: build-local
     dist/chinmina-bridge-local
 
+# Resolve the local Docker endpoint and write it to .docker-endpoint.env for
+# the integration stack. Run automatically as a dependency of `just docker ...`.
+[group('dev')]
+[working-directory('integration')]
+resolve-docker-endpoint:
+    ./resolve-docker-endpoint.sh
+
 # Run docker compose against the integration stack, e.g. `just docker down`, `just docker logs -f`
 [group('dev')]
 [working-directory('integration')]
-docker *args:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    # Traefik needs a route to the Docker API from inside its container: see
-    # ./resolve-docker-endpoint.sh, which works out the socket to bind and the
-    # endpoint to dial.
-    resolved="$(./resolve-docker-endpoint.sh)"
-    read -r DOCKER_SOCKET DOCKER_ENDPOINT <<<"${resolved}"
-    export DOCKER_SOCKET DOCKER_ENDPOINT
-
-    echo "Resolved docker endpoint: ${DOCKER_ENDPOINT} (mount: ${DOCKER_SOCKET})" >&2
-
-    docker compose {{ args }}
+docker *args: resolve-docker-endpoint
+    docker compose --env-file .docker-endpoint.env {{ args }}
 
 # Build, then bring the integration stack up; extra `docker compose up` args are forwarded
 [group('dev')]

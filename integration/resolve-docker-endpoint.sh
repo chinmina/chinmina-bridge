@@ -5,10 +5,12 @@
 #
 # Usage: resolve-docker-endpoint.sh [ENDPOINT]
 #
-# Prints two space-separated fields for the caller to export: the host path to
-# bind at /var/run/docker.sock (DOCKER_SOCKET), and the endpoint traefik's
-# docker provider dials (DOCKER_ENDPOINT). How it gets there depends on how the
-# local docker CLI talks to the daemon:
+# Writes the resolved values to .docker-endpoint.env in the same directory:
+#
+#   DOCKER_SOCKET=<resolved host socket or /dev/null>
+#   DOCKER_ENDPOINT=<Traefik provider endpoint>
+#
+# How it gets there depends on how the local docker CLI talks to the daemon:
 #
 #   unix://PATH   bind the socket in. Only an admin install puts it at the
 #                 default /var/run/docker.sock; OrbStack, Rancher Desktop and
@@ -27,6 +29,9 @@ readonly DEFAULT_DOCKER_PORT=2375
 
 # Hostname that resolves to this host from inside a container.
 readonly CONTAINER_HOST_ALIAS='host.docker.internal'
+
+# Generated env file, consumed by `just docker ...`.
+readonly OUTPUT_FILE='.docker-endpoint.env'
 
 # Print a message to STDERR.
 err() {
@@ -75,6 +80,22 @@ split_hostport() {
   esac
 
   printf '%s %s\n' "${host}" "${port:-${DEFAULT_DOCKER_PORT}}"
+}
+
+# Atomically write the resolved socket and provider endpoint to the env file.
+write_env_file() {
+  local socket="$1" provider="$2" tmp
+
+  tmp="$(mktemp "${OUTPUT_FILE}.XXXXXX")"
+  trap 'rm -f "${tmp}"' EXIT
+
+  cat > "${tmp}" <<EOF
+DOCKER_SOCKET="${socket}"
+DOCKER_ENDPOINT="${provider}"
+EOF
+
+  mv -f "${tmp}" "${OUTPUT_FILE}"
+  trap - EXIT
 }
 
 # Entry point. Receives an optional endpoint override as "$1".
@@ -132,7 +153,8 @@ main() {
       ;;
   esac
 
-  printf '%s %s\n' "${socket}" "${provider}"
+  err "Resolved docker endpoint: ${provider} (mount: ${socket})"
+  write_env_file "${socket}" "${provider}"
 }
 
 main "$@"

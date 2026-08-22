@@ -25,10 +25,15 @@ just docker down        # Stop the stack; `docker` forwards any args to `docker 
 just docker logs -f     # ...so `ps`, `logs`, `exec` and the rest work the same way
 ```
 
-Both recipes work out how traefik reaches the Docker API (see
-`integration/resolve-docker-endpoint.sh`), since the daemon socket is rarely at
-`/var/run/docker.sock` on a non-admin macOS install. Set `DOCKER_HOST` to point
-elsewhere; a TCP endpoint on this host is rewritten to `host.docker.internal`.
+`just docker ...` is the supported Compose entry point for the local
+integration stack and for downstream overlays such as `bridge-load`. Before
+running Compose, it invokes `integration/resolve-docker-endpoint.sh`, which
+writes the resolved endpoint values to `integration/.docker-endpoint.env`.
+That file is consumed by the compose stack as the Docker socket mount and the
+Traefik Docker provider endpoint. The daemon socket is rarely at
+`/var/run/docker.sock` on a non-admin macOS install, so set `DOCKER_HOST` to
+point elsewhere; a TCP endpoint on this host is rewritten to
+`host.docker.internal`.
 
 ### Testing
 
