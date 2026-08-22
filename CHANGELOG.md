@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.14.0](https://github.com/chinmina/chinmina-bridge/compare/v0.13.0...v0.14.0) (2026-08-22)
+
+
+### Features
+
+* gate startup on the first profile generation ([#371](https://github.com/chinmina/chinmina-bridge/issues/371)) ([1c20946](https://github.com/chinmina/chinmina-bridge/commit/1c20946d0279034af46f8ebe3c3270de3ba5de7f))
+* record why a profile is unavailable on the audit entry ([#369](https://github.com/chinmina/chinmina-bridge/issues/369)) ([91c18f9](https://github.com/chinmina/chinmina-bridge/commit/91c18f9d036f3a486e49f1d670215125029bc54a))
+* support _FILE variants for static JWKS and GitHub app private key ([#375](https://github.com/chinmina/chinmina-bridge/issues/375)) ([9a45a67](https://github.com/chinmina/chinmina-bridge/commit/9a45a67f5f2ef2352e770c46ea9ce4a5b64a28cf))
+
+
+### Bug Fixes
+
+* run shutdown hooks on every exit path ([#370](https://github.com/chinmina/chinmina-bridge/issues/370)) ([ad60bf0](https://github.com/chinmina/chinmina-bridge/commit/ad60bf0034e760909ccd864a839de164802b3687))
+
 ## [0.13.0](https://github.com/chinmina/chinmina-bridge/compare/v0.12.1...v0.13.0) (2026-08-14)
 
 
