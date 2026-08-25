@@ -109,7 +109,7 @@ resolve-docker-endpoint:
 [group('dev')]
 [working-directory('integration')]
 docker *args: resolve-docker-endpoint
-    docker compose --env-file .docker-endpoint.env {{ args }}
+    docker compose --env-file .docker-endpoint.env -f docker-compose.yaml {{ args }}
 
 # Build, then bring the integration stack up; extra `docker compose up` args are forwarded
 [group('dev')]

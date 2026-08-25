@@ -52,7 +52,13 @@ services:
   chinmina-bridge: # ingress container
     image: traefik:v3
     depends_on:
-      - chinmina-bridge-worker
+      # the workers report healthy only once the first profile has been
+      # generated, so the ingress doesn't route to a container that would 503
+      chinmina-bridge-worker:
+        condition: service_healthy
+      # No-op while the alternate pool is `scale: 0`, ie. every stack but rolling
+      chinmina-bridge-alternate:
+        condition: service_healthy
     environment:
       TRAEFIK_API_INSECURE: "true"                       # Enable Dashboard
       TRAEFIK_PROVIDERS_DOCKER: "true"                   # Enable Docker Auto-discovery
@@ -81,6 +87,13 @@ services:
       TRAEFIK_METRICS_OTLP_ADDSERVICESLABELS: "true"     # Adds service info (whoami, etc.)
     ports:
       - "127.0.0.1:18889:8080"  # dashboard
+    healthcheck:
+      # Probes through the web entrypoint: unrouted requests 404. Traefik's /ping
+      # reports OK before the docker provider has discovered anything.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:80/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     extra_hosts:
       # so a daemon listening on a port of this host is dialable (native on
       # Docker Desktop and OrbStack, needs the mapping on Linux)
@@ -125,10 +138,16 @@ services:
   # Environment keys with no value are passed through from the host.
   chinmina-bridge-template:
     scale: 0
-    image: alpine
+    build:
+      context: build
+    # built to an explicit image name shared by extending services,
+    # so the image is built once rather than per worker pool.
+    image: chinmina-bridge-integration-base
     depends_on:
-      - openobserve
-      - valkey
+      openobserve:
+        condition: service_started  # no healthcheck available on this image
+      valkey:
+        condition: service_healthy
     working_dir: "/src"
     command: ["./dist/chinmina-bridge"]
     environment:
@@ -165,6 +184,14 @@ services:
       AWS_DEFAULT_REGION:
     volumes:
       - "..:/src"
+    healthcheck:
+      test: ["CMD", "httpcheck", "http://127.0.0.1:80/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      # allow time for startup depending on loading profiles, which need a GitHub
+      # round trip
+      start_period: 30s
     labels: # labelling allows scaled replicas to be routed via traefik
       - "traefik.enable=true"
       - "traefik.http.routers.chinmina.rule=PathPrefix(`/`)"
@@ -180,6 +207,9 @@ services:
   chinmina-bridge-alternate:
     extends:
       service: chinmina-bridge-template
+    # Restated: Compose drops the extends-resolved image when pruning a `scale: 0`
+    # service that something depends_on.
+    image: chinmina-bridge-integration-base
     scale: 0
 
   # OpenObserve all-in-one: OTLP endpoint (traces, metrics, logs) plus UI. Data is written
