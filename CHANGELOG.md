@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/chinmina/chinmina-bridge/compare/v0.14.0...v0.14.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **tooling:** pin goreleaser to 2.17.1 ([#389](https://github.com/chinmina/chinmina-bridge/issues/389)) ([d0de6bc](https://github.com/chinmina/chinmina-bridge/commit/d0de6bc7af7bd1e1acbfed654618c46771092c49))
+
 ## [0.14.0](https://github.com/chinmina/chinmina-bridge/compare/v0.13.0...v0.14.0) (2026-08-25)
 
 
