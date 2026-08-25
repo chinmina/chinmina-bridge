@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.14.0](https://github.com/chinmina/chinmina-bridge/compare/v0.13.0...v0.14.0) (2026-08-25)
+
+
+### Features
+
+* gate startup on the first profile generation ([#371](https://github.com/chinmina/chinmina-bridge/issues/371)) ([1c20946](https://github.com/chinmina/chinmina-bridge/commit/1c20946d0279034af46f8ebe3c3270de3ba5de7f))
+* record why a profile is unavailable on the audit entry ([#369](https://github.com/chinmina/chinmina-bridge/issues/369)) ([91c18f9](https://github.com/chinmina/chinmina-bridge/commit/91c18f9d036f3a486e49f1d670215125029bc54a))
+* support _FILE variants for static JWKS and GitHub app private key ([#375](https://github.com/chinmina/chinmina-bridge/issues/375)) ([9a45a67](https://github.com/chinmina/chinmina-bridge/commit/9a45a67f5f2ef2352e770c46ea9ce4a5b64a28cf))
+
+
+### Bug Fixes
+
+* **deps:** update aws-sdk-go-v2 ([#379](https://github.com/chinmina/chinmina-bridge/issues/379)) ([644f016](https://github.com/chinmina/chinmina-bridge/commit/644f0160484d626a7c2ea54a7623af19997f3283))
+* **deps:** update dependency golangci-lint to v2.13.1 ([#382](https://github.com/chinmina/chinmina-bridge/issues/382)) ([55381f5](https://github.com/chinmina/chinmina-bridge/commit/55381f5809d8a7ecfd508d26f6b2bcf4380a9189))
+* **deps:** update dependency goreleaser to v2.18.0 ([#383](https://github.com/chinmina/chinmina-bridge/issues/383)) ([527fdb6](https://github.com/chinmina/chinmina-bridge/commit/527fdb628ce61b9acb024fb46bfb63d12542b371))
+* **deps:** update github/codeql-action digest to db488dd ([#378](https://github.com/chinmina/chinmina-bridge/issues/378)) ([494943a](https://github.com/chinmina/chinmina-bridge/commit/494943a807a3253473493b9a7c7eff1df5ef67c2))
+* **deps:** update module github.com/buildkite/go-buildkite/v5 to v5.14.0 ([#384](https://github.com/chinmina/chinmina-bridge/issues/384)) ([2488d9a](https://github.com/chinmina/chinmina-bridge/commit/2488d9a8bd5aa2620eb3cc0e0bdc0033ad3406f6))
+* **deps:** update module github.com/moby/go-archive to v0.3.3 ([#387](https://github.com/chinmina/chinmina-bridge/issues/387)) ([896914d](https://github.com/chinmina/chinmina-bridge/commit/896914d280f34994c745e83e5d2d43fb414ce7e5))
+* **deps:** update module github.com/stretchr/testify to v1.12.1 ([#385](https://github.com/chinmina/chinmina-bridge/issues/385)) ([112ecbf](https://github.com/chinmina/chinmina-bridge/commit/112ecbfc89f7cc197640060fc16deb075df0e1b4))
+* **deps:** update module github.com/valkey-io/valkey-go to v1.0.77 ([#380](https://github.com/chinmina/chinmina-bridge/issues/380)) ([79da920](https://github.com/chinmina/chinmina-bridge/commit/79da920defddf9d7561c0ca090594ced3eea5da0))
+* run shutdown hooks on every exit path ([#370](https://github.com/chinmina/chinmina-bridge/issues/370)) ([ad60bf0](https://github.com/chinmina/chinmina-bridge/commit/ad60bf0034e760909ccd864a839de164802b3687))
+
 ## [0.13.0](https://github.com/chinmina/chinmina-bridge/compare/v0.12.1...v0.13.0) (2026-08-14)
 
 
