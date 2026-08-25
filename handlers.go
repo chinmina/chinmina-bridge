@@ -503,8 +503,7 @@ func errorStatus(err error) (int, string) {
 		return statuser.Status()
 	}
 
-	var limitExceeded *http.MaxBytesError
-	if errors.As(err, &limitExceeded) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		return http.StatusRequestEntityTooLarge, http.StatusText(http.StatusRequestEntityTooLarge)
 	}
 
