@@ -159,7 +159,8 @@ func TestRoutes_MintThroughTheResolvedApp(t *testing.T) {
 			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &response))
 			assert.Equal(t, tt.expectedApp.Name, response.App)
 
-			assert.Equal(t, tt.expectedApp.Name, entry.App)
+			assert.Equal(t, tt.expectedApp, auditedApp(entry),
+				"the audit entry must identify the installation, not just its repointable name")
 		})
 	}
 }
@@ -185,7 +186,7 @@ func TestRoutes_AuditEntryNamesTheAppWhenMintingFails(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusInternalServerError, rr.Code)
-	assert.Equal(t, "packages", entry.App)
+	assert.Equal(t, packagesAppIdentity, auditedApp(entry))
 	assert.NotEmpty(t, entry.Error)
 }
 
@@ -212,8 +213,19 @@ func TestRoutes_DisabledAppMakesTheProfileUnavailable(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusNotFound, rr.Code)
-	assert.Empty(t, entry.App, "no app was resolved, so none may be attributed")
+	assert.Equal(t, github.AppIdentity{}, auditedApp(entry),
+		"no app was resolved, so none may be attributed")
 	assert.Contains(t, entry.Error, "packages", "the audit entry must record why the profile is unavailable")
+}
+
+// auditedApp reassembles the identity an audit entry attributes a request to,
+// so a test can assert on it whole rather than field by field.
+func auditedApp(entry *audit.Entry) github.AppIdentity {
+	return github.AppIdentity{
+		Name:           entry.App,
+		ApplicationID:  entry.ApplicationID,
+		InstallationID: entry.InstallationID,
+	}
 }
 
 // usableApps builds the compilation-time lookup over a set of enabled names.

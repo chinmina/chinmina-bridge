@@ -182,6 +182,22 @@ func TestSlogEntryAttrs(t *testing.T) {
 			},
 		},
 		{
+			name: "with app identity",
+			entry: audit.Entry{
+				RequestedProfile: "org/repo",
+				App:              "publisher",
+				ApplicationID:    12345,
+				InstallationID:   67890,
+			},
+		},
+		{
+			name: "app named but identifiers unresolved",
+			entry: audit.Entry{
+				RequestedProfile: "org/repo",
+				App:              "publisher",
+			},
+		},
+		{
 			name: "fully populated",
 			entry: audit.Entry{
 				Method:              "POST",
@@ -202,6 +218,9 @@ func TestSlogEntryAttrs(t *testing.T) {
 				RequestedProfile:    "org/repo",
 				RequestedRepository: "https://github.com/org/repo",
 				VendedRepository:    "https://github.com/org/vended-repo",
+				App:                 "publisher",
+				ApplicationID:       12345,
+				InstallationID:      67890,
 				HashedToken:         "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
 				Repositories:        []string{"org/repo"},
 				Permissions:         []string{"contents:read"},
@@ -272,4 +291,65 @@ func TestSlogEntryAttrsStructure(t *testing.T) {
 	auth := result2["authorization"].(map[string]any)
 	assert.Contains(t, auth, "expiry", "expiry should be set when AuthExpirySecs > 0")
 	assert.Contains(t, auth, "expiryRemaining", "expiryRemaining should be set when AuthExpirySecs > 0")
+}
+
+// TestSlogEntryAppIdentity pins the app identity keys in the token group: the
+// two identifiers are what make a vend attributable to an installation, and
+// they are skipped rather than emitted as zero when resolution never happened.
+func TestSlogEntryAppIdentity(t *testing.T) {
+	tests := []struct {
+		name     string
+		entry    audit.Entry
+		expected map[string]any
+		absent   []string
+	}{
+		{
+			name: "identifiers recorded alongside the name",
+			entry: audit.Entry{
+				App:            "publisher",
+				ApplicationID:  12345,
+				InstallationID: 67890,
+			},
+			expected: map[string]any{
+				"app":            "publisher",
+				"applicationID":  float64(12345),
+				"installationID": float64(67890),
+			},
+		},
+		{
+			name: "identifiers absent when the app was never resolved",
+			entry: audit.Entry{
+				RequestedProfile: "org/repo",
+				App:              "publisher",
+			},
+			expected: map[string]any{"app": "publisher"},
+			absent:   []string{"applicationID", "installationID"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var result map[string]any
+			require.NoError(t, json.Unmarshal(serializeSlogEntry(tt.entry), &result))
+
+			token, ok := result["token"].(map[string]any)
+			require.True(t, ok, "token group should be present")
+
+			for k, v := range tt.expected {
+				assert.Equal(t, v, token[k])
+			}
+			for _, k := range tt.absent {
+				assert.NotContains(t, token, k)
+			}
+		})
+	}
+}
+
+// TestSlogEntryTokenGroupElidedForZeroIdentity proves the identifiers use
+// skip-zero semantics rather than the Attr escape hatch: a request that failed
+// before resolution must not gain a token group.
+func TestSlogEntryTokenGroupElidedForZeroIdentity(t *testing.T) {
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(serializeSlogEntry(audit.Entry{Method: "POST", Path: "/token"}), &result))
+	assert.NotContains(t, result, "token")
 }

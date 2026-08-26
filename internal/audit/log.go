@@ -40,9 +40,16 @@ type Entry struct {
 	RequestedRepository string
 	VendedRepository    string
 
-	// App is the name of the GitHub App the request resolved to. Empty when the
-	// request failed before resolution; Error names the reason in that case.
+	// App, ApplicationID and InstallationID identify the GitHub App the request
+	// resolved to. All zero when the request failed before resolution; Error
+	// names the reason in that case.
+	//
+	// The name is a repointable label — an installation can be moved between
+	// names, and two names can alias one installation — so the identifiers are
+	// what make a vend attributable without consulting deployment config.
 	App              string
+	ApplicationID    int64
+	InstallationID   int64
 	Authorized       bool
 	AuthSubject      string
 	AuthIssuer       string

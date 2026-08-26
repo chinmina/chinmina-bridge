@@ -227,8 +227,12 @@ func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[
 	entry.RequestedRepository = requestedRepo
 
 	// Recorded at resolution rather than at vend, so a failed mint still names
-	// the app it was attempted through.
+	// the app it was attempted through. The identifiers come from the resolved
+	// identity rather than the vended token, which also keeps them correct on a
+	// cache hit predating their addition to the payload.
 	entry.App = resolved.App.Name
+	entry.ApplicationID = resolved.App.ApplicationID
+	entry.InstallationID = resolved.App.InstallationID
 }
 
 // recordRequestedName stamps the raw profile path parameter before anything can
