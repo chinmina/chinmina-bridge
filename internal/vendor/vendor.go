@@ -59,9 +59,12 @@ type ProfileToken struct {
 	Repositories        profile.RepositoryScope `json:"repositories"`
 	Permissions         []string                `json:"permissions"`
 
-	// App names the GitHub App the token was minted through. It is part of the
-	// cached payload, so hits and misses return the same shape.
-	App string `json:"app"`
+	// All three are part of the cached payload, so hits and misses return the
+	// same shape; what a client sees is chosen at the wire boundary. omitzero
+	// covers an entry cached before the identifiers existed.
+	App            string `json:"app"`
+	ApplicationID  int64  `json:"appId,omitzero"`
+	InstallationID int64  `json:"installationId,omitzero"`
 
 	Token       string    `json:"token"`
 	HashedToken string    `json:"hashedToken"`

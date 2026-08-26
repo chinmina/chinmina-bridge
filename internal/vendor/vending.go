@@ -88,6 +88,8 @@ func Vending[T any](resolve RepositoryResolver[T], tokenVendor AppTokenVendor) P
 			Permissions:         target.Permissions,
 			Profile:             r.Ref.ShortString(),
 			App:                 r.App.Name,
+			ApplicationID:       r.App.ApplicationID,
+			InstallationID:      r.App.InstallationID,
 			Token:               token,
 			HashedToken:         HashToken(token),
 			Expiry:              expiry,

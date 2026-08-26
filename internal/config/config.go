@@ -14,9 +14,20 @@ type Config struct {
 	Authorization AuthorizationConfig
 	Buildkite     BuildkiteConfig
 	Cache         CacheConfig
+	Development   DevelopmentConfig
 	Github        GithubConfig
 	Observe       ObserveConfig
 	Server        ServerConfig
+}
+
+// DevelopmentConfig holds switches for local development and testing. Every
+// field defaults to the production behaviour.
+type DevelopmentConfig struct {
+	// DiscloseAppIdentifiers adds appId and installationId to token responses,
+	// and chinmina_app_name, chinmina_app_id and chinmina_installation_id to
+	// git-credentials responses. A CI pipeline has no use for the deployment's
+	// app topology, so production discloses nothing.
+	DiscloseAppIdentifiers bool `env:"DEV_DISCLOSE_APP_IDENTIFIERS, default=false"`
 }
 
 type ServerConfig struct {

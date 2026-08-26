@@ -293,3 +293,26 @@ func TestAwaitFirstLoad(t *testing.T) {
 		assert.Contains(t, err.Error(), "initial organization profile load abandoned")
 	})
 }
+
+// Without this link, the flag could be set and silently never reach a response.
+func TestValidateConfiguration_CarriesTheDisclosureFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured bool
+	}{
+		{name: "unset means production behaviour", configured: false},
+		{name: "set for development", configured: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfig(t)
+			cfg.Development.DiscloseAppIdentifiers = tt.configured
+
+			validated, err := validateConfiguration(cfg)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.configured, validated.discloseAppIdentifiers)
+		})
+	}
+}

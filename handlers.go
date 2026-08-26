@@ -227,9 +227,7 @@ func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[
 	entry.RequestedRepository = requestedRepo
 
 	// Recorded at resolution rather than at vend, so a failed mint still names
-	// the app it was attempted through. The identifiers come from the resolved
-	// identity rather than the vended token, which also keeps them correct on a
-	// cache hit predating their addition to the payload.
+	// the app, and a cache hit predating the identifiers still reports them.
 	entry.App = resolved.App.Name
 	entry.ApplicationID = resolved.App.ApplicationID
 	entry.InstallationID = resolved.App.InstallationID
@@ -305,7 +303,7 @@ func extractRepositoryScope(r *http.Request) (string, error) {
 	return scope, nil
 }
 
-func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T]) http.Handler {
+func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T], marshaler TokenResponseMarshaler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 		recordRequestedName(r.Context(), r)
@@ -344,8 +342,7 @@ func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve Pr
 
 		// VendStatusSuccess: write the response to the client as JSON, supplying
 		// the token and URL of the repository it's vended for.
-		tokenResponse := result.Token()
-		marshalledResponse, err := json.Marshal(tokenResponse)
+		marshalledResponse, err := marshaler.MarshalToken(result.Token())
 		if err != nil {
 			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("failed to marshal token response: %w", err))
 			return
@@ -362,7 +359,7 @@ func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve Pr
 	})
 }
 
-func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T]) http.Handler {
+func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T], marshaler TokenResponseMarshaler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
 		recordRequestedName(r.Context(), r)
@@ -427,15 +424,7 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			return
 		}
 
-		props := credentialhandler.NewMap(6)
-		props.Set("protocol", tokenURL.Scheme)
-		props.Set("host", tokenURL.Host)
-		props.Set("path", strings.TrimPrefix(tokenURL.Path, "/"))
-		props.Set("username", "x-access-token")
-		props.Set("password", tokenResponse.Token)
-		props.Set("password_expiry_utc", tokenResponse.ExpiryUnix())
-
-		err = credentialhandler.WriteProperties(props, w)
+		err = credentialhandler.WriteProperties(marshaler.CredentialProperties(tokenResponse, tokenURL), w)
 		if err != nil {
 			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("failed to write response: %w", err))
 			return

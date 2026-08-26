@@ -714,3 +714,25 @@ func unsetEnv(t *testing.T, key string) {
 	}
 	require.NoError(t, os.Unsetenv(key))
 }
+
+// This is the only gate on the identifiers reaching a client, so its default
+// is the whole control.
+func TestDevelopmentConfig_DisclosureDefaultsOff(t *testing.T) {
+	cfg, err := load(context.Background(), envconfig.MapLookuper(requiredConfig))
+	require.NoError(t, err)
+
+	assert.Equal(t, DevelopmentConfig{}, cfg.Development)
+	assert.False(t, cfg.Development.DiscloseAppIdentifiers)
+}
+
+func TestDevelopmentConfig_DisclosureEnabledByEnvironment(t *testing.T) {
+	lookuper := envconfig.MultiLookuper(
+		envconfig.MapLookuper(requiredConfig),
+		envconfig.MapLookuper(map[string]string{"DEV_DISCLOSE_APP_IDENTIFIERS": "true"}),
+	)
+
+	cfg, err := load(context.Background(), lookuper)
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Development.DiscloseAppIdentifiers)
+}

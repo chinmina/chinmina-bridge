@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chinmina/chinmina-bridge/internal/audit"
+	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
@@ -79,7 +81,7 @@ func TestRoutes_WarmCacheEntryDoesNotBypassAppResolution(t *testing.T) {
 		return "minted-token", defaultExpiry, nil
 	})
 
-	handler := handlePostToken(chain, NewOrgProfileResolver(store.GetOrganizationProfile, registry.Resolve))
+	handler := handlePostToken(chain, NewOrgProfileResolver(store.GetOrganizationProfile, registry.Resolve), withheld)
 
 	serve := func() *httptest.ResponseRecorder {
 		ctx, _ := audit.Context(claimsContext())
@@ -140,7 +142,7 @@ func TestRoutes_MintThroughTheResolvedApp(t *testing.T) {
 					}),
 			)))
 
-			handler := handlePostToken(chain, NewOrgProfileResolver(store.GetOrganizationProfile, registry.Resolve))
+			handler := handlePostToken(chain, NewOrgProfileResolver(store.GetOrganizationProfile, registry.Resolve), disclosed)
 
 			ctx, entry := audit.Context(claimsContext())
 			req, err := http.NewRequestWithContext(ctx, "POST", "/organization/token/"+tt.profileName, nil)
@@ -157,7 +159,11 @@ func TestRoutes_MintThroughTheResolvedApp(t *testing.T) {
 
 			var response vendor.ProfileToken
 			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &response))
-			assert.Equal(t, tt.expectedApp.Name, response.App)
+			assert.Equal(t, tt.expectedApp, github.AppIdentity{
+				Name:           response.App,
+				ApplicationID:  response.ApplicationID,
+				InstallationID: response.InstallationID,
+			}, "the disclosed response must name the installation the mint went through")
 
 			assert.Equal(t, tt.expectedApp, auditedApp(entry),
 				"the audit entry must identify the installation, not just its repointable name")
@@ -175,7 +181,7 @@ func TestRoutes_AuditEntryNamesTheAppWhenMintingFails(t *testing.T) {
 		return "", time.Time{}, assert.AnError
 	})
 
-	handler := handlePostToken(chain, NewOrgProfileResolver(store.GetOrganizationProfile, registry.Resolve))
+	handler := handlePostToken(chain, NewOrgProfileResolver(store.GetOrganizationProfile, registry.Resolve), withheld)
 
 	ctx, entry := audit.Context(claimsContext())
 	req, err := http.NewRequestWithContext(ctx, "POST", "/organization/token/publish-packages", nil)
@@ -202,7 +208,7 @@ func TestRoutes_DisabledAppMakesTheProfileUnavailable(t *testing.T) {
 		return "", time.Time{}, nil
 	})
 
-	handler := handlePostToken(chain, NewOrgProfileResolver(store.GetOrganizationProfile, registry.Resolve))
+	handler := handlePostToken(chain, NewOrgProfileResolver(store.GetOrganizationProfile, registry.Resolve), withheld)
 
 	ctx, entry := audit.Context(claimsContext())
 	req, err := http.NewRequestWithContext(ctx, "POST", "/organization/token/publish-packages", nil)
@@ -218,8 +224,6 @@ func TestRoutes_DisabledAppMakesTheProfileUnavailable(t *testing.T) {
 	assert.Contains(t, entry.Error, "packages", "the audit entry must record why the profile is unavailable")
 }
 
-// auditedApp reassembles the identity an audit entry attributes a request to,
-// so a test can assert on it whole rather than field by field.
 func auditedApp(entry *audit.Entry) github.AppIdentity {
 	return github.AppIdentity{
 		Name:           entry.App,
@@ -238,5 +242,141 @@ func usableApps(names ...string) profile.AppLookup {
 	return func(name string) bool {
 		_, found := usable[name]
 		return found
+	}
+}
+
+var (
+	withheld  = newTokenResponseMarshaler(false)
+	disclosed = newTokenResponseMarshaler(true)
+)
+
+func packagesOrgChain(t *testing.T) (vendor.ProfileTokenVendor[orgAttr], ProfileResolver[orgAttr]) {
+	t.Helper()
+
+	store := profiletest.CreateTestProfileStore(t, appProfilesYAML, usableApps("packages"))
+	registry := newRegistryResolver(defaultAppIdentity, packagesAppIdentity)
+	chain := orgChain(t, func(context.Context, []string, []string) (string, time.Time, error) {
+		return "minted-token", defaultExpiry, nil
+	})
+
+	return chain, NewOrgProfileResolver(store.GetOrganizationProfile, registry.Resolve)
+}
+
+func serveOrgToken(t *testing.T, marshaler TokenResponseMarshaler, profileName string) (*httptest.ResponseRecorder, *audit.Entry) {
+	t.Helper()
+
+	chain, resolve := packagesOrgChain(t)
+	handler := handlePostToken(chain, resolve, marshaler)
+
+	ctx, entry := audit.Context(claimsContext())
+	req, err := http.NewRequestWithContext(ctx, "POST", "/organization/token/"+profileName, nil)
+	require.NoError(t, err)
+	req.SetPathValue("profile", profileName)
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	return rr, entry
+}
+
+// Substring-matching the body would also hit the hashed token, so assertions
+// run on the decoded object.
+func TestRoutes_TokenResponseDisclosesIdentifiersOnlyWhenConfigured(t *testing.T) {
+	tests := []struct {
+		name      string
+		marshaler TokenResponseMarshaler
+		expected  map[string]any
+		absent    []string
+	}{
+		{
+			name:      "withholding is the production default",
+			marshaler: withheld,
+			expected:  map[string]any{"app": "packages"},
+			absent:    []string{"appId", "installationId"},
+		},
+		{
+			name:      "disclosing carries both identifiers",
+			marshaler: disclosed,
+			expected: map[string]any{
+				"app":            "packages",
+				"appId":          float64(packagesAppIdentity.ApplicationID),
+				"installationId": float64(packagesAppIdentity.InstallationID),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rr, _ := serveOrgToken(t, tt.marshaler, "publish-packages")
+
+			var response map[string]any
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &response))
+
+			for key, want := range tt.expected {
+				assert.Equal(t, want, response[key])
+			}
+			for _, key := range tt.absent {
+				assert.NotContains(t, response, key)
+			}
+		})
+	}
+}
+
+// Both halves read from the same request, so neither can be satisfied by a
+// fixture that only looks right in isolation.
+func TestRoutes_AuditRecordsIdentifiersTheResponseWithholds(t *testing.T) {
+	rr, entry := serveOrgToken(t, withheld, "publish-packages")
+
+	var response map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &response))
+	assert.NotContains(t, response, "appId", "a CI pipeline has no use for the deployment's app topology")
+	assert.Equal(t, packagesAppIdentity, auditedApp(entry), "the operator-facing record must still attribute the vend")
+}
+
+func TestRoutes_GitCredentialsDiscloseIdentifiersOnlyWhenConfigured(t *testing.T) {
+	tests := []struct {
+		name      string
+		marshaler TokenResponseMarshaler
+		expected  string
+	}{
+		{
+			name:      "withholding leaves git's properties untouched",
+			marshaler: withheld,
+			expected: "protocol=https\nhost=github.com\npath=acme/repo1\n" +
+				"username=x-access-token\npassword=minted-token\npassword_expiry_utc=1715104776\n\n",
+		},
+		{
+			name:      "disclosing appends the chinmina properties",
+			marshaler: disclosed,
+			expected: "protocol=https\nhost=github.com\npath=acme/repo1\n" +
+				"username=x-access-token\npassword=minted-token\npassword_expiry_utc=1715104776\n" +
+				"chinmina_app_name=packages\nchinmina_app_id=333\nchinmina_installation_id=444\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chain, resolve := packagesOrgChain(t)
+			handler := handlePostGitCredentials(chain, resolve, tt.marshaler)
+
+			props := credentialhandler.NewMap(3)
+			props.Set("protocol", "https")
+			props.Set("host", "github.com")
+			props.Set("path", "acme/repo1")
+			body := &bytes.Buffer{}
+			require.NoError(t, credentialhandler.WriteProperties(props, body))
+
+			ctx, _ := audit.Context(claimsContext())
+			req, err := http.NewRequestWithContext(ctx, "POST", "/organization/git-credentials/publish-packages", body)
+			require.NoError(t, err)
+			req.SetPathValue("profile", "publish-packages")
+
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			require.Equal(t, http.StatusOK, rr.Code)
+			assert.Equal(t, tt.expected, rr.Body.String())
+		})
 	}
 }

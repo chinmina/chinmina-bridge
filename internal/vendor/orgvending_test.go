@@ -117,6 +117,9 @@ func TestOrgVending_SuccessfulTokenProvisioning(t *testing.T) {
 			assertVendorSuccess(t, result, vendor.ProfileToken{
 				Token:               "non-default-token-value",
 				HashedToken:         vendor.HashToken("non-default-token-value"),
+				App:                 "publisher",
+				ApplicationID:       4242,
+				InstallationID:      8484,
 				Repositories:        profile.NewSpecificScope("secret-repo", "another-secret-repo"),
 				Permissions:         []string{"contents:read", "packages:read", "metadata:read"},
 				Profile:             "org:non-default-profile",
@@ -175,6 +178,9 @@ func TestOrgVending_WildcardRepository(t *testing.T) {
 			assertVendorSuccess(t, result, vendor.ProfileToken{
 				Token:               "wildcard-token-value",
 				HashedToken:         vendor.HashToken("wildcard-token-value"),
+				App:                 "publisher",
+				ApplicationID:       4242,
+				InstallationID:      8484,
 				Repositories:        profile.NewWildcardScope(),
 				Permissions:         []string{"contents:read", "packages:read", "metadata:read"},
 				Profile:             "org:wildcard-profile",
@@ -214,6 +220,9 @@ func TestOrgVending_CallerScopedRepository_Success(t *testing.T) {
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "scoped-token",
 		HashedToken:         vendor.HashToken("scoped-token"),
+		App:                 "publisher",
+		ApplicationID:       4242,
+		InstallationID:      8484,
 		Repositories:        profile.NewSpecificScope("target-repo"),
 		Permissions:         []string{"contents:write", "metadata:read"},
 		Profile:             "org:caller-scoped-profile/target-repo",
@@ -288,6 +297,9 @@ func TestOrgVending_GitCredentials_CallerScoped_DerivesRepoFromURL(t *testing.T)
 	assertVendorSuccess(t, result, vendor.ProfileToken{
 		Token:               "scoped-token",
 		HashedToken:         vendor.HashToken("scoped-token"),
+		App:                 "publisher",
+		ApplicationID:       4242,
+		InstallationID:      8484,
 		Repositories:        profile.NewSpecificScope("target-repo"),
 		Permissions:         []string{"contents:write", "metadata:read"},
 		Profile:             "org:caller-scoped-profile/target-repo",

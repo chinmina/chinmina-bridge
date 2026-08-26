@@ -193,3 +193,58 @@ func TestIntegrationMultiApp_NoRegistryQueriesNoInstallation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "default", token.App)
 }
+
+// Nothing here hands a flag to the handlers: the shape is whatever
+// configureServerRoutes builds from an unset environment.
+func TestIntegrationMultiApp_ProductionDefaultWithholdsAppIdentifiers(t *testing.T) {
+	harness := NewAPITestHarness(t,
+		WithInstallation(packagesInstallationID, enabledPackagesInstallation()),
+		WithGitHubApps(packagesApp(t)),
+	)
+	harness.UpdateProfiles(t, multiAppProfiles)
+
+	response, status, err := harness.Client().RequestJSON(
+		"POST", "/organization/token/publish-packages", harness.PipelineToken(), nil)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, status)
+
+	assert.Equal(t, "packages", response["app"], "the app name has always been part of the response")
+	assert.NotContains(t, response, "appId")
+	assert.NotContains(t, response, "installationId")
+
+	props, err := harness.Client().OrganizationGitCredentials(harness.PipelineToken(), "publish-packages",
+		GitCredentialRequest{Protocol: "https", Host: "github.com", Path: "test-org/test-repo"})
+	require.NoError(t, err)
+
+	for i := props.Iter(); i.HasNext(); {
+		k, _ := i.Next()
+		assert.NotContains(t, k, "chinmina_", "git must receive only the properties it consumes")
+	}
+}
+
+// The default-off tests cannot tell a working gate from one wired to a
+// constant, so this drives the flag through configureServerRoutes.
+func TestIntegrationMultiApp_ConfiguredDisclosureReachesBothFormats(t *testing.T) {
+	harness := NewAPITestHarness(t,
+		WithInstallation(packagesInstallationID, enabledPackagesInstallation()),
+		WithGitHubApps(packagesApp(t)),
+		WithDisclosedAppIdentifiers(),
+	)
+	harness.UpdateProfiles(t, multiAppProfiles)
+
+	response, status, err := harness.Client().RequestJSON(
+		"POST", "/organization/token/publish-packages", harness.PipelineToken(), nil)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, status)
+
+	assert.Equal(t, float64(packagesAppID), response["appId"])
+	assert.Equal(t, float64(packagesInstallationID), response["installationId"])
+
+	props, err := harness.Client().OrganizationGitCredentials(harness.PipelineToken(), "publish-packages",
+		GitCredentialRequest{Protocol: "https", Host: "github.com", Path: "test-org/test-repo"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "packages", props.Get("chinmina_app_name"))
+	assert.Equal(t, "333", props.Get("chinmina_app_id"))
+	assert.Equal(t, "444", props.Get("chinmina_installation_id"))
+}

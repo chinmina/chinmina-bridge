@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
@@ -12,6 +13,10 @@ import (
 )
 
 var vendingExpiry = time.Date(2024, time.May, 7, 17, 59, 36, 0, time.UTC)
+
+// vendingApp's identifiers are non-zero, so a token that fails to carry them
+// is visible.
+var vendingApp = github.AppIdentity{Name: "publisher", ApplicationID: 4242, InstallationID: 8484}
 
 // recordingTokenVendor captures the repository names and permissions the
 // GitHub call was asked for, which is the contract the resolvers determine.
@@ -31,6 +36,7 @@ func orgResolved(ref profile.ProfileRef, attrs profile.OrganizationProfileAttr) 
 		Ref:     ref,
 		Profile: profile.NewAuthorizedProfile(profile.CompositeMatcher(), attrs),
 		Digest:  "test-digest",
+		App:     vendingApp,
 	}
 }
 
@@ -39,6 +45,7 @@ func pipelineResolved(ref profile.ProfileRef, attrs profile.PipelineProfileAttr)
 		Ref:     ref,
 		Profile: profile.NewAuthorizedProfile(profile.CompositeMatcher(), attrs),
 		Digest:  "test-digest",
+		App:     vendingApp,
 	}
 }
 
@@ -70,6 +77,9 @@ func TestVending_OrgPermissionsComeFromResolvedProfile(t *testing.T) {
 		Repositories:     profile.NewSpecificScope("widget", "gadget"),
 		Permissions:      []string{"contents:write"},
 		Profile:          "org:prod-deploy",
+		App:              "publisher",
+		ApplicationID:    4242,
+		InstallationID:   8484,
 		Token:            "minted-token",
 		HashedToken:      vendor.HashToken("minted-token"),
 		Expiry:           vendingExpiry,
@@ -146,7 +156,19 @@ func TestVending_PipelinePermissionsComeFromResolvedProfile(t *testing.T) {
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	assert.Equal(t, []string{"widget"}, *gotRepos)
 	assert.Equal(t, []string{"contents:read"}, *gotPermissions)
-	assert.Equal(t, "https://github.com/organization-slug/widget", result.Token().VendedRepositoryURL)
+	assert.Equal(t, vendor.ProfileToken{
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/organization-slug/widget",
+		Repositories:        profile.NewSpecificScope("widget"),
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		App:                 "publisher",
+		ApplicationID:       4242,
+		InstallationID:      8484,
+		Token:               "minted-token",
+		HashedToken:         vendor.HashToken("minted-token"),
+		Expiry:              vendingExpiry,
+	}, result.Token())
 }
 
 // TestVending_PipelineRejectsRepositoryOtherThanThePipelines keeps git's

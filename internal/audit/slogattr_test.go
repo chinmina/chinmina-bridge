@@ -293,9 +293,6 @@ func TestSlogEntryAttrsStructure(t *testing.T) {
 	assert.Contains(t, auth, "expiryRemaining", "expiryRemaining should be set when AuthExpirySecs > 0")
 }
 
-// TestSlogEntryAppIdentity pins the app identity keys in the token group: the
-// two identifiers are what make a vend attributable to an installation, and
-// they are skipped rather than emitted as zero when resolution never happened.
 func TestSlogEntryAppIdentity(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -345,9 +342,8 @@ func TestSlogEntryAppIdentity(t *testing.T) {
 	}
 }
 
-// TestSlogEntryTokenGroupElidedForZeroIdentity proves the identifiers use
-// skip-zero semantics rather than the Attr escape hatch: a request that failed
-// before resolution must not gain a token group.
+// Skip-zero rather than the Attr escape hatch: a request failing before
+// resolution must not gain a token group.
 func TestSlogEntryTokenGroupElidedForZeroIdentity(t *testing.T) {
 	var result map[string]any
 	require.NoError(t, json.Unmarshal(serializeSlogEntry(audit.Entry{Method: "POST", Path: "/token"}), &result))

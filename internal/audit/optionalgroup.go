@@ -35,9 +35,8 @@ func (og *OptionalGroup) Int(key string, val int) *OptionalGroup {
 	return og
 }
 
-// Int64 adds an int64 attribute, skipping zero values. Mirrors Int rather than
-// routing through Attr: Attr always marks the group modified, which would make
-// the token group appear on requests that fail before resolution.
+// Int64 adds an int64 attribute, skipping zero values. Not routed through Attr,
+// which always marks the group modified.
 func (og *OptionalGroup) Int64(key string, val int64) *OptionalGroup {
 	if val == 0 {
 		return og

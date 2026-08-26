@@ -88,6 +88,14 @@ func WithValkeyCache() APITestHarnessOption {
 	}
 }
 
+// WithDisclosedAppIdentifiers turns on DEV_DISCLOSE_APP_IDENTIFIERS, so a test
+// exercises the disclosing shape through the real routing.
+func WithDisclosedAppIdentifiers() APITestHarnessOption {
+	return func(_ *APITestHarness, cfg *config.Config) {
+		cfg.Development.DiscloseAppIdentifiers = true
+	}
+}
+
 // WithBasePath configures the test harness with a base path prefix for
 // sub-path deployment testing.
 func WithBasePath(basePath string) APITestHarnessOption {

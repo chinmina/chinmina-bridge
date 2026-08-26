@@ -2,6 +2,7 @@ package vendor_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -748,6 +749,78 @@ func TestCacheAllRepositories_SameCallGetsCacheHit(t *testing.T) {
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	token = result.Token()
 	assert.Equal(t, "first-call", token.Token)
+}
+
+// The identifiers live in the cached payload, so a hit and a miss are
+// indistinguishable. Stripping them inside the chain would break that.
+func TestCache_AppIdentityIsPartOfTheCachedShape(t *testing.T) {
+	minted := vendor.ProfileToken{
+		Token:               "minted-token",
+		VendedRepositoryURL: "https://github.com/test-org/any-repo.git",
+		Repositories:        profile.NewSpecificScope("any-repo"),
+		Profile:             "repo:default",
+		App:                 testApp.Name,
+		ApplicationID:       testApp.ApplicationID,
+		InstallationID:      testApp.InstallationID,
+	}
+
+	calls := 0
+	wrapped := vendor.ProfileTokenVendor[cacheAttr](func(context.Context, vendor.Resolved[cacheAttr], string) vendor.VendorResult {
+		calls++
+		return vendor.NewVendorSuccess(minted)
+	})
+
+	v := newTestCached(t, defaultTTL)(wrapped)
+	ref := profile.ProfileRef{
+		Organization: "org",
+		Name:         "default",
+		Type:         profile.ProfileTypeRepo,
+		PipelineID:   "pipeline-id",
+	}
+
+	miss := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
+	hit := v(context.Background(), cacheRequest(ref), "https://github.com/test-org/any-repo.git")
+
+	require.Equal(t, 1, calls, "the second call must be served from the cache")
+	assertVendorSuccess(t, miss, minted)
+	assertVendorSuccess(t, hit, minted)
+}
+
+// These keys are a storage-compatibility surface: renaming one silently drops
+// the identifiers from every entry an older deployment wrote.
+func TestCache_StorageShapeCarriesAppIdentity(t *testing.T) {
+	stored := vendor.ProfileToken{
+		Token:          "minted-token",
+		Profile:        "repo:default",
+		App:            "publisher",
+		ApplicationID:  4242,
+		InstallationID: 8484,
+	}
+
+	data, err := json.Marshal(stored)
+	require.NoError(t, err)
+
+	var keys map[string]any
+	require.NoError(t, json.Unmarshal(data, &keys))
+	assert.Equal(t, float64(4242), keys["appId"])
+	assert.Equal(t, float64(8484), keys["installationId"])
+
+	var roundTripped vendor.ProfileToken
+	require.NoError(t, json.Unmarshal(data, &roundTripped))
+	assert.Equal(t, stored, roundTripped)
+}
+
+// An entry written before the identifiers existed must read back as absent
+// keys, not as application zero.
+func TestCache_StorageShapeOmitsUnresolvedIdentifiers(t *testing.T) {
+	data, err := json.Marshal(vendor.ProfileToken{Token: "minted-token", App: "publisher"})
+	require.NoError(t, err)
+
+	var keys map[string]any
+	require.NoError(t, json.Unmarshal(data, &keys))
+	assert.Equal(t, "publisher", keys["app"])
+	assert.NotContains(t, keys, "appId")
+	assert.NotContains(t, keys, "installationId")
 }
 
 // sequenceVendor returns each of the calls in sequence, either a token or an error

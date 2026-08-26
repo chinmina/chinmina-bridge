@@ -31,6 +31,9 @@ type validatedConfig struct {
 	basePath           string // "" when served at the root
 	orgProfileLocation string // "" when no organization profile is configured
 	authorizer         alice.Constructor
+
+	// The bool stops here: route construction receives a marshaller instead.
+	discloseAppIdentifiers bool
 }
 
 // validateConfiguration must not make network calls, so that a configuration
@@ -58,9 +61,10 @@ func validateConfiguration(cfg config.Config) (validatedConfig, error) {
 	}
 
 	return validatedConfig{
-		basePath:           basePath,
-		orgProfileLocation: orgProfileLocation,
-		authorizer:         authorizer,
+		basePath:               basePath,
+		orgProfileLocation:     orgProfileLocation,
+		authorizer:             authorizer,
+		discloseAppIdentifiers: cfg.Development.DiscloseAppIdentifiers,
 	}, nil
 }
 
@@ -155,6 +159,12 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 		slog.Info("serving under base path", "path", validated.basePath)
 	}
 
+	if validated.discloseAppIdentifiers {
+		slog.Warn("github app identifiers are disclosed in token responses; development use only",
+			"flag", "DEV_DISCLOSE_APP_IDENTIFIERS")
+	}
+	marshaler := newTokenResponseMarshaler(validated.discloseAppIdentifiers)
+
 	authorizedRouteMiddleware := alice.New(requestLimiter, auditor, validated.authorizer)
 	standardRouteMiddleware := alice.New(requestLimiter)
 
@@ -184,11 +194,11 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 	)
 
 	pipelineResolver := NewPipelineProfileResolver(orgProfile.GetPipelineProfile, resolveApp)
-	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, pipelineResolver))
+	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, pipelineResolver, marshaler))
 	mux.Handle("POST /token", pipelineTokenHandler)
 	mux.Handle("POST /token/{profile}", pipelineTokenHandler)
 
-	pipelineGitCredentialsHandler := authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, pipelineResolver))
+	pipelineGitCredentialsHandler := authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, pipelineResolver, marshaler))
 	mux.Handle("POST /git-credentials", pipelineGitCredentialsHandler)
 	mux.Handle("POST /git-credentials/{profile}", pipelineGitCredentialsHandler)
 
@@ -203,8 +213,8 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 	)
 
 	orgResolver := NewOrgProfileResolver(orgProfile.GetOrganizationProfile, resolveApp)
-	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, orgResolver)))
-	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, orgResolver)))
+	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, orgResolver, marshaler)))
+	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, orgResolver, marshaler)))
 
 	// healthchecks are not included in telemetry or authorization
 	muxWithoutTelemetry.Handle("GET /healthcheck", standardRouteMiddleware.Then(handleHealthCheck()))
