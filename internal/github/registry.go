@@ -44,12 +44,20 @@ func (i AppIdentity) IsZero() bool {
 	return i == AppIdentity{}
 }
 
+// privateKeyPEM redacts under every fmt verb, so no format string can print a
+// key: LogValue guards slog, this guards fmt.
+type privateKeyPEM string
+
+func (privateKeyPEM) String() string { return "[redacted]" }
+
+func (privateKeyPEM) GoString() string { return `"[redacted]"` }
+
 type appEntryConfig struct {
-	Name           string `json:"name"`
-	ApplicationID  int64  `json:"appId"`
-	InstallationID int64  `json:"installationId"`
-	PrivateKey     string `json:"privateKey"`
-	PrivateKeyARN  string `json:"privateKeyArn"`
+	Name           string        `json:"name"`
+	ApplicationID  int64         `json:"appId"`
+	InstallationID int64         `json:"installationId"`
+	PrivateKey     privateKeyPEM `json:"privateKey"`
+	PrivateKeyARN  string        `json:"privateKeyArn"`
 }
 
 // keySource names where a key comes from without disclosing it.
@@ -272,7 +280,7 @@ func (r Registry) logEntries() {
 func newRegistryClient(ctx context.Context, cfg appconfig.GithubConfig, entry appEntryConfig, loadAWS AWSConfigLoader) (Client, error) {
 	entryCfg := appconfig.GithubConfig{
 		APIURL:         cfg.APIURL,
-		PrivateKey:     entry.PrivateKey,
+		PrivateKey:     string(entry.PrivateKey),
 		PrivateKeyARN:  entry.PrivateKeyARN,
 		ApplicationID:  entry.ApplicationID,
 		InstallationID: entry.InstallationID,
@@ -281,7 +289,7 @@ func newRegistryClient(ctx context.Context, cfg appconfig.GithubConfig, entry ap
 	// Parse first, so an unparseable key is reported as such rather than as a
 	// transport construction failure.
 	if entry.PrivateKey != "" {
-		if _, err := parsePrivateKeyPEM(entry.PrivateKey); err != nil {
+		if _, err := parsePrivateKeyPEM(string(entry.PrivateKey)); err != nil {
 			return Client{}, fmt.Errorf("app %q: %w", entry.Name, ErrPrivateKeyInvalid)
 		}
 	}
