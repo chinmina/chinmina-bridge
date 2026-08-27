@@ -2,7 +2,7 @@ package github
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -329,15 +329,23 @@ func parseAppEntries(raw string) ([]appEntryConfig, error) {
 		return nil, nil
 	}
 
-	decoder := json.NewDecoder(strings.NewReader(raw))
-
-	// A silently ignored typo is a credential configured differently from how
-	// it reads.
-	decoder.DisallowUnknownFields()
-
+	// json/v2's Unmarshal requires the input to be exactly one JSON value: a
+	// streaming decoder stops at the end of the first value, so a truncated or
+	// concatenated variable would be silently accepted with the remainder
+	// discarded.
+	//
+	// RejectUnknownMembers: a silently ignored typo is a credential configured
+	// differently from how it reads.
 	var entries []appEntryConfig
-	if err := decoder.Decode(&entries); err != nil {
+	if err := json.Unmarshal([]byte(raw), &entries, json.RejectUnknownMembers(true)); err != nil {
 		return nil, fmt.Errorf("GITHUB_APPS is not valid: %w", err)
+	}
+
+	// JSON null unmarshals to a nil slice without error, and an empty registry
+	// skips installation verification entirely. A deployment that believes it
+	// configured apps must not start with only the default app.
+	if entries == nil {
+		return nil, errors.New("GITHUB_APPS is not valid: expected a JSON array, found null")
 	}
 
 	seen := make(map[string]struct{}, len(entries))

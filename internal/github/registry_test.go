@@ -120,6 +120,31 @@ func TestRegistry_MalformedConfigurationPreventsStartup(t *testing.T) {
 			errContains: "GITHUB_APPS is not valid",
 		},
 		{
+			name:        "JSON null",
+			apps:        `null`,
+			errContains: "expected a JSON array, found null",
+		},
+		{
+			name:        "trailing JSON value",
+			apps:        `[] {"ignored":true}`,
+			errContains: "GITHUB_APPS is not valid",
+		},
+		{
+			name:        "trailing garbage",
+			apps:        fmt.Sprintf(`[{"name":"packages","appId":1,"installationId":2,"privateKey":%q}] trailing`, validKey),
+			errContains: "GITHUB_APPS is not valid",
+		},
+		{
+			name:        "duplicate object member",
+			apps:        `[{"name":"packages","name":"other","appId":1,"installationId":2,"privateKeyArn":"arn:aws:kms:x"}]`,
+			errContains: "GITHUB_APPS is not valid",
+		},
+		{
+			name:        "field name differs in case",
+			apps:        `[{"Name":"packages","appId":1,"installationId":2,"privateKeyArn":"arn:aws:kms:x"}]`,
+			errContains: "GITHUB_APPS is not valid",
+		},
+		{
 			name:        "unrecognised field",
 			apps:        `[{"name":"packages","appId":1,"installationId":2,"privateKeyArn":"arn:aws:kms:x","organization":"acme"}]`,
 			errContains: "GITHUB_APPS is not valid",
