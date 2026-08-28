@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/chinmina/chinmina-bridge/compare/v0.15.0...v0.15.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* add resolved profile and app details to traces ([#392](https://github.com/chinmina/chinmina-bridge/issues/392)) ([9b58b7d](https://github.com/chinmina/chinmina-bridge/commit/9b58b7d1b5753cb1f3e1b3233767daba8396063d))
+
 ## [0.15.0](https://github.com/chinmina/chinmina-bridge/compare/v0.14.1...v0.15.0) (2026-08-28)
 
 
