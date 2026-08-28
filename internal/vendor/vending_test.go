@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
@@ -12,6 +13,10 @@ import (
 )
 
 var vendingExpiry = time.Date(2024, time.May, 7, 17, 59, 36, 0, time.UTC)
+
+// vendingApp's identifiers are non-zero, so a token that fails to carry them
+// is visible.
+var vendingApp = github.AppIdentity{Name: "publisher", ApplicationID: 4242, InstallationID: 8484}
 
 // recordingTokenVendor captures the repository names and permissions the
 // GitHub call was asked for, which is the contract the resolvers determine.
@@ -31,6 +36,7 @@ func orgResolved(ref profile.ProfileRef, attrs profile.OrganizationProfileAttr) 
 		Ref:     ref,
 		Profile: profile.NewAuthorizedProfile(profile.CompositeMatcher(), attrs),
 		Digest:  "test-digest",
+		App:     vendingApp,
 	}
 }
 
@@ -39,6 +45,7 @@ func pipelineResolved(ref profile.ProfileRef, attrs profile.PipelineProfileAttr)
 		Ref:     ref,
 		Profile: profile.NewAuthorizedProfile(profile.CompositeMatcher(), attrs),
 		Digest:  "test-digest",
+		App:     vendingApp,
 	}
 }
 
@@ -48,7 +55,7 @@ func pipelineResolved(ref profile.ProfileRef, attrs profile.PipelineProfileAttr)
 // vending mint a token the authorized generation never described.
 func TestVending_OrgPermissionsComeFromResolvedProfile(t *testing.T) {
 	tokenVendor, gotRepos, gotPermissions := recordingTokenVendor(t)
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -70,6 +77,9 @@ func TestVending_OrgPermissionsComeFromResolvedProfile(t *testing.T) {
 		Repositories:     profile.NewSpecificScope("widget", "gadget"),
 		Permissions:      []string{"contents:write"},
 		Profile:          "org:prod-deploy",
+		App:              "publisher",
+		ApplicationID:    4242,
+		InstallationID:   8484,
 		Token:            "minted-token",
 		HashedToken:      vendor.HashToken("minted-token"),
 		Expiry:           vendingExpiry,
@@ -83,7 +93,7 @@ func TestVending_OrgPermissionsComeFromResolvedProfile(t *testing.T) {
 // guard rejects an empty repository list, and must not catch a wildcard.
 func TestVending_OrgWildcardPassesNilRepositories(t *testing.T) {
 	tokenVendor, gotRepos, _ := recordingTokenVendor(t)
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{Organization: "organization-slug", Type: profile.ProfileTypeOrg, Name: "all-repos"}
 	attrs := profile.OrganizationProfileAttr{
@@ -102,7 +112,7 @@ func TestVending_OrgWildcardPassesNilRepositories(t *testing.T) {
 // carries, rather than the profile's declared scope literal.
 func TestVending_OrgCallerScopedNarrowsToRequestedRepository(t *testing.T) {
 	tokenVendor, gotRepos, _ := recordingTokenVendor(t)
-	v := vendor.Vending(vendor.OrgRepositories, tokenVendor)
+	v := vendor.Vending(vendor.OrgRepositories, mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization:     "organization-slug",
@@ -130,7 +140,7 @@ func TestVending_PipelinePermissionsComeFromResolvedProfile(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(context.Context, string, string) (string, error) {
 		return "https://github.com/organization-slug/widget", nil
 	})
-	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), tokenVendor)
+	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -146,7 +156,19 @@ func TestVending_PipelinePermissionsComeFromResolvedProfile(t *testing.T) {
 	require.Equal(t, vendor.VendStatusSuccess, result.Status())
 	assert.Equal(t, []string{"widget"}, *gotRepos)
 	assert.Equal(t, []string{"contents:read"}, *gotPermissions)
-	assert.Equal(t, "https://github.com/organization-slug/widget", result.Token().VendedRepositoryURL)
+	assert.Equal(t, vendor.ProfileToken{
+		OrganizationSlug:    "organization-slug",
+		VendedRepositoryURL: "https://github.com/organization-slug/widget",
+		Repositories:        profile.NewSpecificScope("widget"),
+		Permissions:         []string{"contents:read"},
+		Profile:             "repo:default",
+		App:                 "publisher",
+		ApplicationID:       4242,
+		InstallationID:      8484,
+		Token:               "minted-token",
+		HashedToken:         vendor.HashToken("minted-token"),
+		Expiry:              vendingExpiry,
+	}, result.Token())
 }
 
 // TestVending_PipelineRejectsRepositoryOtherThanThePipelines keeps git's
@@ -157,7 +179,7 @@ func TestVending_PipelineRejectsRepositoryOtherThanThePipelines(t *testing.T) {
 	repoLookup := vendor.RepositoryLookup(func(context.Context, string, string) (string, error) {
 		return "https://github.com/organization-slug/widget", nil
 	})
-	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), tokenVendor)
+	v := vendor.Vending(vendor.PipelineRepositories(repoLookup), mintingThrough(tokenVendor))
 
 	ref := profile.ProfileRef{
 		Organization: "organization-slug",
@@ -200,7 +222,7 @@ func TestVending_EmptyScopeFailsClosed(t *testing.T) {
 					return vendor.RepositoryTarget{Scope: scope, Permissions: []string{"contents:write"}, Matched: true}, nil
 				},
 			)
-			v := vendor.Vending(resolve, tokenVendor)
+			v := vendor.Vending(resolve, mintingThrough(tokenVendor))
 
 			ref := profile.ProfileRef{Organization: "organization-slug", Type: profile.ProfileTypeOrg, Name: "empty"}
 

@@ -53,12 +53,21 @@ type organizationProfile struct {
 	Match        []matchRule `yaml:"match"`
 	Repositories []string    `yaml:"repositories"`
 	Permissions  []string    `yaml:"permissions"`
+
+	// App names the GitHub App this profile's tokens are minted through. The
+	// pointer separates an omitted property, meaning the default app, from
+	// `app: ""`, which is reported as a mistake rather than read as the default.
+	App *string `yaml:"app"`
 }
 
 type pipelineProfile struct {
 	Name        string      `yaml:"name"`
 	Match       []matchRule `yaml:"match"`
 	Permissions []string    `yaml:"permissions"`
+
+	// App names the GitHub App this profile's tokens are minted through.
+	// Pointer for the reason given on organizationProfile.App.
+	App *string `yaml:"app"`
 }
 
 type matchRule struct {
@@ -90,6 +99,23 @@ func (e ProfileUnavailableError) Unwrap() error {
 
 func (e ProfileUnavailableError) Status() (int, string) {
 	return http.StatusNotFound, "profile unavailable: validation failed"
+}
+
+// AppUnresolvedError indicates a profile names a GitHub App that the registry
+// cannot resolve. It is a 500 because compilation should already have
+// invalidated such a profile; it also stops a warm cache entry being served
+// after its app is disabled, so it must not be softened into a success.
+type AppUnresolvedError struct {
+	ProfileName string
+	AppName     string
+}
+
+func (e AppUnresolvedError) Error() string {
+	return fmt.Sprintf("profile %q names app %q, which could not be resolved", e.ProfileName, e.AppName)
+}
+
+func (e AppUnresolvedError) Status() (int, string) {
+	return http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError)
 }
 
 // ProfileNotFoundError indicates a profile was not found in the store

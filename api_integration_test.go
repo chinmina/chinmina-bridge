@@ -998,3 +998,33 @@ func TestIntegrationProfileRefresh_ServesNoMixedGeneration(t *testing.T) {
 	require.Positive(t, vended, "some caller must have been admitted")
 	require.Positive(t, denied, "some caller must have been denied by the other generation")
 }
+
+// Decoded as a map, not a struct: a struct would hide an absent key.
+func TestIntegrationPipelineToken_WithholdsAppIdentifiersByDefault(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+
+	response, status, err := harness.Client().RequestJSON("POST", "/token", harness.PipelineToken(), nil)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, status)
+
+	assert.Equal(t, "default", response["app"])
+	assert.NotContains(t, response, "appId")
+	assert.NotContains(t, response, "installationId")
+}
+
+func TestIntegrationPipelineGitCredentials_WithholdsAppIdentifiersByDefault(t *testing.T) {
+	harness := NewAPITestHarness(t)
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+
+	props, err := harness.Client().GitCredentials(harness.PipelineToken(), "",
+		GitCredentialRequest{Protocol: "https", Host: "github.com", Path: "test-org/test-repo"})
+	require.NoError(t, err)
+
+	var keys []string
+	for i := props.Iter(); i.HasNext(); {
+		k, _ := i.Next()
+		keys = append(keys, k)
+	}
+	assert.Equal(t, []string{"protocol", "host", "path", "username", "password", "password_expiry_utc"}, keys)
+}

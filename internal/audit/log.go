@@ -39,23 +39,30 @@ type Entry struct {
 	RequestedProfile    string
 	RequestedRepository string
 	VendedRepository    string
-	Authorized          bool
-	AuthSubject         string
-	AuthIssuer          string
-	AuthAudience        []string
-	AuthExpirySecs      int64
-	OrganizationSlug    string
-	PipelineSlug        string
-	JobID               string
-	BuildNumber         int
-	BuildBranch         string
-	Error               string
-	Repositories        []string
-	Permissions         []string
-	ExpirySecs          int64
-	HashedToken         string
-	ClaimsMatched       []ClaimMatch
-	ClaimsFailed        []ClaimFailure
+
+	// All zero when the request failed before resolution; Error names the reason
+	// in that case. The name alone is not enough: it can be repointed, and two
+	// names can alias one installation.
+	App              string
+	ApplicationID    int64
+	InstallationID   int64
+	Authorized       bool
+	AuthSubject      string
+	AuthIssuer       string
+	AuthAudience     []string
+	AuthExpirySecs   int64
+	OrganizationSlug string
+	PipelineSlug     string
+	JobID            string
+	BuildNumber      int
+	BuildBranch      string
+	Error            string
+	Repositories     []string
+	Permissions      []string
+	ExpirySecs       int64
+	HashedToken      string
+	ClaimsMatched    []ClaimMatch
+	ClaimsFailed     []ClaimFailure
 }
 
 // Begin sets up the audit log entry for the current request with details from the request.

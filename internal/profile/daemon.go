@@ -21,21 +21,25 @@ const (
 
 // RefreshTask keeps the store's profile generation current. Callers gate
 // startup on its first success.
-func RefreshTask(profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string) repeat.Task {
+//
+// usableApp is applied at every refresh, not once at startup: profile validity
+// depends on the app registry as well as the YAML, and the digest covers only
+// the YAML, so a registry change would otherwise go unnoticed.
+func RefreshTask(profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string, usableApp AppLookup) repeat.Task {
 	return repeat.Task{
 		Name:          "organization profile refresh",
 		Attrs:         []any{"location", orgProfileLocation},
 		FirstInterval: firstLoadRetryInterval,
 		Interval:      refreshInterval,
 		Action: func(ctx context.Context) error {
-			return refresh(ctx, profileStore, gh, orgProfileLocation)
+			return refresh(ctx, profileStore, gh, orgProfileLocation, usableApp)
 		},
 	}
 }
 
 // refresh loads one generation. Failures, including a recovered panic, are
 // returned rather than logged: the span records them, and the task logs them.
-func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string) (err error) {
+func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, orgProfileLocation string, usableApp AppLookup) (err error) {
 	tracer := otel.Tracer("github.com/chinmina/chinmina-bridge/internal/profile")
 	ctx, span := tracer.Start(ctx, "refresh_organization_profile")
 	defer span.End()
@@ -48,7 +52,7 @@ func refresh(ctx context.Context, profileStore *ProfileStore, gh GitHubClient, o
 		}
 	}()
 
-	profiles, err := FetchOrganizationProfile(ctx, orgProfileLocation, gh)
+	profiles, err := FetchOrganizationProfile(ctx, orgProfileLocation, gh, usableApp)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "profile refresh failed")

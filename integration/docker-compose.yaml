@@ -164,6 +164,7 @@ services:
       GITHUB_APP_ID:
       GITHUB_APP_INSTALLATION_ID:
       GITHUB_ORG_PROFILE:
+      DEV_DISCLOSE_APP_IDENTIFIERS:
       CACHE_TYPE: ${CACHE_TYPE:-valkey} # valkey or memory
       VALKEY_ADDRESS: valkey:6379
       VALKEY_USE_IAM_AUTH: "false"

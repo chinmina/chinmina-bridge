@@ -23,17 +23,27 @@ func (m mockGitHubClient) GetFileContent(ctx context.Context, owner, repo, path 
 
 // CompileFromYAML parses and compiles profile YAML for tests outside the profile package.
 // Uses the existing external API via a mock GitHub client.
-func CompileFromYAML(yamlContent string) (profile.Profiles, error) {
+//
+// The optional lookup defaults to a deployment with no app registry: only the
+// default app is usable.
+func CompileFromYAML(yamlContent string, usableApp ...profile.AppLookup) (profile.Profiles, error) {
 	mock := mockGitHubClient{yaml: yamlContent}
-	return profile.FetchOrganizationProfile(context.Background(), "test:test:test.yaml", mock)
+	return profile.FetchOrganizationProfile(context.Background(), "test:test:test.yaml", mock, appLookup(usableApp))
+}
+
+func appLookup(supplied []profile.AppLookup) profile.AppLookup {
+	if len(supplied) > 0 {
+		return supplied[0]
+	}
+	return profile.DefaultAppOnly
 }
 
 // CreateTestProfileStore creates a ProfileStore from the provided YAML.
 // Fails the test if YAML parsing/compilation fails.
-func CreateTestProfileStore(t *testing.T, yamlContent string) *profile.ProfileStore {
+func CreateTestProfileStore(t *testing.T, yamlContent string, usableApp ...profile.AppLookup) *profile.ProfileStore {
 	t.Helper()
 
-	profiles, err := CompileFromYAML(yamlContent)
+	profiles, err := CompileFromYAML(yamlContent, usableApp...)
 	require.NoError(t, err, "failed to compile test profiles")
 
 	store := profile.NewProfileStore()

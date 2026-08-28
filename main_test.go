@@ -268,7 +268,7 @@ func TestStartProfileRefresh_NotConfigured(t *testing.T) {
 
 	// Returning cleanly is the assertion: nothing loaded, no gate entered, so an
 	// unconfigured deployment starts as it always did.
-	err := startProfileRefresh(t.Context(), store, nil, "")
+	err := startProfileRefresh(t.Context(), store, nil, "", profile.DefaultAppOnly)
 
 	require.NoError(t, err)
 	assert.Equal(t, before, store.Digest())
@@ -292,4 +292,27 @@ func TestAwaitFirstLoad(t *testing.T) {
 		assert.ErrorIs(t, err, context.Canceled)
 		assert.Contains(t, err.Error(), "initial organization profile load abandoned")
 	})
+}
+
+// Without this link, the flag could be set and silently never reach a response.
+func TestValidateConfiguration_CarriesTheDisclosureFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured bool
+	}{
+		{name: "unset means production behaviour", configured: false},
+		{name: "set for development", configured: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfig(t)
+			cfg.Development.DiscloseAppIdentifiers = tt.configured
+
+			validated, err := validateConfiguration(cfg)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.configured, validated.discloseAppIdentifiers)
+		})
+	}
 }

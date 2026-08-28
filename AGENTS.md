@@ -147,6 +147,25 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 - Handlers return appropriate HTTP status codes via `requestError(w, statusCode)`
 - panic() may not be added by CI agents without explicit direction to do so. The plan must state explicitly that a panic can be used in a given situation. Otherwise, errors must be used.
 
+### JSON
+
+- **JSON v2 is mandatory for all new code**: import `encoding/json/v2` (and
+  `encoding/json/jsontext` for raw values). `encoding/json` (v1) must not be used
+  in new or modified code, including tests. `GOEXPERIMENT=jsonv2` is set by
+  `.envrc` and the `justfile`; any new build or CI entry point must set it too.
+- v2 is required because its defaults are safe by construction: `json.Unmarshal`
+  rejects trailing data after the top-level value, duplicate object members are
+  an error, and field matching is case-sensitive. The v1 streaming decoder
+  silently accepts a truncated or concatenated document.
+- Reject unknown fields explicitly with `json.RejectUnknownMembers(true)` when
+  decoding configuration or requests: a silently ignored typo is configuration
+  that behaves differently from how it reads.
+- JSON `null` unmarshals to a nil slice/map/pointer without error. Where null
+  and "absent" must be distinguished (configuration especially), check for it
+  explicitly and fail. See `parseAppEntries` in `internal/github/registry.go`.
+- Existing `encoding/json` usages are migrated opportunistically; do not leave a
+  file you are already changing on v1.
+
 ### Concurrency
 
 - Put a critical section in its own function and unlock with `defer`: the body is

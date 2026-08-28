@@ -35,6 +35,17 @@ func (og *OptionalGroup) Int(key string, val int) *OptionalGroup {
 	return og
 }
 
+// Int64 adds an int64 attribute, skipping zero values. Not routed through Attr,
+// which always marks the group modified.
+func (og *OptionalGroup) Int64(key string, val int64) *OptionalGroup {
+	if val == 0 {
+		return og
+	}
+	og.attrs = append(og.attrs, slog.Int64(key, val))
+	og.modified = true
+	return og
+}
+
 // Bool adds a bool attribute. Unlike Str/Int, zero (false) is not skipped,
 // since false is a meaningful authorization state.
 func (og *OptionalGroup) Bool(key string, val bool) *OptionalGroup {

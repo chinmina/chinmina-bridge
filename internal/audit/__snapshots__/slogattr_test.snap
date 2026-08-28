@@ -284,6 +284,8 @@
   "userAgent": "test/1.0"
  },
  "token": {
+  "app": "publisher",
+  "applicationID": 12345,
   "attemptedPatterns": [
    {
     "claim": "build_branch",
@@ -294,6 +296,7 @@
   "expiry": "2030-01-01T00:00:00Z",
   "expiryRemaining": "<Any value>",
   "hashedToken": "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+  "installationID": 67890,
   "matches": [
    {
     "claim": "pipeline_slug",
@@ -352,6 +355,52 @@
  },
  "token": {
   "requestedRepository": "https://github.com/org/repo"
+ },
+ "type": "audit"
+}
+---
+
+[TestSlogEntryAttrs/with_app_identity - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "level": "INFO",
+ "msg": "audit_event",
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ },
+ "token": {
+  "app": "publisher",
+  "applicationID": 12345,
+  "installationID": 67890,
+  "requestedProfile": "org/repo"
+ },
+ "type": "audit"
+}
+---
+
+[TestSlogEntryAttrs/app_named_but_identifiers_unresolved - 1]
+{
+ "authorization": {
+  "authorized": false
+ },
+ "level": "INFO",
+ "msg": "audit_event",
+ "request": {
+  "method": "",
+  "path": "",
+  "sourceIP": "",
+  "status": 0,
+  "userAgent": ""
+ },
+ "token": {
+  "app": "publisher",
+  "requestedProfile": "org/repo"
  },
  "type": "audit"
 }

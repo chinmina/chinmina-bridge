@@ -31,6 +31,9 @@ type validatedConfig struct {
 	basePath           string // "" when served at the root
 	orgProfileLocation string // "" when no organization profile is configured
 	authorizer         alice.Constructor
+
+	// The bool stops here: route construction receives a marshaller instead.
+	discloseAppIdentifiers bool
 }
 
 // validateConfiguration must not make network calls, so that a configuration
@@ -58,9 +61,10 @@ func validateConfiguration(cfg config.Config) (validatedConfig, error) {
 	}
 
 	return validatedConfig{
-		basePath:           basePath,
-		orgProfileLocation: orgProfileLocation,
-		authorizer:         authorizer,
+		basePath:               basePath,
+		orgProfileLocation:     orgProfileLocation,
+		authorizer:             authorizer,
+		discloseAppIdentifiers: cfg.Development.DiscloseAppIdentifiers,
 	}, nil
 }
 
@@ -68,10 +72,17 @@ func validateConfiguration(cfg config.Config) (validatedConfig, error) {
 // the handlers would keep the old values.
 type upstreamClients struct {
 	buildkite buildkite.PipelineLookup
-	github    github.Client
+
+	// apps is the authority on which GitHub App a profile mints through. It
+	// includes the default app, so single-app deployments take the same path as
+	// multi-app ones.
+	apps github.Registry
 
 	// Token rather than app transport, because it reads repository content.
 	// Nil when unconfigured, which is what leaves the refresh task unstarted.
+	//
+	// Always the default app: the profile configuration selects each profile's
+	// app, so reading that configuration through a selected app is circular.
 	profileSource *github.Client
 
 	tokenCache cache.TokenCache[vendor.ProfileToken]
@@ -89,6 +100,14 @@ func configureUpstreamClients(ctx context.Context, cfg config.Config, validated 
 	gh, err := github.New(ctx, cfg.Github)
 	if err != nil {
 		return upstreamClients{}, fmt.Errorf("github configuration failed: %w", err)
+	}
+
+	// ctx must be the long-lived server context: it reaches KMS signing key
+	// construction, and a key built under a shorter-lived one boots cleanly
+	// then fails every mint once that context expires.
+	apps, err := github.NewRegistry(ctx, cfg.Github, gh)
+	if err != nil {
+		return upstreamClients{}, fmt.Errorf("github app registry configuration failed: %w", err)
 	}
 
 	var profileSource *github.Client
@@ -115,7 +134,7 @@ func configureUpstreamClients(ctx context.Context, cfg config.Config, validated 
 
 	return upstreamClients{
 		buildkite:     bk,
-		github:        gh,
+		apps:          apps,
 		profileSource: profileSource,
 		tokenCache:    tokenCache,
 	}, nil
@@ -140,6 +159,12 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 		slog.Info("serving under base path", "path", validated.basePath)
 	}
 
+	if validated.discloseAppIdentifiers {
+		slog.Warn("github app identifiers are disclosed in token responses; development use only",
+			"flag", "DEV_DISCLOSE_APP_IDENTIFIERS")
+	}
+	marshaler := newTokenResponseMarshaler(validated.discloseAppIdentifiers)
+
 	authorizedRouteMiddleware := alice.New(requestLimiter, auditor, validated.authorizer)
 	standardRouteMiddleware := alice.New(requestLimiter)
 
@@ -157,20 +182,23 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 
 	// Pipeline (repo) routes
 
+	mint := clients.apps.CreateAccessToken
+	resolveApp := clients.apps.Resolve
+
 	repoVendor := vendor.Auditor(
 		vendor.Authorized(
 			vendor.Cached[profile.PipelineProfileAttr](clients.tokenCache)(
-				vendor.Vending(vendor.PipelineRepositories(clients.buildkite.RepositoryLookup), clients.github.CreateAccessToken),
+				vendor.Vending(vendor.PipelineRepositories(clients.buildkite.RepositoryLookup), mint),
 			),
 		),
 	)
 
-	pipelineResolver := NewPipelineProfileResolver(orgProfile.GetPipelineProfile)
-	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, pipelineResolver))
+	pipelineResolver := NewPipelineProfileResolver(orgProfile.GetPipelineProfile, resolveApp)
+	pipelineTokenHandler := authorizedRouteMiddleware.Then(handlePostToken(repoVendor, pipelineResolver, marshaler))
 	mux.Handle("POST /token", pipelineTokenHandler)
 	mux.Handle("POST /token/{profile}", pipelineTokenHandler)
 
-	pipelineGitCredentialsHandler := authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, pipelineResolver))
+	pipelineGitCredentialsHandler := authorizedRouteMiddleware.Then(handlePostGitCredentials(repoVendor, pipelineResolver, marshaler))
 	mux.Handle("POST /git-credentials", pipelineGitCredentialsHandler)
 	mux.Handle("POST /git-credentials/{profile}", pipelineGitCredentialsHandler)
 
@@ -179,14 +207,14 @@ func configureServerRoutes(validated validatedConfig, clients upstreamClients, o
 	orgVendor := vendor.Auditor(
 		vendor.Authorized(
 			vendor.Cached[profile.OrganizationProfileAttr](clients.tokenCache)(
-				vendor.Vending(vendor.OrgRepositories, clients.github.CreateAccessToken),
+				vendor.Vending(vendor.OrgRepositories, mint),
 			),
 		),
 	)
 
-	orgResolver := NewOrgProfileResolver(orgProfile.GetOrganizationProfile)
-	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, orgResolver)))
-	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, orgResolver)))
+	orgResolver := NewOrgProfileResolver(orgProfile.GetOrganizationProfile, resolveApp)
+	mux.Handle("POST /organization/token/{profile}", authorizedRouteMiddleware.Then(handlePostToken(orgVendor, orgResolver, marshaler)))
+	mux.Handle("POST /organization/git-credentials/{profile}", authorizedRouteMiddleware.Then(handlePostGitCredentials(orgVendor, orgResolver, marshaler)))
 
 	// healthchecks are not included in telemetry or authorization
 	muxWithoutTelemetry.Handle("GET /healthcheck", standardRouteMiddleware.Then(handleHealthCheck()))
@@ -242,12 +270,12 @@ func runWithShutdownHooks(ctx context.Context, run func(context.Context, *server
 //
 // No timeout: a deadline of ours would be evidence about this service rather
 // than the profile source, so the platform's grace period is the backstop.
-func startProfileRefresh(taskCtx context.Context, orgProfile *profile.ProfileStore, source *github.Client, location string) error {
+func startProfileRefresh(taskCtx context.Context, orgProfile *profile.ProfileStore, source *github.Client, location string, usableApp profile.AppLookup) error {
 	if source == nil {
 		return nil
 	}
 
-	ready := profile.RefreshTask(orgProfile, *source, location).Start(taskCtx)
+	ready := profile.RefreshTask(orgProfile, *source, location, usableApp).Start(taskCtx)
 
 	return awaitFirstLoad(taskCtx, ready)
 }
@@ -322,7 +350,7 @@ func startServer(serverContext context.Context, shutdownHooks *server.ShutdownHo
 	// every exit from startup, not just once the server is serving.
 	shutdownHooks.Add("context", func() error { stop(); return nil })
 
-	err = startProfileRefresh(taskCtx, orgProfile, clients.profileSource, validated.orgProfileLocation)
+	err = startProfileRefresh(taskCtx, orgProfile, clients.profileSource, validated.orgProfileLocation, clients.apps.IsUsable)
 	if err != nil {
 		return err
 	}

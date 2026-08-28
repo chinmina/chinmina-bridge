@@ -104,3 +104,18 @@ func TestOptionalGroup_GroupKeyPreserved(t *testing.T) {
 	require.True(t, hasAttrs)
 	assert.Equal(t, slog.Attr{Key: "my-group", Value: slog.GroupValue(slog.String("field", "value"))}, a)
 }
+
+func TestOptionalGroup_Int64SkipsZero(t *testing.T) {
+	og := audit.NewOptionalGroup()
+	og.Int64("k", 0)
+	_, hasAttrs := og.Group("key")
+	assert.False(t, hasAttrs, "zero int64 should not mark modified")
+}
+
+func TestOptionalGroup_Int64AddsNonZero(t *testing.T) {
+	og := audit.NewOptionalGroup()
+	og.Int64("k", 1234567890123)
+	a, hasAttrs := og.Group("g")
+	require.True(t, hasAttrs)
+	assert.Equal(t, slog.Attr{Key: "g", Value: slog.GroupValue(slog.Int64("k", 1234567890123))}, a)
+}
