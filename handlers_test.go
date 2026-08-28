@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net/http"
@@ -24,6 +24,9 @@ import (
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 var defaultExpiry = time.Date(2024, time.May, 7, 17, 59, 36, 0, time.UTC)
@@ -45,6 +48,41 @@ func testAppResolver(name string) (github.AppIdentity, bool) {
 		return github.AppIdentity{}, false
 	}
 	return testApp, true
+}
+
+func TestRecordResolvedRequest_AddsProfileAndAppTraceAttributes(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	ctx, _ := audit.Context(t.Context())
+	ctx, span := tp.Tracer("test").Start(ctx, t.Name())
+
+	resolved := vendor.Resolved[struct{}]{
+		Ref: profile.ProfileRef{
+			Organization:     "acme",
+			Type:             profile.ProfileTypeOrg,
+			Name:             "packages",
+			ScopedRepository: "frontend",
+		},
+		Digest: "sha256:profile-version",
+		App: github.AppIdentity{
+			Name:           "package-writer",
+			ApplicationID:  123,
+			InstallationID: 456,
+		},
+	}
+
+	recordResolvedRequest(ctx, resolved, "frontend")
+	span.End()
+
+	spans := recorder.Ended()
+	require.Len(t, spans, 1)
+	assert.ElementsMatch(t, []attribute.KeyValue{
+		attribute.String("profile.version_digest", "sha256:profile-version"),
+		attribute.String("profile.name", "org:packages/frontend"),
+		attribute.String("profile.app.name", "package-writer"),
+		attribute.Int64("profile.app.application_id", 123),
+		attribute.Int64("profile.app.installation_id", 456),
+	}, spans[0].Attributes())
 }
 
 // testPipelineResolver returns a pipeline ProfileResolver whose lookup always

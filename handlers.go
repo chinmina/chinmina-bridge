@@ -11,13 +11,16 @@ import (
 	"strings"
 	"unicode"
 
+	"log/slog"
+
 	"github.com/chinmina/chinmina-bridge/internal/audit"
 	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/github"
 	"github.com/chinmina/chinmina-bridge/internal/jwt"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/vendor"
-	"log/slog"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // HTTPStatuser provides HTTP status information for errors
@@ -211,16 +214,15 @@ func resolveProfile[T profile.AppNamed](ctx context.Context, pv PathValuer, look
 	return vendor.Resolved[T]{Ref: ref, Profile: authProfile, Digest: digest, App: app}, nil
 }
 
-// recordResolvedRequest stamps the request's intent on the audit entry once
-// the profile has resolved. The canonical URN is written only for a profile
-// that actually exists, so its presence means "this name resolved" rather
-// than "this name was asked for"; unresolved names stay as the raw value
+// recordResolvedRequest stamps the request's intent on the audit entry and the
+// trace once the profile has resolved. The canonical URN is written only for a
+// profile that actually exists, so its presence means "this name resolved"
+// rather than "this name was asked for"; unresolved names stay as the raw value
 // stamped by recordRequestedName.
 //
 // The converse does not hold: net/http unescapes %2F after routing, so a raw
-// name can itself be URN-shaped. Distinguish a served request from a
-// rejected one via the entry's error field, never the shape of
-// requestedProfile.
+// name can itself be URN-shaped. Distinguish a served request from a rejected
+// one via the entry's error field, never the shape of requestedProfile.
 func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[T], requestedRepo string) {
 	entry := audit.Log(ctx)
 	entry.RequestedProfile = resolved.Ref.String()
@@ -231,6 +233,15 @@ func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[
 	entry.App = resolved.App.Name
 	entry.ApplicationID = resolved.App.ApplicationID
 	entry.InstallationID = resolved.App.InstallationID
+
+	tc := trace.SpanFromContext(ctx)
+	tc.SetAttributes(
+		attribute.String("profile.version_digest", resolved.Digest),
+		attribute.String("profile.name", resolved.Ref.ShortString()),
+		attribute.String("profile.app.name", resolved.App.Name),
+		attribute.Int64("profile.app.application_id", resolved.App.ApplicationID),
+		attribute.Int64("profile.app.installation_id", resolved.App.InstallationID),
+	)
 }
 
 // recordRequestedName stamps the raw profile path parameter before anything can
