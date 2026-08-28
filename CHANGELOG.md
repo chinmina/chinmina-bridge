@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/chinmina/chinmina-bridge/compare/v0.14.1...v0.15.0) (2026-08-28)
+
+
+### Features
+
+* create tokens through multiple GitHub Apps ([#374](https://github.com/chinmina/chinmina-bridge/issues/374)) ([a51c4a8](https://github.com/chinmina/chinmina-bridge/commit/a51c4a8b6da75ad4ac1c25b4a033c78b9c7b3268))
+
 ## [0.14.1](https://github.com/chinmina/chinmina-bridge/compare/v0.14.0...v0.14.1) (2026-08-25)
 
 
