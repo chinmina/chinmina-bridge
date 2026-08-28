@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -51,6 +52,10 @@ type privateKeyPEM string
 func (privateKeyPEM) String() string { return "[redacted]" }
 
 func (privateKeyPEM) GoString() string { return `"[redacted]"` }
+
+func (privateKeyPEM) Format(state fmt.State, _ rune) {
+	_, _ = io.WriteString(state, "[redacted]")
+}
 
 type appEntryConfig struct {
 	Name           string        `json:"name"`

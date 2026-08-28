@@ -107,9 +107,16 @@ func TestParseAppEntries_ErrorsNeverQuoteTheKey(t *testing.T) {
 	}
 }
 
-// LogValue guards slog, but fmt consults Stringer instead, so a format string
-// anywhere would otherwise print the key. %#v is excluded by design: it renders
-// Go syntax, and no production path formats a configuration entry that way.
+func TestPrivateKeyPEM_RedactsStringRepresentations(t *testing.T) {
+	key := privateKeyPEM("private key material")
+
+	assert.Equal(t, "[redacted]", key.String())
+	assert.Equal(t, `"[redacted]"`, key.GoString())
+}
+
+// LogValue guards slog, but fmt consults the value's formatting methods instead,
+// so every verb must redact the key, including verbs that do not match its
+// underlying string type.
 func TestPrivateKeyPEM_RedactsUnderFmt(t *testing.T) {
 	const canary = "c3VwZXItc2VjcmV0"
 
@@ -120,7 +127,7 @@ func TestPrivateKeyPEM_RedactsUnderFmt(t *testing.T) {
 		PrivateKey:     "-----BEGIN RSA PRIVATE KEY-----" + canary + "-----END RSA PRIVATE KEY-----",
 	}
 
-	for _, verb := range []string{"%v", "%+v", "%s", "%q", "%#v"} {
+	for _, verb := range []string{"%v", "%+v", "%s", "%q", "%#v", "%d"} {
 		t.Run("entry "+verb, func(t *testing.T) {
 			assert.NotContains(t, fmt.Sprintf(verb, entry), canary)
 		})
