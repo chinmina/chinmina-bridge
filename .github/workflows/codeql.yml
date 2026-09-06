@@ -75,14 +75,14 @@ jobs:
     # mise is the single version authority; install only just from
     # mise.toml, matching the lint job's approach for golangci-lint. Only
     # write the tool cache from main pushes so PRs don't pollute it.
-    - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
+    - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
       with:
         install_args: just
         cache_save: ${{ github.event_name == 'push' }}
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+      uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
       with:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
@@ -106,6 +106,6 @@ jobs:
         just build
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+      uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
       with:
         category: "/language:${{matrix.language}}"
