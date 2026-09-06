@@ -1,68 +1,32 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  description: "Golang config",
-  // Emit "fix(deps): ..." so dependency updates trigger a release-please patch
-  // release and ship, rather than sitting unreleased.
-  semanticCommits: "enabled",
-  semanticCommitType: "fix",
-  semanticCommitScope: "deps",
-  postUpdateOptions: [
-    // Tidy mod after updates: keeps compatibility with our go.mod checks.
-    "gomodTidy",
-    // Update import paths when updating dependencies: this is important when
-    // updating major versions of dependencies.
-    "gomodUpdateImportPaths",
+  extends: [
+    // Floats on chinmina/.github's default branch by design: a shared-config
+    // fix reaches every consuming repo without a migration. Do not pin.
+    "github>chinmina/.github//renovate/shared.json5",
   ],
-  regexManagers: [
-    {
-      // Go version version references
-      fileMatch: ["^.github/workflows/.*\\.ya?ml$"],
-      matchStrings: [
-        // Match go-version and GO_VERSION, common idioms in workflow files.
-        //
-        // Matches with or without quotes on value, and is specific about the
-        // format so it skips values like "{{ $env.GO_VERSION }}" but matches
-        // 1.18 or "1.18.2-beta"
-        '(?mi)go[-_]version\\s*:\\s*\\"?(?<currentValue>\\d+\\.\\d+(\\.\\d+)?(-.*)?)\\"?\\s*?(?:#|$)',
-      ],
-      depNameTemplate: "go",
-      packageNameTemplate: "golang/go",
-      datasourceTemplate: "golang-version",
-      // this is the versioning that the gomod datasource uses: it ensures that
-      // versions like 1.16 are upgraded without a patch version (i.e. 1.19 not
-      // 1.19.2)
-      versioningTemplate: "npm",
-    },
-    {
-      // golangci-lint version references
-      //
-      // The action is handled by Renovate in the standard fashion: this updates
-      // the version of the underlying tool that will be run by the action.
-      fileMatch: ["^.github/workflows/.*\\.ya?ml$"],
-      // Match version for golangci-lint as used by the action. This won't
-      // update "latest" references, and will only work if the "version" is the
-      // first parameter after "with". Trying to deal with YAML more generically
-      // in RE isn't a path to go down.
-      matchStrings: [
-        '(?mi)uses:\\s*golangci/golangci-lint-action(?:@[^\\n]*)?\\s+with:\\s+version\\s*:\\s*\\"?(?<currentValue>v\\d+\\.\\d+(\\.\\d+)?(-.*)?)\\"?\\s*?(?:#|$)',
-      ],
-      depNameTemplate: "golangci-lint",
-      packageNameTemplate: "golangci/golangci-lint", // github project name
-      datasourceTemplate: "github-tags",
-      // the action specifies that it allows the patch part of the version to be
-      // optional
-      versioningTemplate: "npm",
-    },
-  ],
+  // Repo-specific rules only. Order broad -> narrow: grouping rules first,
+  // narrowing overrides (pinDigests, enabled, allowedVersions, single-dependency
+  // exceptions) last. The ordering is intentional -- last match wins per-option.
   packageRules: [
     {
-      groupName: "go",
-      groupSlug: "golang",
-      matchDepNames: ["go", "golang"],
-    },
-    {
-      groupName: "aws-sdk-go-v2",
-      matchDepPatterns: ["^github\\.com/aws/aws-sdk-go-v2"],
+      // Risk-based narrowing override on the shared "Go dependencies" group:
+      // auth0's middleware exchanges jwx types across its API, so the two must
+      // always land in one PR. groupName is set here and this rule evaluates
+      // after the shared one, so the pair leaves the broad group entirely.
+      //
+      // Major updates stay separate from minor/patch (separateMajorMinor is
+      // left at the inherited default), but separateMultipleMajor is turned off
+      // for this group only: with it on, the two deps split apart whenever they
+      // target different major numbers, which is exactly the case the group
+      // exists to prevent. Result: one non-major PR and one major PR, each
+      // holding both deps.
+      groupName: "jwx-and-auth0-jwt-middleware",
+      matchDepNames: [
+        "github.com/lestrrat-go/jwx/v3",
+        "github.com/auth0/go-jwt-middleware/v3",
+      ],
+      separateMultipleMajor: false,
     },
     {
       // v2 is not a valid release: block major version updates
@@ -70,48 +34,18 @@
       allowedVersions: "<2.0.0",
     },
     {
+      // auth0's middleware pins jwx v3; a lone v4 bump ships both majors and
+      // silently breaks JWKS validation. Unblock when auth0 supports v4.
+      // Must stay after the grouping rule above; last match wins per-option.
+      matchDepNames: ["github.com/lestrrat-go/jwx/v3"],
+      allowedVersions: "<4.0.0",
+    },
+    {
       // This is a fork with the v3 module on a non-default branch
       // (v3-candidate). Renovate tracks the default branch (main), which is
       // the v2 module, producing broken replace directives.
       matchDepNames: ["github.com/chinmina/tink-go-awskms/v3"],
       enabled: false,
-    },
-    {
-      // auth0's middleware exchanges jwx types across its API, so jwx and the
-      // middleware must move as one.
-      groupName: "jwx-and-auth0-jwt-middleware",
-      matchDepNames: [
-        "github.com/lestrrat-go/jwx/v3",
-        "github.com/auth0/go-jwt-middleware/v3",
-      ],
-    },
-    {
-      // auth0's middleware pins jwx v3; a lone v4 bump ships both majors and
-      // silently breaks JWKS validation. Unblock when auth0 supports v4.
-      matchDepNames: ["github.com/lestrrat-go/jwx/v3"],
-      allowedVersions: "<4.0.0",
-    },
-    {
-      // OpenTelemetry modules must be updated together: they have inter-module
-      // version constraints and mixing versions causes build failures.
-      groupName: "opentelemetry",
-      matchDepPatterns: [
-        "^go\\.opentelemetry\\.io/",
-      ],
-    },
-    {
-      groupName: "github-actions",
-      groupSlug: "github-actions",
-      matchManagers: ["github-actions"],
-      // Pin actions to commit SHAs so a moved tag can't change what CI runs.
-      pinDigests: true,
-    },
-    {
-      // Keep the "verified-actions" branch pin: this repo SHA-pins its own
-      // transitive actions, so trust extends to one org-owned repo only.
-      // Must stay after the github-actions rule; last matching rule wins.
-      matchDepNames: ["chinmina/.github"],
-      pinDigests: false,
     },
   ],
 }
