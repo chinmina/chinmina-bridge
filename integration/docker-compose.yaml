@@ -35,7 +35,7 @@ x-openobserve-credentials:
 services:
   buildkite-agent:
     scale: 1
-    image: buildkite/agent:3
+    image: buildkite/agent:4
     depends_on:
       - chinmina-bridge
       - apk-cache
