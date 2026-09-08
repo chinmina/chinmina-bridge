@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.15.2](https://github.com/chinmina/chinmina-bridge/compare/v0.15.1...v0.15.2) (2026-09-08)
+
+
+### Bug Fixes
+
+* **deps:** update github actions ([#396](https://github.com/chinmina/chinmina-bridge/issues/396)) ([1c8ae9c](https://github.com/chinmina/chinmina-bridge/commit/1c8ae9c6e5aebf80efbe08095284cd0facd6e9a7))
+* **deps:** update go dependencies ([#399](https://github.com/chinmina/chinmina-bridge/issues/399)) ([8295b47](https://github.com/chinmina/chinmina-bridge/commit/8295b47e0d9cadd79d2d410a5d61c38e24bd5de3))
+* **deps:** update mise packages ([#398](https://github.com/chinmina/chinmina-bridge/issues/398)) ([4d8de9a](https://github.com/chinmina/chinmina-bridge/commit/4d8de9ac60cdeeec48f5a37db4cf1c81d0718be8))
+* **deps:** update module github.com/google/go-github/v90 to v91 ([#405](https://github.com/chinmina/chinmina-bridge/issues/405)) ([0ca4a42](https://github.com/chinmina/chinmina-bridge/commit/0ca4a4267ba0ac928f9b2c766bf1665ce4821701))
+* **deps:** update module google.golang.org/grpc to v1.83.1 [security] ([#395](https://github.com/chinmina/chinmina-bridge/issues/395)) ([f7e69f5](https://github.com/chinmina/chinmina-bridge/commit/f7e69f51c39843ee4da4bf5a4d41e72b9b1503e8))
+
 ## [0.15.1](https://github.com/chinmina/chinmina-bridge/compare/v0.15.0...v0.15.1) (2026-08-28)
 
 
