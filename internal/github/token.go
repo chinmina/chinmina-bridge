@@ -16,7 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	appconfig "github.com/chinmina/chinmina-bridge/internal/config"
-	"github.com/google/go-github/v90/github"
+	"github.com/google/go-github/v91/github"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"log/slog"
 
