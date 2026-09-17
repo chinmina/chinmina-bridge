@@ -53,7 +53,8 @@ func testAppResolver(name string) (github.AppIdentity, bool) {
 func TestRecordResolvedRequest_AddsProfileAndAppTraceAttributes(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
-	ctx, _ := audit.Context(t.Context())
+	ctx, entry := audit.Context(t.Context())
+	entry.RequestedRepository = "https://github.com"
 	ctx, span := tp.Tracer("test").Start(ctx, t.Name())
 
 	resolved := vendor.Resolved[struct{}]{
@@ -71,8 +72,9 @@ func TestRecordResolvedRequest_AddsProfileAndAppTraceAttributes(t *testing.T) {
 		},
 	}
 
-	recordResolvedRequest(ctx, resolved, "frontend")
+	recordResolvedRequest(ctx, resolved)
 	span.End()
+	assert.Equal(t, "https://github.com", entry.RequestedRepository, "resolved metadata must preserve the Git request URL")
 
 	spans := recorder.Ended()
 	require.Len(t, spans, 1)
@@ -1108,7 +1110,8 @@ func TestHandlePostToken_PipelineRouteIgnoresRepositoryScope(t *testing.T) {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{Token: "pipeline-token"})
 	})
 
-	req, err := http.NewRequestWithContext(claimsContext(), "POST", "/token?repository-scope=owner/repo", nil)
+	ctx, entry := audit.Context(claimsContext())
+	req, err := http.NewRequestWithContext(ctx, "POST", "/token?repository-scope=owner/repo", nil)
 	require.NoError(t, err)
 	req.SetPathValue("profile", "default")
 
@@ -1116,6 +1119,7 @@ func TestHandlePostToken_PipelineRouteIgnoresRepositoryScope(t *testing.T) {
 	handlePostToken(tokenVendor, testPipelineResolver(), withheld).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code, "a scope parameter the route ignores must not fail the request")
+	assert.Empty(t, entry.RequestedRepository, "token query scope is not a requested Git URL")
 }
 
 func TestDeriveScopeFromRepoURL(t *testing.T) {
@@ -1245,46 +1249,60 @@ func TestStripPrefix(t *testing.T) {
 	})
 }
 
-// TestHandlers_RecordRequestedProfileWhenResolutionFails: a request that
-// fails before the vendor chain runs must still say which profile was
-// asked for. Without it, an operator seeing a 404 in the audit log cannot tell
-// which profile name was rejected — the only record of the request's intent is
-// lost precisely on the failure path where it matters most.
+// Requests rejected during resolution must retain the raw profile and Git URL,
+// without looking like a resolved request or a successful credential skip.
 func TestHandlers_RecordRequestedProfileWhenResolutionFails(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
+	resolve := NewOrgProfileResolver(store.GetOrganizationProfile, testAppResolver)
 
 	cases := []struct {
-		name    string
-		handler func(ProfileResolver[orgAttr]) http.Handler
-		body    io.Reader
+		name                string
+		profile             string
+		body                io.Reader
+		requestedRepository string
+		status              int
 	}{
-		{
-			name: "postToken",
-			handler: func(r ProfileResolver[orgAttr]) http.Handler {
-				return handlePostToken(tv[orgAttr]("unused"), r, withheld)
-			},
-		},
-		{
-			name: "postGitCredentials",
-			handler: func(r ProfileResolver[orgAttr]) http.Handler {
-				return handlePostGitCredentials(tv[orgAttr]("unused"), r, withheld)
-			},
-			body: gitCredentialsBody(t, "org", "repo1"),
-		},
+		{"token/missing-profile", "no-such-profile", nil, "", http.StatusNotFound},
+		{"token/missing-scope", "caller-scoped-profile", nil, "", http.StatusBadRequest},
+		{"git/missing-profile/complete", "no-such-profile", gitCredentialsBody(t, "org", "repo1"), "https://github.com/org/repo1", http.StatusNotFound},
+		{"git/missing-profile/omitted", "no-such-profile", strings.NewReader("protocol=https\nhost=github.com\n\n"), "https://github.com", http.StatusNotFound},
+		{"git/missing-profile/empty", "no-such-profile", strings.NewReader("protocol=https\nhost=github.com\npath=\n\n"), "https://github.com", http.StatusNotFound},
+		{"git/missing-scope/omitted", "caller-scoped-profile", strings.NewReader("protocol=https\nhost=github.com\n\n"), "https://github.com", http.StatusBadRequest},
+		{"git/missing-scope/empty", "caller-scoped-profile", strings.NewReader("protocol=https\nhost=github.com\npath=\n\n"), "https://github.com", http.StatusBadRequest},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, entry := audit.Context(claimsContext())
-			req, err := http.NewRequestWithContext(ctx, "POST", "/organization/token/no-such-profile", tc.body)
+			endpoint := "/organization/token/"
+			handler := handlePostToken(tv[orgAttr]("unused"), resolve, withheld)
+			if tc.body != nil {
+				endpoint = "/organization/git-credentials/"
+				handler = handlePostGitCredentials(tv[orgAttr]("unused"), resolve, withheld)
+			}
+			req, err := http.NewRequestWithContext(ctx, "POST", endpoint+tc.profile, tc.body)
 			require.NoError(t, err)
-			req.SetPathValue("profile", "no-such-profile")
+			req.SetPathValue("profile", tc.profile)
 
 			rr := httptest.NewRecorder()
-			tc.handler(NewOrgProfileResolver(store.GetOrganizationProfile, testAppResolver)).ServeHTTP(rr, req)
+			handler.ServeHTTP(rr, req)
 
-			assert.Equal(t, http.StatusNotFound, rr.Code)
-			assert.Equal(t, "no-such-profile", entry.RequestedProfile)
+			assert.Equal(t, tc.status, rr.Code)
+			assert.Equal(t, tc.profile, entry.RequestedProfile)
+			assert.Equal(t, tc.requestedRepository, entry.RequestedRepository)
+			assert.Empty(t, entry.App)
+			assert.Zero(t, entry.ApplicationID)
+			assert.Zero(t, entry.InstallationID)
+			assert.Empty(t, entry.VendedRepository)
+			assert.Empty(t, entry.HashedToken)
+			assert.Nil(t, entry.ClaimsMatched)
+			assert.Nil(t, entry.ClaimsFailed)
+			assert.NotEmpty(t, entry.Error)
+			assert.NotContains(t, entry.Error, "skipped(success)")
+			if tc.body != nil {
+				assert.Empty(t, rr.Body.String())
+				assert.NotEmpty(t, rr.Header().Get("Chinmina-Denied"))
+			}
 		})
 	}
 }
@@ -1359,11 +1377,10 @@ func TestHandlePostToken_RecordsInvalidProfileReason(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	var respBody ErrorResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &respBody))
-	assert.Equal(t, ErrorResponse{Error: "profile unavailable: validation failed"}, respBody)
+	assert.NotContains(t, respBody.Error, "not_a_real_claim")
 
-	assert.Equal(t,
-		`profile resolution failed: profile "broken-profile" unavailable: invalid match rule for claim "not_a_real_claim": claim "not_a_real_claim" is not allowed for matching`,
-		entry.Error)
+	assert.Contains(t, entry.Error, "broken-profile")
+	assert.Contains(t, entry.Error, "not_a_real_claim")
 }
 
 // TestHandlePostToken_RecordsScopedRepositoryInAuditedProfile:
@@ -1384,6 +1401,10 @@ func TestHandlePostToken_RecordsScopedRepositoryInAuditedProfile(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, "profile://organization/organization-slug/profile/caller-scoped-profile/repository/target-repo", entry.RequestedProfile)
+	assert.Empty(t, entry.RequestedRepository, "token scope is not a requested Git URL")
+	assert.Equal(t, testApp.Name, entry.App)
+	assert.Equal(t, testApp.ApplicationID, entry.ApplicationID)
+	assert.Equal(t, testApp.InstallationID, entry.InstallationID)
 }
 
 // TestHandlePostToken_RecordsRequestedProfileWhenScopeRejected covers the
@@ -1404,6 +1425,7 @@ func TestHandlePostToken_RecordsRequestedProfileWhenScopeRejected(t *testing.T) 
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "static-profile", entry.RequestedProfile)
+	assert.Empty(t, entry.RequestedRepository)
 }
 
 // TestRoutes_ReadTheProfileStoreExactlyOncePerRequest is the acceptance

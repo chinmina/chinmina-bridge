@@ -65,6 +65,11 @@ type Entry struct {
 	ClaimsFailed     []ClaimFailure
 }
 
+// RecordSuccessfulSkip records a successful vend that has no matching credentials.
+func (e *Entry) RecordSuccessfulSkip() {
+	e.Error = "skipped(success): profile has no credentials for requested repository"
+}
+
 // Begin sets up the audit log entry for the current request with details from the request.
 func (e *Entry) Begin(r *http.Request) {
 	e.Path = r.URL.Path

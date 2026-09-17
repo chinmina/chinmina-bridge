@@ -79,6 +79,8 @@ func WriteProperties(props *ArrayMap, w io.Writer) error {
 	return nil
 }
 
+// ConstructRepositoryURL reconstructs a URL from required protocol and host
+// properties. An omitted path is treated as empty; explicit paths are preserved.
 func ConstructRepositoryURL(props *ArrayMap) (string, error) {
 	u := &url.URL{}
 
@@ -92,10 +94,7 @@ func ConstructRepositoryURL(props *ArrayMap) (string, error) {
 		return "", errors.New("host must be present")
 	}
 
-	path, ok := props.Lookup("path")
-	if !ok {
-		return "", errors.New("path must be present")
-	}
+	path, _ := props.Lookup("path")
 
 	u.Scheme = protocol
 	u.Host = host

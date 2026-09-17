@@ -273,16 +273,6 @@ func TestConstructURL(t *testing.T) {
 			failure:  "host must be present",
 		},
 		{
-			name: "fails without path",
-			input: [][]string{
-				{"protocol", "https"},
-				{"host", "github.com"},
-			},
-			expected: "",
-			failed:   true,
-			failure:  "path must be present",
-		},
-		{
 			// validating the correct host is handled elsewhere, outside the
 			// responsibility of this function
 			name: "succeeds with non-Github",
@@ -338,6 +328,20 @@ func TestConstructURL(t *testing.T) {
 			}
 
 			assert.Equal(t, c.expected, url)
+		})
+	}
+}
+
+func TestConstructURL_PathPresence(t *testing.T) {
+	for _, name := range []string{"omitted", "empty"} {
+		t.Run(name, func(t *testing.T) {
+			properties := [][]string{{"protocol", "https"}, {"host", "github.com"}}
+			if name == "empty" {
+				properties = append(properties, []string{"path", ""})
+			}
+			url, err := credentialhandler.ConstructRepositoryURL(credentialhandler.NewMapFromArray(properties))
+			require.NoError(t, err)
+			assert.Equal(t, "https://github.com", url)
 		})
 	}
 }

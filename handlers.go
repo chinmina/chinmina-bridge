@@ -214,8 +214,8 @@ func resolveProfile[T profile.AppNamed](ctx context.Context, pv PathValuer, look
 	return vendor.Resolved[T]{Ref: ref, Profile: authProfile, Digest: digest, App: app}, nil
 }
 
-// recordResolvedRequest stamps the request's intent on the audit entry and the
-// trace once the profile has resolved. The canonical URN is written only for a
+// recordResolvedRequest stamps resolved profile and app metadata on the audit
+// entry and trace. The canonical URN is written only for a
 // profile that actually exists, so its presence means "this name resolved"
 // rather than "this name was asked for"; unresolved names stay as the raw value
 // stamped by recordRequestedName.
@@ -223,10 +223,9 @@ func resolveProfile[T profile.AppNamed](ctx context.Context, pv PathValuer, look
 // The converse does not hold: net/http unescapes %2F after routing, so a raw
 // name can itself be URN-shaped. Distinguish a served request from a rejected
 // one via the entry's error field, never the shape of requestedProfile.
-func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[T], requestedRepo string) {
+func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[T]) {
 	entry := audit.Log(ctx)
 	entry.RequestedProfile = resolved.Ref.String()
-	entry.RequestedRepository = requestedRepo
 
 	// Recorded at resolution rather than at vend, so a failed mint still names
 	// the app, and a cache hit predating the identifiers still reports them.
@@ -337,7 +336,7 @@ func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve Pr
 			writeJSONError(r.Context(), w, resolveError{err: err})
 			return
 		}
-		recordResolvedRequest(r.Context(), resolved, "")
+		recordResolvedRequest(r.Context(), resolved)
 
 		result := tokenVendor(r.Context(), resolved, "")
 
@@ -389,6 +388,7 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid request parameters: %w", err))
 			return
 		}
+		audit.Log(r.Context()).RequestedRepository = requestedRepoURL
 
 		// Derive an implicit scope hint from the Git-supplied URL for org
 		// routes. The resolver uses this as a fallback for caller-scoped
@@ -402,11 +402,10 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 
 		resolved, err := resolve.Resolve(r.Context(), r, "", implicitScope)
 		if err != nil {
-			audit.Log(r.Context()).RequestedRepository = requestedRepoURL
 			writeTextError(r.Context(), w, resolveError{err: err})
 			return
 		}
-		recordResolvedRequest(r.Context(), resolved, requestedRepoURL)
+		recordResolvedRequest(r.Context(), resolved)
 
 		result := tokenVendor(r.Context(), resolved, requestedRepoURL)
 

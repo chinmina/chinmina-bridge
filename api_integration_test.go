@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
@@ -13,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chinmina/chinmina-bridge/internal/audit"
+	"github.com/chinmina/chinmina-bridge/internal/credentialhandler"
 	"github.com/chinmina/chinmina-bridge/internal/jwt/jwxtest"
 	"github.com/chinmina/chinmina-bridge/internal/profile"
 	"github.com/chinmina/chinmina-bridge/internal/profile/profiletest"
@@ -436,6 +439,295 @@ func TestIntegrationPipelineGitCredentials_ProfileNotFound(t *testing.T) {
 	var apiErr *APIError
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, http.StatusNotFound, apiErr.StatusCode)
+}
+
+// auditedGitCredentialRequest observes the entry after the real routing,
+// authentication, and vendor chain completes. Only the audit context is seeded;
+// identity still comes from the signed JWT sent over HTTP.
+func auditedGitCredentialRequest(t *testing.T, harness *APITestHarness) func(*testing.T, string, string, string) (*Response, audit.Entry) {
+	t.Helper()
+	entries := make(chan audit.Entry, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, entry := audit.Context(r.Context())
+		harness.Server.Config.Handler.ServeHTTP(w, r.WithContext(ctx))
+		entries <- *entry
+	}))
+	t.Cleanup(server.Close)
+	client := &TestClient{baseURL: server.URL, client: server.Client()}
+
+	return func(t *testing.T, endpoint, token, body string) (*Response, audit.Entry) {
+		t.Helper()
+		response, err := client.Request(http.MethodPost, endpoint, token, strings.NewReader(body))
+		require.NoError(t, err)
+		return response, <-entries
+	}
+}
+
+func TestIntegrationGitCredentials_PathPresence(t *testing.T) {
+	yamlContent, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+
+	profiles := []struct {
+		name           string
+		endpoint       string
+		profileName    string
+		repository     string
+		missingOutcome string
+	}{
+		{"pipeline", "/git-credentials", "default", "test-repo", "skip"},
+		{"static", "/organization/git-credentials/static-profile", "static-profile", "repo1", "skip"},
+		{"caller-scoped", "/organization/git-credentials/caller-scoped-profile", "caller-scoped-profile", "target-repo", "scope"},
+		{"wildcard", "/organization/git-credentials/all-repos-profile", "all-repos-profile", "any-repo", "credentials"},
+	}
+	paths := []struct {
+		name    string
+		path    string
+		omitted bool
+		org     bool
+	}{
+		{name: "omitted", omitted: true},
+		{name: "empty"},
+		{name: "root", path: "/"},
+		{name: "matching-org", path: "test-org", org: true},
+		{name: "matching-org-slash", path: "test-org/", org: true},
+		{name: "other-org", path: "other-org", org: true},
+		{name: "other-org-slash", path: "other-org/", org: true},
+	}
+
+	for _, prof := range profiles {
+		t.Run(prof.name, func(t *testing.T) {
+			run := func(t *testing.T, path string, omitted bool, outcome string) {
+				t.Helper()
+				harness := NewAPITestHarness(t)
+				harness.UpdateProfiles(t, string(yamlContent))
+				harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+				harness.GitHubMock.Token = "ghs_path_presence"
+				token := harness.PipelineToken()
+				request := auditedGitCredentialRequest(t, harness)
+
+				// Omission must be raw input: GitCredentialRequest always adds path=.
+				body := "protocol=https\nhost=github.com\n\n"
+				if !omitted {
+					body = "protocol=https\nhost=github.com\npath=" + path + "\n\n"
+				}
+				requestedURL := "https://github.com"
+				if path != "" {
+					requestedURL += "/" + strings.TrimPrefix(path, "/")
+				}
+
+				var emptyControl *Response
+				var emptyAudit audit.Entry
+				if outcome == "scope" {
+					emptyControl, emptyAudit = request(t, prof.endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
+					require.Equal(t, http.StatusBadRequest, emptyControl.StatusCode)
+					require.Empty(t, emptyControl.Body)
+					require.NotEmpty(t, emptyControl.Headers.Get("Chinmina-Denied"))
+					require.Equal(t, "https://github.com", emptyAudit.RequestedRepository)
+				}
+
+				response, entry := request(t, prof.endpoint, token, body)
+				if outcome == "scope" {
+					assert.Equal(t, emptyControl.StatusCode, response.StatusCode)
+					assert.Equal(t, emptyControl.Body, response.Body)
+					assert.Equal(t, emptyControl.Headers.Get("Content-Type"), response.Headers.Get("Content-Type"))
+					assert.Equal(t, emptyControl.Headers.Get("Chinmina-Denied"), response.Headers.Get("Chinmina-Denied"))
+					assert.Equal(t, requestedURL, entry.RequestedRepository)
+					assert.Equal(t, emptyAudit.Error, entry.Error)
+					assert.Equal(t, prof.profileName, entry.RequestedProfile)
+					assert.Empty(t, entry.App)
+					assert.Empty(t, entry.HashedToken)
+					assert.Nil(t, entry.ClaimsMatched, "missing scope fails before profile authorization")
+					return
+				}
+
+				require.Equal(t, http.StatusOK, response.StatusCode)
+				assert.Equal(t, "text/plain", response.Headers.Get("Content-Type"))
+				assert.Empty(t, response.Headers.Get("Chinmina-Denied"))
+				assert.Equal(t, requestedURL, entry.RequestedRepository)
+				assert.Equal(t, http.StatusOK, entry.Status)
+				assert.True(t, entry.Authorized)
+				assert.Equal(t, "test-org", entry.OrganizationSlug)
+				assert.Equal(t, "test-pipeline", entry.PipelineSlug)
+				assert.NotNil(t, entry.ClaimsMatched)
+				app := harness.Apps.DefaultIdentity()
+				assert.Equal(t, app.Name, entry.App)
+				assert.Equal(t, app.ApplicationID, entry.ApplicationID)
+				assert.Equal(t, app.InstallationID, entry.InstallationID)
+				ref := profile.ProfileRef{Organization: "test-org", Type: profile.ProfileTypeOrg, Name: prof.profileName}
+				if prof.name == "pipeline" {
+					ref.Type = profile.ProfileTypeRepo
+					ref.PipelineSlug = "test-pipeline"
+					ref.PipelineID = "pipeline-123"
+				} else if prof.name == "caller-scoped" {
+					ref.ScopedRepository = prof.repository
+				}
+				assert.Equal(t, ref.String(), entry.RequestedProfile)
+
+				if outcome == "skip" {
+					assert.Empty(t, response.Body, "unmatched credentials must contain zero response bytes")
+					assert.True(t, strings.HasPrefix(entry.Error, "skipped(success):"))
+					assert.Empty(t, entry.HashedToken)
+					assert.Empty(t, entry.VendedRepository)
+					return
+				}
+
+				props, err := credentialhandler.ReadProperties(strings.NewReader(string(response.Body)))
+				require.NoError(t, err)
+				assert.Equal(t, "https", props.Get("protocol"))
+				assert.Equal(t, "github.com", props.Get("host"))
+				assert.Equal(t, strings.TrimPrefix(path, "/"), props.Get("path"))
+				assert.Equal(t, "x-access-token", props.Get("username"))
+				assert.Equal(t, "ghs_path_presence", props.Get("password"))
+				assert.Equal(t, fmt.Sprint(harness.GitHubMock.Expiry.Unix()), props.Get("password_expiry_utc"))
+				assert.Empty(t, entry.Error)
+				assert.NotEmpty(t, entry.HashedToken)
+				assert.Equal(t, requestedURL, entry.VendedRepository)
+				assert.Equal(t, harness.GitHubMock.Expiry.Unix(), entry.ExpirySecs)
+				if prof.name == "wildcard" {
+					assert.Equal(t, []string{profile.LiteralAllRepositories}, entry.Repositories)
+				}
+
+				if prof.name == "wildcard" && path == "" {
+					require.Equal(t, 1, harness.GitHubMock.TokenRequestCount(), "the first request must mint on a cold cache")
+					harness.GitHubMock.Token = "ghs_must_not_replace_cached_token"
+					warmBodies := []string{body}
+					if omitted {
+						// Keep omitted requests out of the baseline explicit-path controls.
+						warmBodies = append(warmBodies, "protocol=https\nhost=github.com\npath=\n\n")
+					}
+					for _, warmBody := range warmBodies {
+						warm, warmAudit := request(t, prof.endpoint, token, warmBody)
+						assert.Equal(t, response.StatusCode, warm.StatusCode)
+						assert.Equal(t, response.Body, warm.Body)
+						assert.Equal(t, response.Headers.Get("Content-Type"), warm.Headers.Get("Content-Type"))
+						assert.Empty(t, warm.Headers.Get("Chinmina-Denied"))
+						assert.Equal(t, entry.RequestedRepository, warmAudit.RequestedRepository)
+						assert.Equal(t, entry.HashedToken, warmAudit.HashedToken)
+						assert.Empty(t, warmAudit.Error)
+						assert.Equal(t, 1, harness.GitHubMock.TokenRequestCount(), "warm credentials must not mint another token")
+					}
+				}
+			}
+
+			for _, path := range paths {
+				t.Run(path.name, func(t *testing.T) {
+					if path.org {
+						t.Run("git-path", func(t *testing.T) { run(t, path.path, false, prof.missingOutcome) })
+						t.Run("leading-slash", func(t *testing.T) { run(t, "/"+path.path, false, prof.missingOutcome) })
+						return
+					}
+					run(t, path.path, path.omitted, prof.missingOutcome)
+				})
+			}
+			t.Run("complete-repository", func(t *testing.T) {
+				run(t, "test-org/"+prof.repository, false, "credentials")
+			})
+			if prof.missingOutcome == "skip" {
+				t.Run("nonmatching-repository", func(t *testing.T) {
+					run(t, "test-org/not-in-profile", false, "skip")
+				})
+			}
+		})
+	}
+}
+
+func TestIntegrationGitCredentials_PathPresenceFailures(t *testing.T) {
+	tests := []struct {
+		name        string
+		endpoint    string
+		profileName string
+		fixture     string
+		status      int
+		resolved    bool
+		configure   func(*APITestHarness)
+	}{
+		{
+			name: "pipeline-profile-not-found", endpoint: "/git-credentials/no-such-profile",
+			profileName: "no-such-profile", status: http.StatusNotFound,
+		},
+		{
+			name: "organization-profile-not-found", endpoint: "/organization/git-credentials/no-such-profile",
+			profileName: "no-such-profile", status: http.StatusNotFound,
+		},
+		{
+			name: "denied-profile", endpoint: "/organization/git-credentials/release-only-profile",
+			profileName: "release-only-profile", fixture: "testdata/org-profiles-matched.yaml",
+			status: http.StatusForbidden, resolved: true,
+		},
+		{
+			name: "buildkite-lookup", endpoint: "/git-credentials", profileName: "default",
+			status: http.StatusInternalServerError, resolved: true,
+			configure: func(h *APITestHarness) { h.BuildkiteMock.StatusCode = http.StatusServiceUnavailable },
+		},
+		{
+			name: "github-token-denied", endpoint: "/organization/git-credentials/all-repos-profile",
+			profileName: "all-repos-profile", fixture: "testdata/org-profiles-scoped.yaml",
+			status: http.StatusForbidden, resolved: true,
+			configure: func(h *APITestHarness) { h.GitHubMock.StatusCode = http.StatusForbidden },
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			harness := NewAPITestHarness(t)
+			if tc.fixture != "" {
+				yamlContent, err := os.ReadFile(tc.fixture)
+				require.NoError(t, err)
+				harness.UpdateProfiles(t, string(yamlContent))
+			}
+			if tc.configure != nil {
+				tc.configure(harness)
+			}
+			token := harness.PipelineToken()
+			request := auditedGitCredentialRequest(t, harness)
+			empty, emptyAudit := request(t, tc.endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
+			require.Equal(t, tc.status, empty.StatusCode)
+			require.Empty(t, empty.Body)
+			require.NotEmpty(t, empty.Headers.Get("Chinmina-Denied"))
+			require.Equal(t, "https://github.com", emptyAudit.RequestedRepository)
+
+			for _, name := range []string{"empty", "omitted"} {
+				t.Run(name, func(t *testing.T) {
+					body := "protocol=https\nhost=github.com\n\n"
+					if name == "empty" {
+						body = "protocol=https\nhost=github.com\npath=\n\n"
+					}
+					response, entry := request(t, tc.endpoint, token, body)
+					assert.Equal(t, empty.StatusCode, response.StatusCode)
+					assert.Equal(t, empty.Body, response.Body)
+					assert.Equal(t, empty.Headers.Get("Content-Type"), response.Headers.Get("Content-Type"))
+					assert.Equal(t, empty.Headers.Get("Chinmina-Denied"), response.Headers.Get("Chinmina-Denied"))
+					assert.Equal(t, emptyAudit.RequestedRepository, entry.RequestedRepository)
+					assert.Equal(t, emptyAudit.RequestedProfile, entry.RequestedProfile)
+					assert.NotEmpty(t, entry.Error)
+					assert.False(t, strings.HasPrefix(entry.Error, "skipped(success):"))
+					assert.Empty(t, entry.HashedToken)
+					assert.Empty(t, entry.VendedRepository)
+					if tc.resolved {
+						app := harness.Apps.DefaultIdentity()
+						assert.Equal(t, app.Name, entry.App)
+						assert.Equal(t, app.ApplicationID, entry.ApplicationID)
+						assert.Equal(t, app.InstallationID, entry.InstallationID)
+						ref := profile.ProfileRef{Organization: "test-org", Type: profile.ProfileTypeOrg, Name: tc.profileName}
+						if tc.endpoint == "/git-credentials" {
+							ref.Type = profile.ProfileTypeRepo
+							ref.PipelineSlug = "test-pipeline"
+							ref.PipelineID = "pipeline-123"
+						}
+						assert.Equal(t, ref.String(), entry.RequestedProfile)
+					} else {
+						assert.Equal(t, tc.profileName, entry.RequestedProfile)
+						assert.Empty(t, entry.App)
+						assert.Zero(t, entry.ApplicationID)
+						assert.Zero(t, entry.InstallationID)
+					}
+					if tc.name == "denied-profile" {
+						assert.Equal(t, []audit.ClaimFailure{{Claim: "pipeline_slug", Pattern: "release-pipeline", Value: "test-pipeline"}}, entry.ClaimsFailed)
+					}
+				})
+			}
+		})
+	}
 }
 
 // ============================================================================
