@@ -304,6 +304,36 @@ func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
 	assert.Equal(t, "", respBody)
 }
 
+func TestHandlePostGitCredentials_DeclinesHostOnlyRequest(t *testing.T) {
+	// Nil resolvers and vendors ensure host-wide requests cannot reach profile
+	// resolution or mint credentials, regardless of profile family.
+	handlers := []struct {
+		name    string
+		handler http.Handler
+	}{
+		{"pipeline", handlePostGitCredentials[pipelineAttr](nil, ProfileResolver[pipelineAttr]{}, withheld)},
+		{"organization", handlePostGitCredentials[orgAttr](nil, ProfileResolver[orgAttr]{AcceptsRepositoryScope: true}, withheld)},
+	}
+	for _, h := range handlers {
+		t.Run(h.name, func(t *testing.T) {
+			for _, body := range []string{"protocol=https\nhost=github.com\n\n", "protocol=https\nhost=github.com\npath=\n\n"} {
+				ctx, entry := audit.Context(claimsContext())
+				req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/git-credentials", strings.NewReader(body))
+				rr := httptest.NewRecorder()
+				h.handler.ServeHTTP(rr, req)
+
+				assert.Equal(t, http.StatusOK, rr.Code)
+				assert.Empty(t, rr.Body.String())
+				assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+				assert.Equal(t, "0", rr.Header().Get("Content-Length"))
+				assert.Empty(t, rr.Header().Get("Chinmina-Denied"))
+				assert.Equal(t, "https://github.com", entry.RequestedRepository)
+				assert.Empty(t, entry.Error)
+			}
+		})
+	}
+}
+
 func TestHandlePostGitCredentials_ReturnsFailureOnInvalidRequest(t *testing.T) {
 	tokenVendor := tv[pipelineAttr]("expected-token-value")
 

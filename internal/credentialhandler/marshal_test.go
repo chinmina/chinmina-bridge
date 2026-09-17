@@ -273,14 +273,12 @@ func TestConstructURL(t *testing.T) {
 			failure:  "host must be present",
 		},
 		{
-			name: "fails without path",
+			name: "succeeds without path",
 			input: [][]string{
 				{"protocol", "https"},
 				{"host", "github.com"},
 			},
-			expected: "",
-			failed:   true,
-			failure:  "path must be present",
+			expected: "https://github.com",
 		},
 		{
 			// validating the correct host is handled elsewhere, outside the

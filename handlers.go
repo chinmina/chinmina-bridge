@@ -390,6 +390,15 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			return
 		}
 
+		// Git omits path unless credential.useHttpPath is enabled. A host-wide
+		// request is valid, but cannot identify a repository to authorize. Decline
+		// before resolution or vending, including for wildcard org profiles.
+		if path, _ := requestedRepo.Lookup("path"); path == "" {
+			audit.Log(r.Context()).RequestedRepository = requestedRepoURL
+			writeEmptyCredentials(w)
+			return
+		}
+
 		// Derive an implicit scope hint from the Git-supplied URL for org
 		// routes. The resolver uses this as a fallback for caller-scoped
 		// profiles and ignores it for static-list or all-repositories
@@ -419,9 +428,7 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			// that we understand the request but cannot fulfil it: this is a
 			// successful case for a credential helper, so we successfully return
 			// but don't offer credentials.
-			w.Header().Set("Content-Type", "text/plain")
-			w.Header().Add("Content-Length", "0")
-			w.WriteHeader(http.StatusOK)
+			writeEmptyCredentials(w)
 			return
 		}
 
@@ -441,6 +448,13 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			return
 		}
 	})
+}
+
+// writeEmptyCredentials lets Git continue to the next credential helper.
+func writeEmptyCredentials(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Length", "0")
+	w.WriteHeader(http.StatusOK)
 }
 
 func handleHealthCheck() http.Handler {
