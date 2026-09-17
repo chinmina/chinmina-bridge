@@ -1,280 +1,113 @@
 # AGENTS.md
 
-This file provides guidance to AI agents when working with code in this repository.
+Repository-specific guidance for coding agents. Keep this file focused on constraints and workflows that are not reliably inferred from the code or standard Go practice.
 
-Also load @~/.agents/local/chinmina-bridge.md when present to act as local instructions across worktrees.
+If `~/.agents/local/chinmina-bridge.md` exists, load it as additional local guidance. Do not fail if it is absent.
 
-## Project Purpose
+## Project
 
-Chinmina Bridge is an HTTP service that generates short-lived GitHub access tokens for Buildkite CI/CD pipelines. It uses GitHub Apps for token generation and Buildkite OIDC tokens for authorization, replacing the need for SSH deploy keys or long-lived Personal Access Tokens.
+Chinmina Bridge is a Go HTTP service that exchanges Buildkite OIDC identity for short-lived, least-privilege GitHub App tokens. It supports pipeline and organization profiles, multiple GitHub Apps, optional distributed caching, and OpenTelemetry instrumentation.
 
-Full documentation: https://chinmina.github.io
+User and operator documentation: <https://docs.chinmina.dev>
 
-## Development Commands
+## Source of truth
 
-### Build and Run
+Before changing behavior, inspect the implementation and adjacent tests. Prefer these sources over descriptions in this file:
 
-```bash
-just build              # Build all binaries in parallel (container + local + oidc-local)
-just build-container    # Build only the Linux container binary
-just build-local        # Build only the local dev binary; extra `go build` args are forwarded
-just build-oidc         # Build only the oidc-local test helper
-just run                # Build and run locally
-just docker-up          # Build, then run integration tests with docker-compose
-just docker down        # Stop the stack; `docker` forwards any args to `docker compose`
-just docker logs -f     # ...so `ps`, `logs`, `exec` and the rest work the same way
-```
+- `justfile`: supported development and CI commands
+- `mise.toml`: development and CI toolchain versions
+- `go.mod`: Go version requirement and dependencies
+- `.envrc`: local configuration variables
+- `cmd/chinmina-bridge/main.go`: process entry, final error reporting, and exit
+- `internal/cli`: command parsing and dispatch
+- `internal/bridge`: service wiring, lifecycle, middleware, and HTTP routes
+- `internal/config`: environment configuration
+- `internal/profile`: profile loading, compilation, matching, and reloads
+- `internal/vendor`: authorization, token vending, auditing, and caching
+- `internal/github`, `internal/buildkite`, `internal/jwt`: external-service boundaries
+- `internal/cache`: memory and Valkey cache implementations
+- `internal/observe`: telemetry and profiling
+- `internal/server`: shutdown behavior
 
-`just docker ...` is the supported Compose entry point for the local
-integration stack and for downstream overlays such as `bridge-load`. Before
-running Compose, it invokes `integration/resolve-docker-endpoint.sh`, which
-writes the resolved endpoint values to `integration/.docker-endpoint.env`.
-That file is consumed by the compose stack as the Docker socket mount and the
-Traefik Docker provider endpoint. The daemon socket is rarely at
-`/var/run/docker.sock` on a non-admin macOS install, so set `DOCKER_HOST` to
-point elsewhere; a TCP endpoint on this host is rewritten to
-`host.docker.internal`.
+Do not copy changing configuration or architecture details into this file when they are already clear in those sources.
 
-### Testing
+## Workflow
+
+Use the toolchain pinned in `mise.toml` and the `just` recipes. JSON v2 no longer needs an experiment flag.
 
 ```bash
-just test               # Run unit tests with coverage across ./...
-just test -run TestName # Narrow by test name across every package; extra `go test` args are forwarded after ./...
-just integration        # Run integration tests only
-just integration -run TestIntegrationName    # Narrow integration tests by name the same way
-just fuzz               # Run fuzz tests locally (override duration: `just fuzz 60`)
-go test ./... -race -coverprofile=coverage.out -covermode=atomic    # With race detector (or `just ci-unit`)
-go tool cover -html=coverage.out    # View coverage report
+just test                         # unit tests across ./...
+just test -run TestName           # narrow by test name
+just integration                  # integration-tagged TestIntegration* tests
+just integration -run TestName    # narrow integration tests by name
+just lint
+just format
+just build
+just ensure-deps                  # after dependency changes
+just agent                        # format, lint, unit tests, and build
 ```
 
-Note: `just test`/`just integration` always run against `./...` — any extra arguments are appended, not substituted, so a package path narrows nothing (it's already covered by `./...`). To run a single package in isolation, call `go test ./path/to/package` directly.
+`just test` and `just integration` always include `./...`; appended package paths do not narrow them. To test one package, run `go test ./path/to/package`.
 
-**Integration Tests:**
-- Integration tests use the `//go:build integration` build tag
-- All integration test functions must be named with the `TestIntegration` prefix
-- Run integration tests only: `just integration` or `go test -tags=integration -run="^TestIntegration" ./...`
-- Integration tests use `APITestHarness` which provides real HTTP handlers with mocked external services
-- Located in `internal/bridge/api_integration_test.go` alongside unit tests in the same package
+Run the smallest relevant test while iterating, then run `just agent` before declaring the change complete. Run `just integration` when behavior crosses HTTP handlers, profiles, caches, or external-service adapters. Integration tests can require Docker/testcontainers.
 
-### Dependencies
+Local runtime configuration belongs in the gitignored `.envrc.private`; never commit credentials. Use `direnv allow .` to load `.envrc`.
 
-```bash
-go mod tidy             # Tidy dependencies
-just ensure-deps        # Verify dependencies are clean
-```
+For the local Compose stack, use `just docker ...` rather than invoking Compose directly. It resolves the host Docker endpoint into `integration/.docker-endpoint.env`. Use `just docker-up` to build and start the stack.
 
-### Local Development Setup
+## Required conventions
 
-Use direnv for environment configuration:
+### JSON v2
 
-```bash
-direnv allow .
-```
+All Go code, including tests, must use `encoding/json/v2` and, where needed, `encoding/json/jsontext`. The `depguard` linter prohibits `encoding/json` (v1), including in integration- and fuzz-tagged tests.
 
-Create `.envrc.private` (gitignored) for local configuration overrides. See `.envrc` for all available configuration options.
+When decoding requests or configuration:
 
-## Architecture
+- reject unknown object members with `json.RejectUnknownMembers(true)`;
+- explicitly reject `null` where it must differ from an absent value; and
+- preserve JSON v2's strict handling of duplicate members and trailing data.
 
-### Command Dispatch
+Use `omitzero` to omit zero-valued numeric or boolean fields; v2's `omitempty` omits empty JSON values, not Go zero values.
 
-```
-cmd/chinmina-bridge/main.go   → process entry: final error reporting and exit
-  → internal/cli              → urfave/cli v3 command tree: parsing, help, selection
-    → internal/bridge.Run     → service construction and lifecycle
-```
+### Errors, logging, and safety
 
-- `serve` runs the service and is the default command: the ko-built image
-  entrypoint is the bare binary and cannot carry arguments.
-- `serve` rejects positional arguments. With a default command, urfave/cli
-  routes an unknown command name to `serve` as an argument, so this is what
-  stops a typo from starting the service.
-- Nothing in the root command may load configuration, configure logging or
-  start telemetry: help and usage errors must work without credentials.
-  Each command loads only its own configuration.
+- Wrap returned errors with useful context using `fmt.Errorf(... %w ...)`.
+- Do not log an error and return it; log only where the error is handled.
+- Do not introduce `panic` unless the task or an approved plan explicitly calls for it.
+- Preserve middleware order and audit behavior when changing request handling.
+- Do not expose tokens, private keys, OIDC assertions, or other credentials in logs, errors, tests, or fixtures.
+
+### CLI boundaries
+
+- Keep configuration, logging, and telemetry initialization out of the root command so help and usage errors work without credentials. Each command loads only its own configuration.
+- `serve` is the default for bare-binary image entrypoints. Preserve rejection of positional arguments so unknown command names cannot silently start the service.
 - `internal/bridge` must not import the CLI framework.
-- The entry point reports errors once and owns `os.Exit`. The library's exit
-  handler and usage printing are disabled; return errors from commands.
-  `cli.ServiceError` marks service failures, which keep the structured
-  `server failed to start` log record. `cli.UnhealthyError` marks a failed
-  probe, reported without the usage hint.
-- `healthcheck` probes a running service's health endpoint. It must not load
-  the service configuration: it reads only its flags, with `SERVER_PORT` and
-  `SERVER_BASE_PATH` as environment sources, so it works without credentials.
-  Its client is uninstrumented, bypasses proxies and never follows redirects.
-
-### Request Flow
-
-```
-HTTP Request
-  → Middleware Chain (alice)
-    → maxRequestSize (20KB limit)
-    → audit.Middleware (audit logging setup)
-    → jwt.Middleware (OIDC validation)
-  → Handler (handlePostToken or handlePostGitCredentials)
-    → PipelineTokenVendor (vendor.New wrapped with Cached + Auditor)
-      → RepositoryLookup (Buildkite API)
-      → TokenVendor (GitHub App API)
-  → Response (JSON or git-credentials format)
-```
-
-### Key Architectural Patterns
-
-**Middleware Composition**: Uses `github.com/justinas/alice` for composable HTTP middleware chains. Middleware order matters: request limiting → audit setup → authorization → handlers.
-
-**Functional Composition for Token Vending**: The token vendor is constructed by composing functions:
-
-```go
-tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.CreateAccessToken)))
-```
-
-- `vendor.New` creates base vendor from repository lookup + token creation
-- `vendorCache` wraps with 45-minute caching
-- `vendor.Auditor` adds audit logging
-
-**Context-Based Data Flow**:
-
-- JWT claims flow through context via `jwt.ContextWithClaims`
-- Audit entries flow through context via `audit.Context`
-- Retrieve with `jwt.RequireBuildkiteClaimsFromContext(ctx)` (panics if missing)
-
-**Audit Logging**: Audit middleware wraps response writer to capture status codes. The `audit.Entry` struct implements `slog.LogValuer` to control structured output.
-
-**Configuration**: All configuration via environment variables using `github.com/sethvargo/go-envconfig`. Config structs use `env` tags with defaults and required fields.
-
-### Internal Package Responsibilities
-
-- `internal/cli` - Command tree and dispatch; no service logic
-- `internal/bridge` - Service startup wiring, routes, handlers and response marshalling
-- `internal/server` - Shutdown hook utility shared by the service lifecycle
-- `internal/jwt` - OIDC token validation, custom Buildkite claims validation
-- `internal/audit` - Structured audit logging with custom log level, response writer wrapping
-- `internal/vendor` - Token vending abstraction with caching and audit decorators
-- `internal/buildkite` - Buildkite API client for pipeline repository lookup
-- `internal/github` - GitHub App client for token generation, supports KMS-based signing
-- `internal/credentialhandler` - Git credential helper protocol implementation
-- `internal/observe` - OpenTelemetry setup for traces and metrics
-- `internal/config` - Environment-based configuration loading
-
-### HTTP Endpoints
-
-- `POST /token` - Returns JSON with GitHub token for pipeline repository
-- `POST /git-credentials` - Returns git-credentials format for use with git credential helper
-- `GET /healthcheck` - Simple health check (no auth/telemetry)
-
-## Code Conventions
-
-### File Naming
-
-- **Go files**: Use lowercase without separators (e.g., `tokenvendor.go`, `auditvendor.go`)
-- **Go test files**: Use lowercase with `_test` suffix (e.g., `tokenvendor_test.go`)
-- **No underscores or hyphens in Go file names** except for the `_test` suffix
-- **Other files**: Use lowercase with hyphens as separators (e.g., `docker-compose.yaml`)
-
-### Error Handling
-
-- Wrap errors with `fmt.Errorf` and `%w` for error chains
-- Only log errors if they are being handled by the current code context. Do not log when returning an error: include context in the wrapped error instead.
-- Handlers return appropriate HTTP status codes via `requestError(w, statusCode)`
-- panic() may not be added by CI agents without explicit direction to do so. The plan must state explicitly that a panic can be used in a given situation. Otherwise, errors must be used.
-
-### JSON
-
-- **JSON v2 is mandatory for all code, including tests**: import
-  `encoding/json/v2` (and `encoding/json/jsontext` for raw values).
-  `encoding/json` (v1) is prohibited and enforced by the `depguard` linter.
-  JSON v2 is part of the standard library in Go 1.27; no experiment flag is needed.
-- v2 is required because its defaults are safe by construction: `json.Unmarshal`
-  rejects trailing data after the top-level value, duplicate object members are
-  an error, and field matching is case-sensitive. The v1 streaming decoder
-  silently accepts a truncated or concatenated document.
-- Reject unknown fields explicitly with `json.RejectUnknownMembers(true)` when
-  decoding configuration or requests: a silently ignored typo is configuration
-  that behaves differently from how it reads.
-- JSON `null` unmarshals to a nil slice/map/pointer without error. Where null
-  and "absent" must be distinguished (configuration especially), check for it
-  explicitly and fail. See `parseAppEntries` in `internal/github/registry.go`.
-- Use `omitzero` to omit zero-valued numeric or boolean fields; v2's `omitempty`
-  omits empty JSON values, not Go zero values.
+- The process entry point owns error reporting and `os.Exit`; commands return errors. Preserve `cli.ServiceError` and `cli.UnhealthyError` reporting semantics and keep the library's exit handler and usage printing disabled.
+- `healthcheck` must not load service configuration or require credentials. Its HTTP client is uninstrumented, bypasses proxies, and never follows redirects.
 
 ### Concurrency
 
-- Put a critical section in its own function and unlock with `defer`: the body is
-  the guarded region, and no branch added later can skip the unlock.
-- Return the guarded state to the caller. Slow work, I/O and callbacks belong
-  outside the lock; never hold a lock across a callback.
-- Example: `ShutdownHooks.beginExecution` in `internal/server/shutdown.go`.
+Keep lock-protected regions in small functions and `defer` the unlock. Return the protected state, then perform I/O, slow work, and callbacks after releasing the lock. See `internal/server/shutdown.go` for the established pattern.
 
-### Testing
+### Tests
 
-**Assertion Style:**
-- Use `testify/assert` for assertions, `testify/require` for fatal checks
-- **Prefer struct-level equality**: Use `assert.Equal(t, expected, actual)` for struct comparisons instead of field-by-field assertions
-  - Good: `assert.Equal(t, expected, ref)` where `expected` is a complete struct
-  - Avoid: Multiple `assert.Equal(t, expected.Field, actual.Field)` calls
-  - Exception: HTTP response testing (status codes, headers) appropriately uses individual field checks
-- Struct equality provides complete diff output on failure, making debugging easier
+- Test observable behavior and failure modes, not compiler-enforced structure.
+- Use table-driven tests when cases share setup and assertions; keep materially different workflows separate.
+- Keep success and failure tables separate when that improves clarity.
+- Use `testify/assert` for non-fatal checks and `testify/require` for prerequisites.
+- Prefer equality on complete expected structs over field-by-field assertions. HTTP status and header assertions are a reasonable exception.
+- Name integration tests `TestIntegration...` and compile them with the `integration` build tag.
+- Follow the package style of adjacent tests (`package x` versus `package x_test`).
 
-**Test cases**
+### Naming and dependencies
 
-- When writing tests, DO NOT add tests that just test struct fields or other items that the compiler checks
-- Add tests for logic, not to check the compiler
-- seek test coverage over 90% BUT coverage is a guide only!
-- The most important thing is for tests to cover and document the expected _behaviour_.
+- Go filenames are lowercase without separators except the required `_test.go` suffix.
+- Non-Go filenames use lowercase words separated by hyphens where practical.
+- After dependency changes, run `go mod tidy` and `just ensure-deps`.
 
-**Test Organization:**
-- **Use table-driven tests** when multiple tests follow the same pattern with different parameters
-  - Consolidate tests that differ only in input/output values
-  - The test assertions vary only in their arguments
-  - Use descriptive test case names with `t.Run(tt.name, ...)`
-  - Keep success and failure test cases in separate table-driven tests
-  - Example: See `internal/profile/ref_test.go` for well-structured table-driven tests
-- **Individual test functions** are appropriate when:
-  - Each test has unique setup or teardown requirements
-  - Tests include timing operations or complex state management
-  - The set of assertions to execute differs across test cases.
-  - Test logic differs significantly between cases
+## Change discipline
 
-**Test Structure:**
-- Table-driven tests should use `expected` struct fields, not individual expected values
-  - Good: `expected: ProfileRef{Organization: "acme", Type: TypeRepo, ...}`
-  - Avoid: `expectedOrg: "acme", expectedType: TypeRepo, ...`
-- Some packages use `package xxx_test` for black-box testing (see `internal/github/token_test.go`)
-- Helper functions for common test setup (see `internal/bridge/handlers_test.go` for context creation)
-
-### Logging
-
-- Structured logging with `log/slog` (standard library)
-- Development mode (`ENV=development`) enables text handler output with debug level
-- Implement `slog.LogValuer` for complex objects to control structured output
-- Audit logs are written as structured slog records at info level
-
-### Context Usage
-
-- Use empty structs as context keys: `type key struct{}`
-- Store pointers in context values for mutable audit/log entries
-- Always provide getter functions that return both context and value
-
-### Configuration
-
-- Mark internal-only config fields with `// internal only` comment
-- Required fields use `env:"..., required"` tag
-- Provide sensible defaults in struct tags where possible
-
-## Before Committing
-
-1. Run the agent task: `just agent`. This formats, lints, tests, and builds — everything expected to pass before committing.
-
-Run `just` (or `just --list`) to see all recipes, organised into `build`, `test`, `ci`, and `dev` groups.
-
-## When committing
-
-1. use conventional commit messages, with appropriate prefixes. For example: `feat`, `fix`, `test`, `ci`.
-2. do not separate files in commits to align with a prefix: for example, if a `fix` has test changes, include the test changes in the `fix` commit.
-3. In a commit message, "why" the change is made is important. Add context and reasoning for choices made. "what" has changed is not important: that is shown by the diff.
-
-## Additional Resources
-
-- Architecture and implementation: https://chinmina.github.io/introduction/
-- Configuration reference: https://chinmina.github.io/reference/configuration/
-- DeepWiki: https://deepwiki.com/chinmina/chinmina-bridge
-- urfave/cli v3 documentation: Context7 library ID `/urfave/cli` (scope queries to v3; the index includes other major versions).
+- Keep changes scoped; do not refactor unrelated code or update generated artifacts without need.
+- Preserve public behavior unless the task explicitly changes it.
+- Update tests and relevant documentation with behavior or configuration changes.
+- If committing, use a conventional commit prefix such as `feat`, `fix`, `test`, `docs`, or `ci`. Keep implementation and its tests in the same commit, and explain why the change is needed.
