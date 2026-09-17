@@ -40,9 +40,9 @@ type Entry struct {
 	RequestedRepository string
 	VendedRepository    string
 
-	// All zero when the request failed before resolution; Error names the reason
-	// in that case. The name alone is not enough: it can be repointed, and two
-	// names can alias one installation.
+	// All zero when the request ends before resolution; Error names the failure
+	// or successful skip in that case. The name alone is not enough: it can be
+	// repointed, and two names can alias one installation.
 	App              string
 	ApplicationID    int64
 	InstallationID   int64
@@ -63,6 +63,12 @@ type Entry struct {
 	HashedToken      string
 	ClaimsMatched    []ClaimMatch
 	ClaimsFailed     []ClaimFailure
+}
+
+// RecordSuccessfulSkip records a successful request for which no credentials
+// can be offered. The audit format represents this outcome in the Error field.
+func (e *Entry) RecordSuccessfulSkip() {
+	e.Error = "skipped(success): profile has no credentials for requested repository"
 }
 
 // Begin sets up the audit log entry for the current request with details from the request.

@@ -29,9 +29,7 @@ func Auditor[T any](vendor ProfileTokenVendor[T]) ProfileTokenVendor[T] {
 			entry.ExpirySecs = token.Expiry.Unix()
 			entry.HashedToken = token.HashedToken
 		case VendStatusSuccessUnmatched:
-			// this is a successful no-result: it's not an error, but we don't have credentials for the request
-			// this happens on a repository mismatch, or on a profile request where the requested repo doesn't match.
-			entry.Error = "skipped(success): profile has no credentials for requested repository"
+			entry.RecordSuccessfulSkip()
 		}
 
 		return result

@@ -71,7 +71,7 @@ func TestRecordResolvedRequest_AddsProfileAndAppTraceAttributes(t *testing.T) {
 		},
 	}
 
-	recordResolvedRequest(ctx, resolved, "frontend")
+	recordResolvedRequest(ctx, resolved)
 	span.End()
 
 	spans := recorder.Ended()
@@ -327,8 +327,9 @@ func TestHandlePostGitCredentials_DeclinesHostOnlyRequest(t *testing.T) {
 				assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
 				assert.Equal(t, "0", rr.Header().Get("Content-Length"))
 				assert.Empty(t, rr.Header().Get("Chinmina-Denied"))
-				assert.Equal(t, "https://github.com", entry.RequestedRepository)
-				assert.Empty(t, entry.Error)
+				expected := audit.Entry{RequestedRepository: "https://github.com"}
+				expected.RecordSuccessfulSkip()
+				assert.Equal(t, expected, *entry)
 			}
 		})
 	}
@@ -1284,9 +1285,10 @@ func TestHandlers_RecordRequestedProfileWhenResolutionFails(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
 
 	cases := []struct {
-		name    string
-		handler func(ProfileResolver[orgAttr]) http.Handler
-		body    io.Reader
+		name               string
+		handler            func(ProfileResolver[orgAttr]) http.Handler
+		body               io.Reader
+		expectedRepository string
 	}{
 		{
 			name: "postToken",
@@ -1299,7 +1301,8 @@ func TestHandlers_RecordRequestedProfileWhenResolutionFails(t *testing.T) {
 			handler: func(r ProfileResolver[orgAttr]) http.Handler {
 				return handlePostGitCredentials(tv[orgAttr]("unused"), r, withheld)
 			},
-			body: gitCredentialsBody(t, "org", "repo1"),
+			body:               gitCredentialsBody(t, "org", "repo1"),
+			expectedRepository: "https://github.com/org/repo1",
 		},
 	}
 
@@ -1315,6 +1318,7 @@ func TestHandlers_RecordRequestedProfileWhenResolutionFails(t *testing.T) {
 
 			assert.Equal(t, http.StatusNotFound, rr.Code)
 			assert.Equal(t, "no-such-profile", entry.RequestedProfile)
+			assert.Equal(t, tc.expectedRepository, entry.RequestedRepository)
 		})
 	}
 }
