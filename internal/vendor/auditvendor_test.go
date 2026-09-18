@@ -89,7 +89,7 @@ func TestAuditor_Mismatch(t *testing.T) {
 
 	entry := audit.Log(ctx)
 	expected := audit.Entry{
-		Error:            "skipped(success): profile has no credentials for requested repository",
+		Error:            audit.SkippedSuccessMessage,
 		Repositories:     nil,
 		Permissions:      nil,
 		ExpirySecs:       0,

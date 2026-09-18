@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -451,8 +452,8 @@ func TestIntegrationGitCredentials_PathPresenceUnmatched(t *testing.T) {
 		{"pipeline", "/git-credentials", "profile://organization/test-org/pipeline/pipeline-123/test-pipeline/profile/default"},
 		{"static", "/organization/git-credentials/static-profile", "profile://organization/test-org/profile/static-profile"},
 	}
-	paths := append(repositorylessCredentialPaths, credentialPathCase{
-		"nonmatching-repository", "path=test-org/not-in-profile\n", "https://github.com/test-org/not-in-profile", "test-org/not-in-profile",
+	paths := slices.Concat(repositorylessCredentialPaths, []credentialPathCase{
+		{"nonmatching-repository", "path=test-org/not-in-profile\n", "https://github.com/test-org/not-in-profile", "test-org/not-in-profile"},
 	})
 	for _, prof := range profiles {
 		t.Run(prof.name, func(t *testing.T) {
@@ -470,7 +471,7 @@ func TestIntegrationGitCredentials_PathPresenceUnmatched(t *testing.T) {
 					assert.Equal(t, credentialResponseHeaders{Status: http.StatusOK, ContentType: "text/plain"}, credentialHeaders(response))
 					assert.Empty(t, response.Body, "a repository mismatch must offer no credentials")
 					assert.Equal(t, expected, credentialAuditFields(entry))
-					assert.True(t, strings.HasPrefix(entry.Error, "skipped(success):"), "only an actual mismatch is a successful skip")
+					assert.Equal(t, audit.SkippedSuccessMessage, entry.Error, "only an actual mismatch is a successful skip")
 				})
 			}
 		})
@@ -482,14 +483,15 @@ func TestIntegrationGitCredentials_PathPresenceUnmatched(t *testing.T) {
 // cannot prove omission reached scope validation with its audit intent intact.
 func TestIntegrationGitCredentials_PathPresenceRequiresScope(t *testing.T) {
 	const endpoint = "/organization/git-credentials/caller-scoped-profile"
+	harness := newCredentialPathHarness(t)
+	request := auditedGitCredentialRequest(t, harness)
+	token := harness.PipelineToken()
+	control, controlAudit := request(t, endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
+	require.NotEmpty(t, control.Headers.Get("Chinmina-Denied"))
+	require.NotEmpty(t, controlAudit.Error)
+
 	for _, path := range repositorylessCredentialPaths {
 		t.Run(path.name, func(t *testing.T) {
-			harness := newCredentialPathHarness(t)
-			request := auditedGitCredentialRequest(t, harness)
-			token := harness.PipelineToken()
-			control, controlAudit := request(t, endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
-			require.NotEmpty(t, control.Headers.Get("Chinmina-Denied"))
-			require.NotEmpty(t, controlAudit.Error)
 			expectedHeaders := credentialResponseHeaders{http.StatusBadRequest, "text/plain", control.Headers.Get("Chinmina-Denied")}
 			expectedAudit := credentialAudit{RequestedProfile: "caller-scoped-profile", RequestedRepository: path.url}
 
@@ -499,6 +501,7 @@ func TestIntegrationGitCredentials_PathPresenceRequiresScope(t *testing.T) {
 			assert.Empty(t, response.Body, "scope denial is not a parser error body or a credential")
 			assert.Equal(t, expectedAudit, credentialAuditFields(entry), "missing scope must fail before resolution metadata or authorization")
 			assert.Equal(t, controlAudit.Error, entry.Error, "omission must reach the same scope validation as an empty path")
+			assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error)
 		})
 	}
 }
@@ -509,6 +512,8 @@ func TestIntegrationGitCredentials_PathPresenceRequiresScope(t *testing.T) {
 func TestIntegrationGitCredentials_PathPresenceWildcard(t *testing.T) {
 	for _, path := range repositorylessCredentialPaths {
 		t.Run(path.name, func(t *testing.T) {
+			// A per-case harness is load-bearing: cacheKey excludes the requested
+			// repository, so a shared one would make most spellings cache hits.
 			harness := newCredentialPathHarness(t)
 			request := auditedGitCredentialRequest(t, harness)
 			expectedProperties := [][]string{
@@ -545,6 +550,8 @@ func TestIntegrationGitCredentials_PathPresenceWildcardCache(t *testing.T) {
 		{"empty-then-omitted", "path=\n", ""},
 	} {
 		t.Run(order.name, func(t *testing.T) {
+			// A per-case harness is load-bearing: cacheKey excludes the requested
+			// repository, so a shared one would already hold a warm token.
 			harness := newCredentialPathHarness(t)
 			request := auditedGitCredentialRequest(t, harness)
 			token := harness.PipelineToken()
@@ -572,13 +579,15 @@ func TestIntegrationGitCredentials_PathPresenceWildcardCache(t *testing.T) {
 func TestIntegrationGitCredentials_PathPresenceProfileNotFound(t *testing.T) {
 	for _, endpoint := range []string{"/git-credentials/no-such-profile", "/organization/git-credentials/no-such-profile"} {
 		t.Run(endpoint, func(t *testing.T) {
+			harness := newCredentialPathHarness(t)
+			request := auditedGitCredentialRequest(t, harness)
+			token := harness.PipelineToken()
+			control, controlAudit := request(t, endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
+			require.NotEmpty(t, control.Headers.Get("Chinmina-Denied"))
+			require.NotEmpty(t, controlAudit.Error)
+
 			for _, path := range hostCredentialPaths {
 				t.Run(path.name, func(t *testing.T) {
-					harness := newCredentialPathHarness(t)
-					request := auditedGitCredentialRequest(t, harness)
-					token := harness.PipelineToken()
-					control, _ := request(t, endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
-					require.NotEmpty(t, control.Headers.Get("Chinmina-Denied"))
 					expectedHeaders := credentialResponseHeaders{http.StatusNotFound, "text/plain", control.Headers.Get("Chinmina-Denied")}
 					expected := credentialAudit{RequestedProfile: "no-such-profile", RequestedRepository: "https://github.com"}
 
@@ -588,6 +597,8 @@ func TestIntegrationGitCredentials_PathPresenceProfileNotFound(t *testing.T) {
 					assert.Empty(t, response.Body)
 					assert.Equal(t, expected, credentialAuditFields(entry), "unresolved names remain raw and retain the requested URL")
 					assert.NotEmpty(t, entry.Error)
+					assert.Equal(t, controlAudit.Error, entry.Error, "omission must reach the same resolution failure as an empty path")
+					assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error)
 				})
 			}
 		})
@@ -598,17 +609,19 @@ func TestIntegrationGitCredentials_PathPresenceProfileNotFound(t *testing.T) {
 // Repository-less requests must still reach claim matching and return 403;
 // failed-claim audit metadata distinguishes authorization from an early skip.
 func TestIntegrationGitCredentials_PathPresenceProfileDenied(t *testing.T) {
+	harness := newCredentialPathHarness(t)
+	contents, err := os.ReadFile("testdata/org-profiles-matched.yaml")
+	require.NoError(t, err)
+	harness.UpdateProfiles(t, string(contents))
+	request := auditedGitCredentialRequest(t, harness)
+	token := harness.PipelineToken()
+	const endpoint = "/organization/git-credentials/release-only-profile"
+	control, controlAudit := request(t, endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
+	require.NotEmpty(t, control.Headers.Get("Chinmina-Denied"))
+	require.NotEmpty(t, controlAudit.Error)
+
 	for _, path := range hostCredentialPaths {
 		t.Run(path.name, func(t *testing.T) {
-			harness := newCredentialPathHarness(t)
-			contents, err := os.ReadFile("testdata/org-profiles-matched.yaml")
-			require.NoError(t, err)
-			harness.UpdateProfiles(t, string(contents))
-			request := auditedGitCredentialRequest(t, harness)
-			token := harness.PipelineToken()
-			const endpoint = "/organization/git-credentials/release-only-profile"
-			control, _ := request(t, endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
-			require.NotEmpty(t, control.Headers.Get("Chinmina-Denied"))
 			expectedHeaders := credentialResponseHeaders{http.StatusForbidden, "text/plain", control.Headers.Get("Chinmina-Denied")}
 			expected := credentialAudit{
 				RequestedProfile: "profile://organization/test-org/profile/release-only-profile", RequestedRepository: "https://github.com",
@@ -622,7 +635,8 @@ func TestIntegrationGitCredentials_PathPresenceProfileDenied(t *testing.T) {
 			assert.Empty(t, response.Body)
 			assert.Equal(t, expected, credentialAuditFields(entry), "a resolved profile still requires authorization")
 			assert.NotEmpty(t, entry.Error)
-			assert.NotContains(t, entry.Error, "skipped(success)")
+			assert.Equal(t, controlAudit.Error, entry.Error, "omission must reach the same claim matching as an empty path")
+			assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error)
 		})
 	}
 }
@@ -643,14 +657,16 @@ func TestIntegrationGitCredentials_PathPresenceUpstreamFailures(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			harness := newCredentialPathHarness(t)
+			tc.failUpstream(harness)
+			request := auditedGitCredentialRequest(t, harness)
+			token := harness.PipelineToken()
+			control, controlAudit := request(t, tc.endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
+			require.NotEmpty(t, control.Headers.Get("Chinmina-Denied"))
+			require.NotEmpty(t, controlAudit.Error)
+
 			for _, path := range hostCredentialPaths {
 				t.Run(path.name, func(t *testing.T) {
-					harness := newCredentialPathHarness(t)
-					tc.failUpstream(harness)
-					request := auditedGitCredentialRequest(t, harness)
-					token := harness.PipelineToken()
-					control, _ := request(t, tc.endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
-					require.NotEmpty(t, control.Headers.Get("Chinmina-Denied"))
 					expectedHeaders := credentialResponseHeaders{tc.status, "text/plain", control.Headers.Get("Chinmina-Denied")}
 					expected := credentialAudit{
 						RequestedProfile: tc.urn, RequestedRepository: "https://github.com",
@@ -663,7 +679,8 @@ func TestIntegrationGitCredentials_PathPresenceUpstreamFailures(t *testing.T) {
 					assert.Empty(t, response.Body)
 					assert.Equal(t, expected, credentialAuditFields(entry))
 					assert.NotEmpty(t, entry.Error)
-					assert.NotContains(t, entry.Error, "skipped(success)", "a missing path must not suppress upstream failure")
+					assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error, "a missing path must not suppress upstream failure")
+					assert.Equal(t, controlAudit.Error, entry.Error, "omission must reach the same upstream failure as an empty path")
 				})
 			}
 		})
@@ -1290,11 +1307,12 @@ type credentialPathCase struct {
 }
 
 var hostCredentialPaths = []credentialPathCase{
+	// `empty` repeats the hoisted control: it proves an empty path works end-to-end.
 	{"omitted", "", "https://github.com", ""},
 	{"empty", "path=\n", "https://github.com", ""},
 }
 
-var repositorylessCredentialPaths = append(hostCredentialPaths, []credentialPathCase{
+var repositorylessCredentialPaths = slices.Concat(hostCredentialPaths, []credentialPathCase{
 	{"root", "path=/\n", "https://github.com/", ""},
 	{"matching-org/git-path", "path=test-org\n", "https://github.com/test-org", "test-org"},
 	{"matching-org/leading-slash", "path=/test-org\n", "https://github.com/test-org", "test-org"},
@@ -1304,7 +1322,7 @@ var repositorylessCredentialPaths = append(hostCredentialPaths, []credentialPath
 	{"other-org/leading-slash", "path=/other-org\n", "https://github.com/other-org", "other-org"},
 	{"other-org-slash/git-path", "path=other-org/\n", "https://github.com/other-org/", "other-org/"},
 	{"other-org-slash/leading-slash", "path=/other-org/\n", "https://github.com/other-org/", "other-org/"},
-}...)
+})
 
 func newCredentialPathHarness(t *testing.T) *APITestHarness {
 	t.Helper()
@@ -1346,7 +1364,7 @@ type credentialAudit struct {
 func credentialAuditFields(entry audit.Entry) credentialAudit {
 	return credentialAudit{
 		RequestedProfile: entry.RequestedProfile, RequestedRepository: entry.RequestedRepository,
-		App:           github.AppIdentity{Name: entry.App, ApplicationID: entry.ApplicationID, InstallationID: entry.InstallationID},
+		App:           auditedApp(&entry),
 		ClaimsMatched: entry.ClaimsMatched, ClaimsFailed: entry.ClaimsFailed,
 		VendedRepository: entry.VendedRepository, Repositories: entry.Repositories,
 		Permissions: entry.Permissions, ExpirySecs: entry.ExpirySecs, HashedToken: entry.HashedToken,

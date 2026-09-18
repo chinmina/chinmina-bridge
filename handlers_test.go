@@ -1273,7 +1273,7 @@ func TestHandlePostToken_RecordsRequestWhenResolutionFails(t *testing.T) {
 
 			assert.Equal(t, tc.status, rr.Code)
 			assert.NotEmpty(t, entry.Error)
-			assert.NotContains(t, entry.Error, "skipped(success)")
+			assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error)
 			actual := *entry
 			actual.Error = "" // Diagnostic prose is checked separately from stable audit metadata.
 			assert.Equal(t, expected, actual)
@@ -1327,7 +1327,7 @@ func TestHandlePostGitCredentials_RecordsRequestWhenResolutionFails(t *testing.T
 			assert.Empty(t, rr.Body.String())
 			assert.NotEmpty(t, rr.Header().Get("Chinmina-Denied"))
 			assert.NotEmpty(t, entry.Error)
-			assert.NotContains(t, entry.Error, "skipped(success)")
+			assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error)
 			actual := *entry
 			actual.Error = "" // Diagnostic prose is checked separately from stable audit metadata.
 			assert.Equal(t, tc.expected, actual)
@@ -1403,8 +1403,7 @@ func TestHandlePostToken_RecordsInvalidProfileReason(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	var respBody ErrorResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &respBody))
-	require.NotEmpty(t, respBody.Error)
-	assert.NotContains(t, respBody.Error, "not_a_real_claim")
+	assert.Equal(t, ErrorResponse{Error: "profile unavailable: validation failed"}, respBody)
 
 	assert.Contains(t, entry.Error, "broken-profile")
 	assert.Contains(t, entry.Error, "not_a_real_claim")

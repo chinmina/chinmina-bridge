@@ -65,9 +65,15 @@ type Entry struct {
 	ClaimsFailed     []ClaimFailure
 }
 
+// SkippedSuccessMessage is the Error value RecordSuccessfulSkip assigns. It is
+// exported so tests assert one shared definition instead of retyping the string.
+const SkippedSuccessMessage = "skipped(success): profile has no credentials for requested repository"
+
 // RecordSuccessfulSkip records a successful vend that has no matching credentials.
+// It reports in Error because there is nothing else to report: Git reads the empty
+// response and moves on to the next credential helper.
 func (e *Entry) RecordSuccessfulSkip() {
-	e.Error = "skipped(success): profile has no credentials for requested repository"
+	e.Error = SkippedSuccessMessage
 }
 
 // Begin sets up the audit log entry for the current request with details from the request.
