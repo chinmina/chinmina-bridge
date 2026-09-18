@@ -12,12 +12,12 @@ import (
 type RepositoryScope struct {
 	// Wildcard indicates the token covers all repositories accessible to the
 	// GitHub App installation. When true, Names is meaningless.
-	Wildcard bool `json:"wildcard,omitempty"`
+	Wildcard bool `json:"wildcard,omitzero"`
 	// Names lists the specific repository names covered by the token.
 	Names []string `json:"names,omitempty"`
 	// CallerScoped indicates the repository will be supplied at request time
 	// rather than being stored in the profile. When true, Names is meaningless.
-	CallerScoped bool `json:"callerScoped,omitempty"`
+	CallerScoped bool `json:"callerScoped,omitzero"`
 }
 
 // NewWildcardScope returns a RepositoryScope that covers all repositories.

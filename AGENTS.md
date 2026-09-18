@@ -149,10 +149,10 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 
 ### JSON
 
-- **JSON v2 is mandatory for all new code**: import `encoding/json/v2` (and
-  `encoding/json/jsontext` for raw values). `encoding/json` (v1) must not be used
-  in new or modified code, including tests. `GOEXPERIMENT=jsonv2` is set by
-  `.envrc` and the `justfile`; any new build or CI entry point must set it too.
+- **JSON v2 is mandatory for all code, including tests**: import
+  `encoding/json/v2` (and `encoding/json/jsontext` for raw values).
+  `encoding/json` (v1) is prohibited and enforced by the `depguard` linter.
+  JSON v2 is part of the standard library in Go 1.27; no experiment flag is needed.
 - v2 is required because its defaults are safe by construction: `json.Unmarshal`
   rejects trailing data after the top-level value, duplicate object members are
   an error, and field matching is case-sensitive. The v1 streaming decoder
@@ -163,8 +163,8 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 - JSON `null` unmarshals to a nil slice/map/pointer without error. Where null
   and "absent" must be distinguished (configuration especially), check for it
   explicitly and fail. See `parseAppEntries` in `internal/github/registry.go`.
-- Existing `encoding/json` usages are migrated opportunistically; do not leave a
-  file you are already changing on v1.
+- Use `omitzero` to omit zero-valued numeric or boolean fields; v2's `omitempty`
+  omits empty JSON values, not Go zero values.
 
 ### Concurrency
 

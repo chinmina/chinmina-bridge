@@ -11,9 +11,6 @@
 #
 name: "CodeQL Advanced"
 
-env:
-  GOEXPERIMENT: jsonv2
-  
 on:
   push:
     branches: [ "main" ]

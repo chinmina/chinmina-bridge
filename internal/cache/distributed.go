@@ -2,7 +2,7 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"time"
@@ -80,7 +80,8 @@ func (d *Distributed[T]) Get(ctx context.Context, key string) (T, bool, error) {
 // Set stores a token in the cache with the configured TTL.
 // The token is JSON-serialized before storage.
 func (d *Distributed[T]) Set(ctx context.Context, key string, token T) error {
-	data, err := json.Marshal(token)
+	// Preserve nil collections across cache round trips, distinct from empty ones.
+	data, err := json.Marshal(token, json.FormatNilSliceAsNull(true), json.FormatNilMapAsNull(true))
 	if err != nil {
 		return fmt.Errorf("failed to marshal token: %w", err)
 	}

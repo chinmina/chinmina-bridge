@@ -1,7 +1,7 @@
 package jwt
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 
@@ -39,7 +39,7 @@ func writeJWTError(w http.ResponseWriter, err error) {
 	if errors.Is(err, jwtmiddleware.ErrJWTMissing) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="api"`)
 		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(jwtErrorResponse{
+		_ = json.MarshalWrite(w, jwtErrorResponse{
 			Error: "invalid_token",
 		})
 		return
@@ -47,7 +47,7 @@ func writeJWTError(w http.ResponseWriter, err error) {
 
 	w.Header().Set("WWW-Authenticate", `Bearer realm="api", error="invalid_token", error_description="The access token is invalid"`)
 	w.WriteHeader(http.StatusUnauthorized)
-	_ = json.NewEncoder(w).Encode(jwtErrorResponse{
+	_ = json.MarshalWrite(w, jwtErrorResponse{
 		Error:            "invalid_token",
 		ErrorDescription: "The access token is invalid",
 	})

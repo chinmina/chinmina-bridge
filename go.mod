@@ -1,6 +1,6 @@
 module github.com/chinmina/chinmina-bridge
 
-go 1.26.0
+go 1.27
 
 require (
 	github.com/auth0/go-jwt-middleware/v3 v3.3.0

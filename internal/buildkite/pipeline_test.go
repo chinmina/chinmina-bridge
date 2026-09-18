@@ -2,7 +2,7 @@ package buildkite_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -51,8 +51,7 @@ func TestRepositoryLookup_Succeeds(t *testing.T) {
 				"token:" + r.Header.Get("Authorization"),
 			},
 		}
-		res, _ := json.Marshal(&pl)
-		_, _ = w.Write(res)
+		_ = json.MarshalWrite(w, pl)
 	})
 
 	svr := httptest.NewServer(router)
@@ -92,8 +91,7 @@ func TestRepositoryLookup_SendsAuthToken(t *testing.T) {
 				"token:" + r.Header.Get("Authorization"),
 			},
 		}
-		res, _ := json.Marshal(&pl)
-		_, _ = w.Write(res)
+		_ = json.MarshalWrite(w, pl)
 	})
 
 	svr := httptest.NewServer(router)
@@ -123,8 +121,7 @@ func TestRepositoryLookup_FailsWhenRepoNotConfigured(t *testing.T) {
 			//Repository: // repository purposefully blank
 			Description: org,
 		}
-		res, _ := json.Marshal(&pl)
-		_, _ = w.Write(res)
+		_ = json.MarshalWrite(w, pl)
 	})
 
 	svr := httptest.NewServer(router)

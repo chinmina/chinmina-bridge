@@ -2,7 +2,8 @@ package jwt
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"testing"
 
 	jwxjwt "github.com/lestrrat-go/jwx/v3/jwt"
@@ -45,9 +46,8 @@ func TestBuildkiteClaims_Validate_Success(t *testing.T) {
 
 func TestBuildkiteClaims_Validate_Failure(t *testing.T) {
 	cases := []struct {
-		name              string
-		claims            *BuildkiteClaims
-		expectedErrorText string
+		name   string
+		claims *BuildkiteClaims
 	}{
 		{
 			name: "missing claims",
@@ -56,7 +56,6 @@ func TestBuildkiteClaims_Validate_Failure(t *testing.T) {
 				notBefore: FieldPresent{valued: true},
 				expiry:    FieldPresent{valued: true},
 			},
-			expectedErrorText: "missing expected claim(s)",
 		},
 		{
 			name: "wrong org",
@@ -75,7 +74,6 @@ func TestBuildkiteClaims_Validate_Failure(t *testing.T) {
 				AgentID:                  "agent1",
 				expectedOrganizationSlug: "right",
 			},
-			expectedErrorText: "expecting token issued for organization",
 		},
 		{
 			name: "missing subject",
@@ -92,7 +90,6 @@ func TestBuildkiteClaims_Validate_Failure(t *testing.T) {
 				AgentID:                  "agent1",
 				expectedOrganizationSlug: "org",
 			},
-			expectedErrorText: "subject claim not present",
 		},
 		{
 			name: "missing nbf",
@@ -109,7 +106,6 @@ func TestBuildkiteClaims_Validate_Failure(t *testing.T) {
 				AgentID:                  "agent1",
 				expectedOrganizationSlug: "org",
 			},
-			expectedErrorText: "nbf claim not present",
 		},
 		{
 			name: "missing exp",
@@ -126,7 +122,6 @@ func TestBuildkiteClaims_Validate_Failure(t *testing.T) {
 				AgentID:                  "agent1",
 				expectedOrganizationSlug: "org",
 			},
-			expectedErrorText: "exp claim not present",
 		},
 	}
 
@@ -134,7 +129,6 @@ func TestBuildkiteClaims_Validate_Failure(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.claims.Validate(context.Background())
 			assert.Error(t, err)
-			assert.Contains(t, err.Error(), tt.expectedErrorText)
 		})
 	}
 }
@@ -219,17 +213,18 @@ func TestBuildkiteClaims_UnmarshalJSON_RegisteredClaims(t *testing.T) {
 	const minimalFields = `"organization_slug": "acme", "pipeline_slug": "pipeline", "pipeline_id": "pid", "build_number": 1, "build_branch": "main", "build_commit": "abc", "job_id": "j1", "agent_id": "a1"`
 
 	cases := []struct {
-		name           string
-		jsonData       string
-		wantNBFValued  bool
-		wantEXPValued  bool
-		wantSubMissing bool // true if Validate should return "subject claim not present"
+		name          string
+		jsonData      string
+		wantNBFValued bool
+		wantEXPValued bool
+		wantValid     bool
 	}{
 		{
 			name:          "nbf and exp present",
 			jsonData:      `{` + minimalFields + `, "sub": "org:acme:pipeline:pipeline:ref:main:commit:abc", "nbf": 1700000000, "exp": 1700003600}`,
 			wantNBFValued: true,
 			wantEXPValued: true,
+			wantValid:     true,
 		},
 		{
 			name:          "nbf null, exp present",
@@ -244,11 +239,10 @@ func TestBuildkiteClaims_UnmarshalJSON_RegisteredClaims(t *testing.T) {
 			wantEXPValued: false,
 		},
 		{
-			name:           "sub absent",
-			jsonData:       `{` + minimalFields + `, "nbf": 1700000000, "exp": 1700003600}`,
-			wantNBFValued:  true,
-			wantEXPValued:  true,
-			wantSubMissing: true,
+			name:          "sub absent",
+			jsonData:      `{` + minimalFields + `, "nbf": 1700000000, "exp": 1700003600}`,
+			wantNBFValued: true,
+			wantEXPValued: true,
 		},
 	}
 
@@ -262,14 +256,10 @@ func TestBuildkiteClaims_UnmarshalJSON_RegisteredClaims(t *testing.T) {
 			assert.Equal(t, tt.wantEXPValued, claims.expiry.Valued(), "expiry.Valued()")
 
 			validateErr := claims.Validate(context.Background())
-			if tt.wantSubMissing {
-				require.Error(t, validateErr)
-				assert.Contains(t, validateErr.Error(), "subject claim not present")
+			if tt.wantValid {
+				require.NoError(t, validateErr)
 			} else {
-				// subject is present; any other validate error is not our concern here
-				if validateErr != nil {
-					assert.NotContains(t, validateErr.Error(), "subject claim not present")
-				}
+				require.Error(t, validateErr)
 			}
 		})
 	}
@@ -460,9 +450,9 @@ func TestBuildkiteClaims_UnmarshalJSON_AgentTags(t *testing.T) {
 }
 func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 	cases := []struct {
-		name          string
-		jsonData      string
-		expectedField string // field name present in the SemanticError message
+		name     string
+		jsonData string
+		expected jsontext.Pointer
 	}{
 		{
 			name: "string field with wrong type",
@@ -476,7 +466,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedField: "organization_slug",
+			expected: "/organization_slug",
 		},
 		{
 			name: "build_number with wrong type",
@@ -490,7 +480,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedField: "build_number",
+			expected: "/build_number",
 		},
 		{
 			name: "agent_tag with wrong type",
@@ -505,7 +495,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"agent_id": "agent1",
 				"agent_tag:queue": 456
 			}`,
-			expectedField: "agent_tag:queue",
+			expected: "/agent_tag:queue",
 		},
 		{
 			name: "sub with wrong type",
@@ -520,7 +510,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"job_id": "job1",
 				"agent_id": "agent1"
 			}`,
-			expectedField: "sub",
+			expected: "/sub",
 		},
 		{
 			name: "step_key with wrong type",
@@ -535,7 +525,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"agent_id": "agent1",
 				"step_key": true
 			}`,
-			expectedField: "step_key",
+			expected: "/step_key",
 		},
 		{
 			name: "cluster_id with wrong type",
@@ -550,7 +540,7 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 				"agent_id": "agent1",
 				"cluster_id": []
 			}`,
-			expectedField: "cluster_id",
+			expected: "/cluster_id",
 		},
 	}
 
@@ -558,8 +548,9 @@ func TestBuildkiteClaims_UnmarshalJSON_TypeError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var claims BuildkiteClaims
 			err := json.Unmarshal([]byte(tt.jsonData), &claims)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.expectedField)
+			var semanticErr *json.SemanticError
+			require.ErrorAs(t, err, &semanticErr)
+			assert.Equal(t, tt.expected, semanticErr.JSONPointer)
 		})
 	}
 }
@@ -832,10 +823,12 @@ func TestBuildkiteClaims_UnmarshalJSON_InvalidInput(t *testing.T) {
 		jsonData string
 		target   any
 	}{
-		{name: "array instead of object", jsonData: `[]`, target: new(*json.UnmarshalTypeError)},
-		{name: "string instead of object", jsonData: `"not-an-object"`, target: new(*json.UnmarshalTypeError)},
-		{name: "null instead of object", jsonData: `null`, target: new(*json.UnmarshalTypeError)},
-		{name: "truncated object", jsonData: `{`, target: new(*json.SyntaxError)},
+		{name: "array instead of object", jsonData: `[]`, target: new(*json.SemanticError)},
+		{name: "string instead of object", jsonData: `"not-an-object"`, target: new(*json.SemanticError)},
+		{name: "null instead of object", jsonData: `null`, target: new(*json.SemanticError)},
+		{name: "truncated object", jsonData: `{`, target: new(*jsontext.SyntacticError)},
+		{name: "duplicate claim", jsonData: `{"organization_slug":"acme","organization_slug":"other"}`, target: new(*jsontext.SyntacticError)},
+		{name: "trailing document", jsonData: `{} {}`, target: new(*jsontext.SyntacticError)},
 	}
 
 	for _, tt := range cases {

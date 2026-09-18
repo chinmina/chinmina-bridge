@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/v2"
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
@@ -97,7 +97,7 @@ func SetupJWKSServer(t *testing.T, j JWK) *httptest.Server {
 				JWKSURI: server.URL + "/.well-known/jwks.json",
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(wk)
+			_ = json.MarshalWrite(w, wk)
 		case "/.well-known/jwks.json":
 			publicKey, err := jwk.PublicKeyOf(j.key)
 			require.NoError(t, err, "failed to get public key")
@@ -107,7 +107,7 @@ func SetupJWKSServer(t *testing.T, j JWK) *httptest.Server {
 			require.NoError(t, err, "failed to add public key to set")
 
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(set)
+			_ = json.MarshalWrite(w, set)
 		default:
 			http.Error(w, "unexpected JWKS server request: "+r.URL.String(), http.StatusInternalServerError)
 		}

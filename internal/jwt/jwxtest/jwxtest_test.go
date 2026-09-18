@@ -2,7 +2,7 @@ package jwxtest_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"strings"
 	"testing"
@@ -68,7 +68,7 @@ func TestSetupJWKSServer(t *testing.T) {
 			Issuer  string `json:"issuer"`
 			JWKSURI string `json:"jwks_uri"`
 		}
-		err = json.NewDecoder(resp.Body).Decode(&config)
+		err = json.UnmarshalRead(resp.Body, &config)
 		require.NoError(t, err)
 		// The discovery metadata's issuer field must be present and must
 		// exactly match the issuer URL used for discovery.

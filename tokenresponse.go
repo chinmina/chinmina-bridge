@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/url"
 	"strconv"
 	"strings"
@@ -26,7 +26,8 @@ func (m TokenResponseMarshaler) MarshalToken(t vendor.ProfileToken) ([]byte, err
 	if !m.disclose {
 		t.ApplicationID, t.InstallationID = 0, 0
 	}
-	return json.Marshal(t)
+	// Preserve the response contract: nil permissions are null, not an empty array.
+	return json.Marshal(t, json.FormatNilSliceAsNull(true))
 }
 
 // CredentialProperties renders the token in git's credential-helper format.
