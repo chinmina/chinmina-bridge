@@ -80,18 +80,20 @@ func WriteProperties(props *ArrayMap, w io.Writer) error {
 }
 
 // ConstructRepositoryURL reconstructs a URL from the protocol and host
-// properties, which must be present. Git omits path when http.useHttpPath is false.
+// properties, which must be present and non-empty. Path is optional: Git omits it
+// when http.useHttpPath is false. Reconstruction does not determine destination
+// eligibility; callers must classify an entirely empty target before calling.
 func ConstructRepositoryURL(props *ArrayMap) (string, error) {
 	u := &url.URL{}
 
 	protocol, ok := props.Lookup("protocol")
-	if !ok {
-		return "", errors.New("protocol/scheme must be present")
+	if !ok || protocol == "" {
+		return "", errors.New("protocol/scheme must be present and non-empty")
 	}
 
 	host, ok := props.Lookup("host")
-	if !ok {
-		return "", errors.New("host must be present")
+	if !ok || host == "" {
+		return "", errors.New("host must be present and non-empty")
 	}
 
 	path := props.Get("path")

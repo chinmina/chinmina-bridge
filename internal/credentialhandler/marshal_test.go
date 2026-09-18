@@ -245,36 +245,7 @@ func TestConstructURL(t *testing.T) {
 		name     string
 		input    [][]string
 		expected string
-		failed   bool
-		failure  string
 	}{
-		{
-			name:     "fails on empty",
-			input:    [][]string{},
-			expected: "",
-			failed:   true,
-			failure:  "protocol/scheme must be present",
-		},
-		{
-			name: "fails without scheme",
-			input: [][]string{
-				{"host", "github.com"},
-				{"path", "org/repo.git"},
-			},
-			expected: "",
-			failed:   true,
-			failure:  "protocol/scheme must be present",
-		},
-		{
-			name: "fails without host",
-			input: [][]string{
-				{"protocol", "https"},
-				{"path", "org/repo.git"},
-			},
-			expected: "",
-			failed:   true,
-			failure:  "host must be present",
-		},
 		{
 			// validating the correct host is handled elsewhere, outside the
 			// responsibility of this function
@@ -324,13 +295,30 @@ func TestConstructURL(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			input := credentialhandler.NewMapFromArray(c.input)
 			url, err := credentialhandler.ConstructRepositoryURL(input)
-			require.Equal(t, err != nil, c.failed, "%v", err)
-
-			if c.failed {
-				assert.ErrorContains(t, err, c.failure)
-			}
+			require.NoError(t, err)
 
 			assert.Equal(t, c.expected, url)
+		})
+	}
+}
+
+func TestConstructURL_Incomplete(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		properties [][]string
+	}{
+		{name: "absent target"},
+		{name: "empty target", properties: [][]string{{"protocol", ""}, {"host", ""}, {"path", ""}}},
+		{name: "absent protocol", properties: [][]string{{"host", "github.com"}, {"path", "org/repo"}}},
+		{name: "empty protocol", properties: [][]string{{"protocol", ""}, {"host", "github.com"}, {"path", "org/repo"}}},
+		{name: "absent host", properties: [][]string{{"protocol", "https"}, {"path", "org/repo"}}},
+		{name: "empty host", properties: [][]string{{"protocol", "https"}, {"host", ""}, {"path", "org/repo"}}},
+		{name: "path only", properties: [][]string{{"path", "org/repo"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reconstructed, err := credentialhandler.ConstructRepositoryURL(credentialhandler.NewMapFromArray(tc.properties))
+			require.Error(t, err)
+			assert.Empty(t, reconstructed, "incomplete components must not produce a URL")
 		})
 	}
 }

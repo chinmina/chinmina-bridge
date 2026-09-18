@@ -40,9 +40,9 @@ type Entry struct {
 	RequestedRepository string
 	VendedRepository    string
 
-	// All zero when the request failed before resolution; Error names the reason
-	// in that case. The name alone is not enough: it can be repointed, and two
-	// names can alias one installation.
+	// All zero when no profile was resolved, including successful early skips.
+	// Error records the failure or skip reason. The name alone is not enough:
+	// it can be repointed, and two names can alias one installation.
 	App              string
 	ApplicationID    int64
 	InstallationID   int64
@@ -67,11 +67,11 @@ type Entry struct {
 
 // SkippedSuccessMessage is the Error value RecordSuccessfulSkip assigns. It is
 // exported so tests assert one shared definition instead of retyping the string.
-const SkippedSuccessMessage = "skipped(success): profile has no credentials for requested repository"
+const SkippedSuccessMessage = "skipped(success): no credentials for requested context"
 
-// RecordSuccessfulSkip records a successful vend that has no matching credentials.
-// It reports in Error because there is nothing else to report: Git reads the empty
-// response and moves on to the next credential helper.
+// RecordSuccessfulSkip records a credential request with no matching credentials.
+// It does not imply profile resolution or authorization. It reports in Error
+// because Git reads the empty response and moves on to the next helper.
 func (e *Entry) RecordSuccessfulSkip() {
 	e.Error = SkippedSuccessMessage
 }
