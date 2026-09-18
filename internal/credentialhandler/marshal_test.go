@@ -237,6 +237,9 @@ func TestWriteProperties_PropagatesWriteError(t *testing.T) {
 	assert.Contains(t, err.Error(), "write failed", "error should describe the write failure")
 }
 
+// URL reconstruction validates required properties, not GitHub eligibility.
+// Explicit paths must stay intact and unknown fields must not cause rejection;
+// the downstream vendor, rather than the parser, decides repository matching.
 func TestConstructURL(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -332,14 +335,23 @@ func TestConstructURL(t *testing.T) {
 	}
 }
 
+// Git may omit path when HTTP path matching is disabled in its configuration.
+// Omission and explicit emptiness must reconstruct the same nonempty host URL;
+// an empty URL would instead disable Git repository matching in the vendor.
 func TestConstructURL_PathPresence(t *testing.T) {
-	for _, name := range []string{"omitted", "empty"} {
-		t.Run(name, func(t *testing.T) {
-			properties := [][]string{{"protocol", "https"}, {"host", "github.com"}}
-			if name == "empty" {
-				properties = append(properties, []string{"path", ""})
-			}
-			url, err := credentialhandler.ConstructRepositoryURL(credentialhandler.NewMapFromArray(properties))
+	cases := []struct {
+		name       string
+		properties [][]string
+	}{
+		{name: "omitted", properties: [][]string{{"protocol", "https"}, {"host", "github.com"}}},
+		{name: "empty", properties: [][]string{{"protocol", "https"}, {"host", "github.com"}, {"path", ""}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			properties := credentialhandler.NewMapFromArray(tc.properties)
+
+			url, err := credentialhandler.ConstructRepositoryURL(properties)
+
 			require.NoError(t, err)
 			assert.Equal(t, "https://github.com", url)
 		})

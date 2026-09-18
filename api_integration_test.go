@@ -443,6 +443,9 @@ func TestIntegrationPipelineGitCredentials_ProfileNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, apiErr.StatusCode)
 }
 
+// Git must be allowed to try another helper when no repository matches.
+// A missing path must therefore remain a Git matching constraint, not become
+// the empty-URL token-endpoint sentinel that would offer unrelated credentials.
 func TestIntegrationGitCredentials_PathPresenceUnmatched(t *testing.T) {
 	profiles := []struct{ name, endpoint, urn string }{
 		{"pipeline", "/git-credentials", "profile://organization/test-org/pipeline/pipeline-123/test-pipeline/profile/default"},
@@ -474,6 +477,9 @@ func TestIntegrationGitCredentials_PathPresenceUnmatched(t *testing.T) {
 	}
 }
 
+// Caller-scoped profiles cannot choose token scope without a repository.
+// Both parser errors and missing-scope denials return 400, so status alone
+// cannot prove omission reached scope validation with its audit intent intact.
 func TestIntegrationGitCredentials_PathPresenceRequiresScope(t *testing.T) {
 	const endpoint = "/organization/git-credentials/caller-scoped-profile"
 	for _, path := range repositorylessCredentialPaths {
@@ -483,6 +489,7 @@ func TestIntegrationGitCredentials_PathPresenceRequiresScope(t *testing.T) {
 			token := harness.PipelineToken()
 			control, controlAudit := request(t, endpoint, token, "protocol=https\nhost=github.com\npath=\n\n")
 			require.NotEmpty(t, control.Headers.Get("Chinmina-Denied"))
+			require.NotEmpty(t, controlAudit.Error)
 			expectedHeaders := credentialResponseHeaders{http.StatusBadRequest, "text/plain", control.Headers.Get("Chinmina-Denied")}
 			expectedAudit := credentialAudit{RequestedProfile: "caller-scoped-profile", RequestedRepository: path.url}
 
@@ -496,6 +503,9 @@ func TestIntegrationGitCredentials_PathPresenceRequiresScope(t *testing.T) {
 	}
 }
 
+// An authorized wildcard profile does not require a repository to vend a token.
+// Empty success would wrongly prevent Git from receiving permitted credentials;
+// full credential and audit expectations distinguish that bug from a valid 200.
 func TestIntegrationGitCredentials_PathPresenceWildcard(t *testing.T) {
 	for _, path := range repositorylessCredentialPaths {
 		t.Run(path.name, func(t *testing.T) {
@@ -526,6 +536,9 @@ func TestIntegrationGitCredentials_PathPresenceWildcard(t *testing.T) {
 	}
 }
 
+// Equivalent Git contexts must reuse the same installation-scoped credential.
+// Exercising both warming orders catches path-presence-dependent cache behavior;
+// changing the upstream token makes an accidental second mint observable.
 func TestIntegrationGitCredentials_PathPresenceWildcardCache(t *testing.T) {
 	for _, order := range []struct{ name, coldProperty, warmProperty string }{
 		{"omitted-then-empty", "", "path=\n"},
@@ -553,6 +566,9 @@ func TestIntegrationGitCredentials_PathPresenceWildcardCache(t *testing.T) {
 	}
 }
 
+// Accepting an omitted path must not conceal an unknown requested profile.
+// Both route families must retain their normal 404 and the raw requested name,
+// with the reconstructed Git URL available to diagnose the rejected request.
 func TestIntegrationGitCredentials_PathPresenceProfileNotFound(t *testing.T) {
 	for _, endpoint := range []string{"/git-credentials/no-such-profile", "/organization/git-credentials/no-such-profile"} {
 		t.Run(endpoint, func(t *testing.T) {
@@ -578,6 +594,9 @@ func TestIntegrationGitCredentials_PathPresenceProfileNotFound(t *testing.T) {
 	}
 }
 
+// A valid OIDC identity is not permission to use every resolved profile.
+// Repository-less requests must still reach claim matching and return 403;
+// failed-claim audit metadata distinguishes authorization from an early skip.
 func TestIntegrationGitCredentials_PathPresenceProfileDenied(t *testing.T) {
 	for _, path := range hostCredentialPaths {
 		t.Run(path.name, func(t *testing.T) {
@@ -608,6 +627,9 @@ func TestIntegrationGitCredentials_PathPresenceProfileDenied(t *testing.T) {
 	}
 }
 
+// Missing repository context does not make upstream failures harmless.
+// Pipeline lookup failures and wildcard mint denials must remain errors rather
+// than successful skips, while retaining the resolved profile and app identity.
 func TestIntegrationGitCredentials_PathPresenceUpstreamFailures(t *testing.T) {
 	cases := []struct {
 		name, endpoint, urn string
