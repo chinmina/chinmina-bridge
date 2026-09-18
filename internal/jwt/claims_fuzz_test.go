@@ -3,7 +3,7 @@
 package jwt
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 )
 
@@ -74,13 +74,6 @@ func FuzzBuildkiteClaimsUnmarshalJSON(f *testing.F) {
 			// Verify AgentTags map is initialized (never nil)
 			if claims.AgentTags == nil {
 				t.Error("AgentTags map should be initialized, got nil")
-			}
-
-			// Verify we can iterate over AgentTags without panics
-			for k, v := range claims.AgentTags {
-				// Keys and values should be valid strings
-				_ = k
-				_ = v
 			}
 
 		}

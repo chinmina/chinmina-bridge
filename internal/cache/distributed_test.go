@@ -47,25 +47,36 @@ func setupValkey(t *testing.T) valkey.Client {
 }
 
 func TestIntegrationDistributed_SetAndGet(t *testing.T) {
-	client := setupValkey(t)
-
-	cache, err := NewDistributed[CacheTestDummy](client, 5*time.Minute, nil)
-	require.NoError(t, err)
-	defer cache.Close()
-
-	ctx := context.Background()
-	key := "test-key"
-
-	expected := CacheTestDummy{
-		Data: "test-value",
+	type cachedValue struct {
+		Data        string
+		Permissions []string
+		Metadata    map[string]string
 	}
 
-	// Set token
-	err = cache.Set(ctx, key, expected)
+	client := setupValkey(t)
+	cache, err := NewDistributed[cachedValue](client, 5*time.Minute, nil)
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cache.Close()) })
 
-	// Get token
-	assertEventuallyExists(t, cache, key)
+	cases := []struct {
+		name     string
+		expected cachedValue
+	}{
+		{name: "nil collections", expected: cachedValue{Data: "test-value"}},
+		{name: "empty collections", expected: cachedValue{Data: "test-value", Permissions: []string{}, Metadata: map[string]string{}}},
+		{name: "populated collections", expected: cachedValue{Data: "test-value", Permissions: []string{"contents:read"}, Metadata: map[string]string{"app": "publisher"}}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NoError(t, cache.Set(t.Context(), tt.name, tt.expected))
+			assert.EventuallyWithT(t, func(collect *assert.CollectT) {
+				actual, found, err := cache.Get(t.Context(), tt.name)
+				assert.NoError(collect, err)
+				assert.True(collect, found)
+				assert.Equal(collect, tt.expected, actual)
+			}, 2*time.Second, 50*time.Millisecond)
+		})
+	}
 }
 
 func TestIntegrationDistributed_GetNotFound(t *testing.T) {

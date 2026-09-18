@@ -3,7 +3,7 @@ package audit_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"testing"
 	"time"

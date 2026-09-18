@@ -3,7 +3,7 @@ version: "2"
 run:
   timeout: 5m
   tests: true
-  go: "1.26"
+  go: "1.27"
 
 linters:
   enable:
@@ -32,12 +32,22 @@ linters:
     # Additional useful checks
     - gocritic      # Comprehensive diagnostics
     - gosec         # Security issues (some noise, but valuable)
+    - depguard     # Require JSON v2, including tests
 
   disable:
-    - depguard      # Dependency restrictions (too project-specific)
     - dupl          # Code duplication (too noisy)
 
   settings:
+    depguard:
+      rules:
+        json-v2:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: encoding/json$
+              desc: Use encoding/json/v2 (or encoding/json/jsontext for raw values).
+
     staticcheck:
       checks: ["all", "-ST1000"]  # Disable package comment requirement
 

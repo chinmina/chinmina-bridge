@@ -1,5 +1,3 @@
-export GOEXPERIMENT := "jsonv2"
-
 # cgo is disabled by default; recipes that need it (e.g. the race detector)
 # opt back in explicitly with `CGO_ENABLED=1`.
 export CGO_ENABLED := "0"
@@ -24,6 +22,8 @@ format:
 [group('dev')]
 lint:
     golangci-lint run
+    # Enforce JSON v2 in tagged tests without expanding unrelated lint checks.
+    golangci-lint run --build-tags=integration,fuzz --enable-only=depguard
 
 # Ensure `go mod tidy` has been run after any dependency changes
 [group('ci')]

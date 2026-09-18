@@ -58,9 +58,6 @@ jobs:
           flags: ${{ matrix.type }}
 
   golangci:
-    env:
-      GOEXPERIMENT: "jsonv2"
-
     name: lint
     runs-on: ubuntu-latest
     steps:
@@ -82,3 +79,6 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           install-mode: none
+
+      - name: Enforce JSON v2 in integration and fuzz tests
+        run: golangci-lint run --build-tags=integration,fuzz --enable-only=depguard

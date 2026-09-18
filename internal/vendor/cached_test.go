@@ -2,7 +2,7 @@ package vendor_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"testing"
@@ -797,7 +797,7 @@ func TestCache_StorageShapeCarriesAppIdentity(t *testing.T) {
 		InstallationID: 8484,
 	}
 
-	data, err := json.Marshal(stored)
+	data, err := json.Marshal(stored, json.FormatNilSliceAsNull(true), json.FormatNilMapAsNull(true))
 	require.NoError(t, err)
 
 	var keys map[string]any
@@ -813,7 +813,7 @@ func TestCache_StorageShapeCarriesAppIdentity(t *testing.T) {
 // An entry written before the identifiers existed must read back as absent
 // keys, not as application zero.
 func TestCache_StorageShapeOmitsUnresolvedIdentifiers(t *testing.T) {
-	data, err := json.Marshal(vendor.ProfileToken{Token: "minted-token", App: "publisher"})
+	data, err := json.Marshal(vendor.ProfileToken{Token: "minted-token", App: "publisher"}, json.FormatNilSliceAsNull(true), json.FormatNilMapAsNull(true))
 	require.NoError(t, err)
 
 	var keys map[string]any

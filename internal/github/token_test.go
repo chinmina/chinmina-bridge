@@ -6,7 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
@@ -637,8 +637,7 @@ func TestInstallationAccount_RejectsAnUnidentifiableAccount(t *testing.T) {
 
 func JSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
-	res, _ := json.Marshal(payload)
-	_, _ = w.Write(res)
+	_ = json.MarshalWrite(w, payload)
 }
 
 // generateKey creates and PEM encodes a valid RSA private key for testing.
