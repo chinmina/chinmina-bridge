@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.15.2](https://github.com/chinmina/chinmina-bridge/compare/v0.15.1...v0.15.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* **deps:** update buildkite/agent docker tag to v4 ([#404](https://github.com/chinmina/chinmina-bridge/issues/404)) ([44d5f9d](https://github.com/chinmina/chinmina-bridge/commit/44d5f9dd22c002dbd4f008445ea77d0eff70b076))
+* **deps:** update dependency go to v1.27.1 ([#401](https://github.com/chinmina/chinmina-bridge/issues/401)) ([7354d11](https://github.com/chinmina/chinmina-bridge/commit/7354d110d9ea93d1cc59383a242593d1e890b745))
+* **deps:** update dependency goreleaser to v2.18.1 ([#407](https://github.com/chinmina/chinmina-bridge/issues/407)) ([f9d47c2](https://github.com/chinmina/chinmina-bridge/commit/f9d47c2aead7133b77fa4fbcf9e71e93bde7871f))
+* **deps:** update github actions ([#396](https://github.com/chinmina/chinmina-bridge/issues/396)) ([1c8ae9c](https://github.com/chinmina/chinmina-bridge/commit/1c8ae9c6e5aebf80efbe08095284cd0facd6e9a7))
+* **deps:** update github/codeql-action digest to b96794f ([#409](https://github.com/chinmina/chinmina-bridge/issues/409)) ([c3384b7](https://github.com/chinmina/chinmina-bridge/commit/c3384b7d59a09ea9e18c3cd4b90e5c824267097b))
+* **deps:** update go dependencies ([#399](https://github.com/chinmina/chinmina-bridge/issues/399)) ([8295b47](https://github.com/chinmina/chinmina-bridge/commit/8295b47e0d9cadd79d2d410a5d61c38e24bd5de3))
+* **deps:** update go dependencies ([#406](https://github.com/chinmina/chinmina-bridge/issues/406)) ([c3231b0](https://github.com/chinmina/chinmina-bridge/commit/c3231b01fded74de37a64822e6010a1f9018f303))
+* **deps:** update mise packages ([#398](https://github.com/chinmina/chinmina-bridge/issues/398)) ([4d8de9a](https://github.com/chinmina/chinmina-bridge/commit/4d8de9ac60cdeeec48f5a37db4cf1c81d0718be8))
+* **deps:** update module github.com/google/go-github/v90 to v91 ([#405](https://github.com/chinmina/chinmina-bridge/issues/405)) ([0ca4a42](https://github.com/chinmina/chinmina-bridge/commit/0ca4a4267ba0ac928f9b2c766bf1665ce4821701))
+* **deps:** update module github.com/lestrrat-go/jwx/v3 to v3.3.0 ([#408](https://github.com/chinmina/chinmina-bridge/issues/408)) ([0a314f3](https://github.com/chinmina/chinmina-bridge/commit/0a314f3cd1e80f05234565d4afe5f74c5ab9c088))
+* **deps:** update module google.golang.org/grpc to v1.83.1 [security] ([#395](https://github.com/chinmina/chinmina-bridge/issues/395)) ([f7e69f5](https://github.com/chinmina/chinmina-bridge/commit/f7e69f51c39843ee4da4bf5a4d41e72b9b1503e8))
+* make Git credential context handling consistent ([#412](https://github.com/chinmina/chinmina-bridge/issues/412)) ([af561d9](https://github.com/chinmina/chinmina-bridge/commit/af561d9ca54c6af1f720bb1701bd9d40b92eb265))
+* require JSON v2 without experiment flags ([#413](https://github.com/chinmina/chinmina-bridge/issues/413)) ([a0e27b0](https://github.com/chinmina/chinmina-bridge/commit/a0e27b0abdb971efa5be30d9268161ec6cae8424))
+* treat omitted git credential paths as empty ([#411](https://github.com/chinmina/chinmina-bridge/issues/411)) ([bb960c4](https://github.com/chinmina/chinmina-bridge/commit/bb960c4cae34b1b36d822ced4f49e3a6c69ccedd))
+
 ## [0.15.1](https://github.com/chinmina/chinmina-bridge/compare/v0.15.0...v0.15.1) (2026-08-28)
 
 
