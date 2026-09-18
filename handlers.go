@@ -214,8 +214,8 @@ func resolveProfile[T profile.AppNamed](ctx context.Context, pv PathValuer, look
 	return vendor.Resolved[T]{Ref: ref, Profile: authProfile, Digest: digest, App: app}, nil
 }
 
-// recordResolvedRequest stamps the request's intent on the audit entry and the
-// trace once the profile has resolved. The canonical URN is written only for a
+// recordResolvedRequest stamps resolved profile and app metadata on the audit
+// entry and trace. The canonical URN is written only for a
 // profile that actually exists, so its presence means "this name resolved"
 // rather than "this name was asked for"; unresolved names stay as the raw value
 // stamped by recordRequestedName.
@@ -223,10 +223,9 @@ func resolveProfile[T profile.AppNamed](ctx context.Context, pv PathValuer, look
 // The converse does not hold: net/http unescapes %2F after routing, so a raw
 // name can itself be URN-shaped. Distinguish a served request from a rejected
 // one via the entry's error field, never the shape of requestedProfile.
-func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[T], requestedRepo string) {
+func recordResolvedRequest[T any](ctx context.Context, resolved vendor.Resolved[T]) {
 	entry := audit.Log(ctx)
 	entry.RequestedProfile = resolved.Ref.String()
-	entry.RequestedRepository = requestedRepo
 
 	// Recorded at resolution rather than at vend, so a failed mint still names
 	// the app, and a cache hit predating the identifiers still reports them.
@@ -337,7 +336,7 @@ func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve Pr
 			writeJSONError(r.Context(), w, resolveError{err: err})
 			return
 		}
-		recordResolvedRequest(r.Context(), resolved, "")
+		recordResolvedRequest(r.Context(), resolved)
 
 		result := tokenVendor(r.Context(), resolved, "")
 
@@ -373,22 +372,26 @@ func handlePostToken[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve Pr
 func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], resolve ProfileResolver[T], marshaler TokenResponseMarshaler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer drainRequestBody(r)
-		recordRequestedName(r.Context(), r)
+		ctx := r.Context()
+		auditLog := audit.Log(ctx)
+
+		recordRequestedName(ctx, r)
 
 		// Read and reconstruct the Git-supplied URL first: the org path uses
 		// it to derive repository scope, so the resolver receives a normalised
 		// value. Keeping the order consistent across endpoints reads cleanly.
 		requestedRepo, err := credentialhandler.ReadProperties(r.Body)
 		if err != nil {
-			writeTextError(r.Context(), w, fmt.Errorf("read repository properties from client failed: %w", err))
+			writeTextError(ctx, w, fmt.Errorf("read repository properties from client failed: %w", err))
 			return
 		}
 
 		requestedRepoURL, err := credentialhandler.ConstructRepositoryURL(requestedRepo)
 		if err != nil {
-			requestError(r.Context(), w, http.StatusBadRequest, fmt.Errorf("invalid request parameters: %w", err))
+			requestError(ctx, w, http.StatusBadRequest, fmt.Errorf("invalid request parameters: %w", err))
 			return
 		}
+		auditLog.RequestedRepository = requestedRepoURL
 
 		// Derive an implicit scope hint from the Git-supplied URL for org
 		// routes. The resolver uses this as a fallback for caller-scoped
@@ -400,19 +403,18 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			implicitScope = deriveScopeFromRepoURL(requestedRepoURL)
 		}
 
-		resolved, err := resolve.Resolve(r.Context(), r, "", implicitScope)
+		resolved, err := resolve.Resolve(ctx, r, "", implicitScope)
 		if err != nil {
-			audit.Log(r.Context()).RequestedRepository = requestedRepoURL
-			writeTextError(r.Context(), w, resolveError{err: err})
+			writeTextError(ctx, w, resolveError{err: err})
 			return
 		}
-		recordResolvedRequest(r.Context(), resolved, requestedRepoURL)
+		recordResolvedRequest(ctx, resolved)
 
-		result := tokenVendor(r.Context(), resolved, requestedRepoURL)
+		result := tokenVendor(ctx, resolved, requestedRepoURL)
 
 		switch result.Status() {
 		case vendor.VendStatusFailed:
-			writeTextError(r.Context(), w, fmt.Errorf("token creation failed: %w", result.Err()))
+			writeTextError(ctx, w, fmt.Errorf("token creation failed: %w", result.Err()))
 			return
 		case vendor.VendStatusSuccessUnmatched:
 			// Given repository doesn't match the pipeline: empty return this means
@@ -431,13 +433,13 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 		tokenResponse := result.Token()
 		tokenURL, err := tokenResponse.URL()
 		if err != nil {
-			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("invalid repo URL: %w", err))
+			requestError(ctx, w, http.StatusInternalServerError, fmt.Errorf("invalid repo URL: %w", err))
 			return
 		}
 
 		err = credentialhandler.WriteProperties(marshaler.CredentialProperties(tokenResponse, tokenURL), w)
 		if err != nil {
-			requestError(r.Context(), w, http.StatusInternalServerError, fmt.Errorf("failed to write response: %w", err))
+			requestError(ctx, w, http.StatusInternalServerError, fmt.Errorf("failed to write response: %w", err))
 			return
 		}
 	})

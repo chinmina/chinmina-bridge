@@ -50,10 +50,14 @@ func testAppResolver(name string) (github.AppIdentity, bool) {
 	return testApp, true
 }
 
+// Resolved profile scope and the Git request URL describe different intent.
+// Stamping canonical profile/app metadata must not replace the incoming URL,
+// while traces still need enough identity to diagnose the resolved request.
 func TestRecordResolvedRequest_AddsProfileAndAppTraceAttributes(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
-	ctx, _ := audit.Context(t.Context())
+	ctx, entry := audit.Context(t.Context())
+	entry.RequestedRepository = "https://github.com"
 	ctx, span := tp.Tracer("test").Start(ctx, t.Name())
 
 	resolved := vendor.Resolved[struct{}]{
@@ -71,8 +75,9 @@ func TestRecordResolvedRequest_AddsProfileAndAppTraceAttributes(t *testing.T) {
 		},
 	}
 
-	recordResolvedRequest(ctx, resolved, "frontend")
+	recordResolvedRequest(ctx, resolved)
 	span.End()
+	assert.Equal(t, "https://github.com", entry.RequestedRepository, "resolved metadata must preserve the Git request URL")
 
 	spans := recorder.Ended()
 	require.Len(t, spans, 1)
@@ -1096,19 +1101,16 @@ func TestExtractRepositoryScope_Invalid(t *testing.T) {
 	}
 }
 
-// TestHandlePostToken_PipelineRouteIgnoresRepositoryScope pins the one
-// load-bearing use of AcceptsRepositoryScope. A pipeline profile cannot be
-// narrowed by the caller, so ?repository-scope= is not a request the route
-// understands — it is ignored rather than validated. The value below would be
-// a 400 on an organization route; here it must not be read at all, because
-// rejecting it would break every existing caller that passes the parameter
-// indiscriminately.
+// Pipeline token scope comes from Buildkite, never from a caller query parameter.
+// Even a value invalid on organization routes must be ignored on this route,
+// and it must not be misreported as a requested Git URL in the audit record.
 func TestHandlePostToken_PipelineRouteIgnoresRepositoryScope(t *testing.T) {
 	tokenVendor := vendor.ProfileTokenVendor[pipelineAttr](func(context.Context, vendor.Resolved[pipelineAttr], string) vendor.VendorResult {
 		return vendor.NewVendorSuccess(vendor.ProfileToken{Token: "pipeline-token"})
 	})
 
-	req, err := http.NewRequestWithContext(claimsContext(), "POST", "/token?repository-scope=owner/repo", nil)
+	ctx, entry := audit.Context(claimsContext())
+	req, err := http.NewRequestWithContext(ctx, "POST", "/token?repository-scope=owner/repo", nil)
 	require.NoError(t, err)
 	req.SetPathValue("profile", "default")
 
@@ -1116,6 +1118,7 @@ func TestHandlePostToken_PipelineRouteIgnoresRepositoryScope(t *testing.T) {
 	handlePostToken(tokenVendor, testPipelineResolver(), withheld).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code, "a scope parameter the route ignores must not fail the request")
+	assert.Empty(t, entry.RequestedRepository, "token query scope is not a requested Git URL")
 }
 
 func TestDeriveScopeFromRepoURL(t *testing.T) {
@@ -1245,46 +1248,89 @@ func TestStripPrefix(t *testing.T) {
 	})
 }
 
-// TestHandlers_RecordRequestedProfileWhenResolutionFails: a request that
-// fails before the vendor chain runs must still say which profile was
-// asked for. Without it, an operator seeing a 404 in the audit log cannot tell
-// which profile name was rejected — the only record of the request's intent is
-// lost precisely on the failure path where it matters most.
-func TestHandlers_RecordRequestedProfileWhenResolutionFails(t *testing.T) {
+// Token requests rejected during resolution still need an identifiable caller intent.
+// Their raw profile name must survive without invented Git repository or app data;
+// neither an unknown profile nor missing scope represents a successful skip.
+func TestHandlePostToken_RecordsRequestWhenResolutionFails(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
-
+	resolve := NewOrgProfileResolver(store.GetOrganizationProfile, testAppResolver)
 	cases := []struct {
-		name    string
-		handler func(ProfileResolver[orgAttr]) http.Handler
-		body    io.Reader
+		name, profile string
+		status        int
 	}{
-		{
-			name: "postToken",
-			handler: func(r ProfileResolver[orgAttr]) http.Handler {
-				return handlePostToken(tv[orgAttr]("unused"), r, withheld)
-			},
-		},
-		{
-			name: "postGitCredentials",
-			handler: func(r ProfileResolver[orgAttr]) http.Handler {
-				return handlePostGitCredentials(tv[orgAttr]("unused"), r, withheld)
-			},
-			body: gitCredentialsBody(t, "org", "repo1"),
-		},
+		{"missing-profile", "no-such-profile", http.StatusNotFound},
+		{"missing-scope", "caller-scoped-profile", http.StatusBadRequest},
 	}
-
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, entry := audit.Context(claimsContext())
-			req, err := http.NewRequestWithContext(ctx, "POST", "/organization/token/no-such-profile", tc.body)
-			require.NoError(t, err)
-			req.SetPathValue("profile", "no-such-profile")
-
+			req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/organization/token/"+tc.profile, nil)
+			req.SetPathValue("profile", tc.profile)
 			rr := httptest.NewRecorder()
-			tc.handler(NewOrgProfileResolver(store.GetOrganizationProfile, testAppResolver)).ServeHTTP(rr, req)
+			expected := audit.Entry{RequestedProfile: tc.profile}
 
-			assert.Equal(t, http.StatusNotFound, rr.Code)
-			assert.Equal(t, "no-such-profile", entry.RequestedProfile)
+			handlePostToken(tv[orgAttr]("unused"), resolve, withheld).ServeHTTP(rr, req)
+
+			assert.Equal(t, tc.status, rr.Code)
+			assert.NotEmpty(t, entry.Error)
+			assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error)
+			actual := *entry
+			actual.Error = "" // Diagnostic prose is checked separately from stable audit metadata.
+			assert.Equal(t, expected, actual)
+		})
+	}
+}
+
+// Git request intent must be recorded before profile resolution can reject it.
+// The host URL survives even without a repository, while unresolved profiles
+// retain raw names and cannot claim resolved app, authorization, or vending data.
+func TestHandlePostGitCredentials_RecordsRequestWhenResolutionFails(t *testing.T) {
+	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
+	resolve := NewOrgProfileResolver(store.GetOrganizationProfile, testAppResolver)
+	cases := []struct {
+		name, profile, pathProperty string
+		status                      int
+		expected                    audit.Entry
+	}{
+		{
+			name: "missing-profile/complete", profile: "no-such-profile", pathProperty: "path=org/repo1\n", status: http.StatusNotFound,
+			expected: audit.Entry{RequestedProfile: "no-such-profile", RequestedRepository: "https://github.com/org/repo1"},
+		},
+		{
+			name: "missing-profile/omitted", profile: "no-such-profile", status: http.StatusNotFound,
+			expected: audit.Entry{RequestedProfile: "no-such-profile", RequestedRepository: "https://github.com"},
+		},
+		{
+			name: "missing-profile/empty", profile: "no-such-profile", pathProperty: "path=\n", status: http.StatusNotFound,
+			expected: audit.Entry{RequestedProfile: "no-such-profile", RequestedRepository: "https://github.com"},
+		},
+		{
+			name: "missing-scope/omitted", profile: "caller-scoped-profile", status: http.StatusBadRequest,
+			expected: audit.Entry{RequestedProfile: "caller-scoped-profile", RequestedRepository: "https://github.com"},
+		},
+		{
+			name: "missing-scope/empty", profile: "caller-scoped-profile", pathProperty: "path=\n", status: http.StatusBadRequest,
+			expected: audit.Entry{RequestedProfile: "caller-scoped-profile", RequestedRepository: "https://github.com"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, entry := audit.Context(claimsContext())
+			body := strings.NewReader("protocol=https\nhost=github.com\n" + tc.pathProperty + "\n")
+			req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/organization/git-credentials/"+tc.profile, body)
+			req.SetPathValue("profile", tc.profile)
+			rr := httptest.NewRecorder()
+
+			handlePostGitCredentials(tv[orgAttr]("unused"), resolve, withheld).ServeHTTP(rr, req)
+
+			assert.Equal(t, tc.status, rr.Code)
+			assert.Empty(t, rr.Body.String())
+			assert.NotEmpty(t, rr.Header().Get("Chinmina-Denied"))
+			assert.NotEmpty(t, entry.Error)
+			assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error)
+			actual := *entry
+			actual.Error = "" // Diagnostic prose is checked separately from stable audit metadata.
+			assert.Equal(t, tc.expected, actual)
 		})
 	}
 }
@@ -1337,11 +1383,9 @@ pipeline:
       - contents:read
 `
 
-// TestHandlePostToken_RecordsInvalidProfileReason: the caller of an
-// unavailable profile is told only that it is unavailable, so the audit
-// entry's error is the sole durable record of why. Without the reason, an
-// operator seeing a 404 has no way to tell a misconfigured profile from a
-// mistyped name.
+// Invalid profile details belong in operator diagnostics, not caller responses.
+// A rejected request must explain which profile and claim failed in its audit
+// record while returning a nonempty error that does not disclose that claim.
 func TestHandlePostToken_RecordsInvalidProfileReason(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, invalidProfileYAML)
 	resolve := NewOrgProfileResolver(store.GetOrganizationProfile, testAppResolver)
@@ -1361,15 +1405,13 @@ func TestHandlePostToken_RecordsInvalidProfileReason(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &respBody))
 	assert.Equal(t, ErrorResponse{Error: "profile unavailable: validation failed"}, respBody)
 
-	assert.Equal(t,
-		`profile resolution failed: profile "broken-profile" unavailable: invalid match rule for claim "not_a_real_claim": claim "not_a_real_claim" is not allowed for matching`,
-		entry.Error)
+	assert.Contains(t, entry.Error, "broken-profile")
+	assert.Contains(t, entry.Error, "not_a_real_claim")
 }
 
-// TestHandlePostToken_RecordsScopedRepositoryInAuditedProfile:
-// the caller-supplied repository scope must be visible in the audited profile
-// URN, so an audit reader can tell which repository a caller-scoped profile
-// was actually exercised against.
+// A caller-scoped token's audited profile must identify the repository it grants.
+// That scope belongs in the canonical profile, not the requested Git URL field,
+// because token endpoints have no Git credential context to match against.
 func TestHandlePostToken_RecordsScopedRepositoryInAuditedProfile(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
 	resolve := NewOrgProfileResolver(store.GetOrganizationProfile, testAppResolver)
@@ -1383,13 +1425,18 @@ func TestHandlePostToken_RecordsScopedRepositoryInAuditedProfile(t *testing.T) {
 	handlePostToken(tv[orgAttr]("token-value"), resolve, withheld).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, "profile://organization/organization-slug/profile/caller-scoped-profile/repository/target-repo", entry.RequestedProfile)
+	expected := audit.Entry{
+		RequestedProfile: "profile://organization/organization-slug/profile/caller-scoped-profile/repository/target-repo",
+		App:              testApp.Name,
+		ApplicationID:    testApp.ApplicationID,
+		InstallationID:   testApp.InstallationID,
+	}
+	assert.Equal(t, expected, *entry)
 }
 
-// TestHandlePostToken_RecordsRequestedProfileWhenScopeRejected covers the
-// audit gap before resolution: a request rejected for a malformed
-// repository-scope never reaches the resolver, but an operator still needs to
-// know which profile the caller was aiming at.
+// Malformed caller scope is rejected before profile resolution can run.
+// Operators still need the raw requested profile to diagnose the denial,
+// but the rejected query must never be represented as a requested Git URL.
 func TestHandlePostToken_RecordsRequestedProfileWhenScopeRejected(t *testing.T) {
 	store := profiletest.CreateTestProfileStore(t, scopedProfilesYAML)
 	resolve := NewOrgProfileResolver(store.GetOrganizationProfile, testAppResolver)
@@ -1404,6 +1451,7 @@ func TestHandlePostToken_RecordsRequestedProfileWhenScopeRejected(t *testing.T) 
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Equal(t, "static-profile", entry.RequestedProfile)
+	assert.Empty(t, entry.RequestedRepository)
 }
 
 // TestRoutes_ReadTheProfileStoreExactlyOncePerRequest is the acceptance
