@@ -453,7 +453,10 @@ func TestIntegrationGitCredentials_PathPresenceUnmatched(t *testing.T) {
 		{"static", "/organization/git-credentials/static-profile", "profile://organization/test-org/profile/static-profile"},
 	}
 	paths := slices.Concat(repositorylessCredentialPaths, []credentialPathCase{
-		{"nonmatching-repository", "path=test-org/not-in-profile\n", "https://github.com/test-org/not-in-profile", "test-org/not-in-profile"},
+		{
+			name: "nonmatching-repository", property: "path=test-org/not-in-profile\n",
+			expected: credentialPathExpected{url: "https://github.com/test-org/not-in-profile", responsePath: "test-org/not-in-profile"},
+		},
 	})
 	for _, prof := range profiles {
 		t.Run(prof.name, func(t *testing.T) {
@@ -462,7 +465,7 @@ func TestIntegrationGitCredentials_PathPresenceUnmatched(t *testing.T) {
 					harness := newCredentialPathHarness(t)
 					request := auditedGitCredentialRequest(t, harness)
 					expected := credentialAudit{
-						RequestedProfile: prof.urn, RequestedRepository: path.url,
+						RequestedProfile: prof.urn, RequestedRepository: path.expected.url,
 						App: harness.Apps.DefaultIdentity(), ClaimsMatched: []audit.ClaimMatch{},
 					}
 
@@ -493,7 +496,7 @@ func TestIntegrationGitCredentials_PathPresenceRequiresScope(t *testing.T) {
 	for _, path := range repositorylessCredentialPaths {
 		t.Run(path.name, func(t *testing.T) {
 			expectedHeaders := credentialResponseHeaders{http.StatusBadRequest, "text/plain", control.Headers.Get("Chinmina-Denied")}
-			expectedAudit := credentialAudit{RequestedProfile: "caller-scoped-profile", RequestedRepository: path.url}
+			expectedAudit := credentialAudit{RequestedProfile: "caller-scoped-profile", RequestedRepository: path.expected.url}
 
 			response, entry := request(t, endpoint, token, "protocol=https\nhost=github.com\n"+path.property+"\n")
 
@@ -517,14 +520,14 @@ func TestIntegrationGitCredentials_PathPresenceWildcard(t *testing.T) {
 			harness := newCredentialPathHarness(t)
 			request := auditedGitCredentialRequest(t, harness)
 			expectedProperties := [][]string{
-				{"protocol", "https"}, {"host", "github.com"}, {"path", path.responsePath},
+				{"protocol", "https"}, {"host", "github.com"}, {"path", path.expected.responsePath},
 				{"username", "x-access-token"}, {"password", "ghs_path_presence"},
 				{"password_expiry_utc", fmt.Sprint(harness.GitHubMock.Expiry.Unix())},
 			}
 			expectedAudit := credentialAudit{
-				RequestedProfile: "profile://organization/test-org/profile/all-repos-profile", RequestedRepository: path.url,
+				RequestedProfile: "profile://organization/test-org/profile/all-repos-profile", RequestedRepository: path.expected.url,
 				App: harness.Apps.DefaultIdentity(), ClaimsMatched: []audit.ClaimMatch{},
-				VendedRepository: path.url, Repositories: []string{profile.LiteralAllRepositories},
+				VendedRepository: path.expected.url, Repositories: []string{profile.LiteralAllRepositories},
 				Permissions: []string{"contents:read", "metadata:read"},
 				ExpirySecs:  harness.GitHubMock.Expiry.Unix(), HashedToken: vendor.HashToken("ghs_path_presence"),
 			}
@@ -1303,25 +1306,57 @@ func auditedGitCredentialRequest(t *testing.T, harness *APITestHarness) func(*te
 // These are wire inputs and literal expectations, not another URL constructor.
 // GitCredentialRequest cannot represent omission because it always writes path=.
 type credentialPathCase struct {
-	name, property, url, responsePath string
+	name, property string
+	expected       credentialPathExpected
+}
+
+type credentialPathExpected struct {
+	url, responsePath string
 }
 
 var hostCredentialPaths = []credentialPathCase{
 	// `empty` repeats the hoisted control: it proves an empty path works end-to-end.
-	{"omitted", "", "https://github.com", ""},
-	{"empty", "path=\n", "https://github.com", ""},
+	{name: "omitted", expected: credentialPathExpected{url: "https://github.com"}},
+	{name: "empty", property: "path=\n", expected: credentialPathExpected{url: "https://github.com"}},
 }
 
 var repositorylessCredentialPaths = slices.Concat(hostCredentialPaths, []credentialPathCase{
-	{"root", "path=/\n", "https://github.com/", ""},
-	{"matching-org/git-path", "path=test-org\n", "https://github.com/test-org", "test-org"},
-	{"matching-org/leading-slash", "path=/test-org\n", "https://github.com/test-org", "test-org"},
-	{"matching-org-slash/git-path", "path=test-org/\n", "https://github.com/test-org/", "test-org/"},
-	{"matching-org-slash/leading-slash", "path=/test-org/\n", "https://github.com/test-org/", "test-org/"},
-	{"other-org/git-path", "path=other-org\n", "https://github.com/other-org", "other-org"},
-	{"other-org/leading-slash", "path=/other-org\n", "https://github.com/other-org", "other-org"},
-	{"other-org-slash/git-path", "path=other-org/\n", "https://github.com/other-org/", "other-org/"},
-	{"other-org-slash/leading-slash", "path=/other-org/\n", "https://github.com/other-org/", "other-org/"},
+	{
+		name: "root", property: "path=/\n",
+		expected: credentialPathExpected{url: "https://github.com/"},
+	},
+	{
+		name: "matching-org/git-path", property: "path=test-org\n",
+		expected: credentialPathExpected{url: "https://github.com/test-org", responsePath: "test-org"},
+	},
+	{
+		name: "matching-org/leading-slash", property: "path=/test-org\n",
+		expected: credentialPathExpected{url: "https://github.com/test-org", responsePath: "test-org"},
+	},
+	{
+		name: "matching-org-slash/git-path", property: "path=test-org/\n",
+		expected: credentialPathExpected{url: "https://github.com/test-org/", responsePath: "test-org/"},
+	},
+	{
+		name: "matching-org-slash/leading-slash", property: "path=/test-org/\n",
+		expected: credentialPathExpected{url: "https://github.com/test-org/", responsePath: "test-org/"},
+	},
+	{
+		name: "other-org/git-path", property: "path=other-org\n",
+		expected: credentialPathExpected{url: "https://github.com/other-org", responsePath: "other-org"},
+	},
+	{
+		name: "other-org/leading-slash", property: "path=/other-org\n",
+		expected: credentialPathExpected{url: "https://github.com/other-org", responsePath: "other-org"},
+	},
+	{
+		name: "other-org-slash/git-path", property: "path=other-org/\n",
+		expected: credentialPathExpected{url: "https://github.com/other-org/", responsePath: "other-org/"},
+	},
+	{
+		name: "other-org-slash/leading-slash", property: "path=/other-org/\n",
+		expected: credentialPathExpected{url: "https://github.com/other-org/", responsePath: "other-org/"},
+	},
 })
 
 func newCredentialPathHarness(t *testing.T) *APITestHarness {
