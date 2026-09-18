@@ -309,23 +309,54 @@ func TestHandlePostGitCredentials_ReturnsEmptySuccessWhenNoToken(t *testing.T) {
 	assert.Equal(t, "", respBody)
 }
 
-func TestHandlePostGitCredentials_ReturnsFailureOnInvalidRequest(t *testing.T) {
-	tokenVendor := tv[pipelineAttr]("expected-token-value")
+// Unfulfillable contexts must never become the vendor's empty-URL sentinel.
+// Even a failing resolver must be irrelevant until the target is supported.
+func TestHandlePostGitCredentials_ContextBeforeResolution(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, repository string
+		status                 int
+	}{
+		{name: "empty body", status: http.StatusOK},
+		{name: "empty properties", body: "protocol=\nhost=\npath=\n", status: http.StatusOK},
+		{name: "unrelated properties", body: "username=someone\npassword=ignored\n", status: http.StatusOK},
+		{name: "unsupported host", body: "protocol=https\nhost=gitlab.com\npath=org/repo\n", repository: "https://gitlab.com/org/repo", status: http.StatusOK},
+		{name: "unsupported protocol", body: "protocol=http\nhost=github.com\n", repository: "http://github.com", status: http.StatusOK},
+		{name: "missing protocol", body: "host=github.com\npath=org/repo\n", status: http.StatusBadRequest},
+		{name: "empty host", body: "protocol=https\nhost=\npath=org/repo\n", status: http.StatusBadRequest},
+		{name: "path only", body: "path=/\n", status: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, entry := audit.Context(claimsContext())
+			req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/git-credentials/unknown", strings.NewReader(tc.body))
+			req.SetPathValue("profile", "unknown")
+			rr := httptest.NewRecorder()
+			resolver := ProfileResolver[pipelineAttr]{Resolve: func(context.Context, PathValuer, string, string) (vendor.Resolved[pipelineAttr], error) {
+				t.Error("context classification must precede profile resolution")
+				return vendor.Resolved[pipelineAttr]{}, errors.New("unavailable profile")
+			}}
+			tokenVendor := vendor.ProfileTokenVendor[pipelineAttr](func(context.Context, vendor.Resolved[pipelineAttr], string) vendor.VendorResult {
+				t.Error("context classification must precede vending and cache access")
+				return vendor.NewVendorUnmatched()
+			})
 
-	ctx := claimsContext()
+			handlePostGitCredentials(tokenVendor, resolver, withheld).ServeHTTP(rr, req)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "/git-credentials", nil)
-	require.NoError(t, err)
-	rr := httptest.NewRecorder()
-
-	// act
-	handler := handlePostGitCredentials(tokenVendor, testPipelineResolver(), withheld)
-	handler.ServeHTTP(rr, req)
-
-	// assert
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
-	// important to know that internal details aren't part of the error response
-	assert.Equal(t, "Bad Request\n", rr.Body.String())
+			assert.Equal(t, tc.status, rr.Code)
+			assert.Equal(t, "unknown", entry.RequestedProfile)
+			assert.Equal(t, tc.repository, entry.RequestedRepository)
+			if tc.status == http.StatusOK {
+				assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+				assert.Equal(t, "0", rr.Header().Get("Content-Length"))
+				assert.NotContains(t, rr.Header(), "Chinmina-Denied")
+				assert.Empty(t, rr.Body.String())
+				assert.Equal(t, audit.SkippedSuccessMessage, entry.Error)
+			} else {
+				assert.Equal(t, "Bad Request\n", rr.Body.String(), "internal diagnostics must not leak to the client")
+				assert.NotEmpty(t, entry.Error)
+				assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error)
+			}
+		})
+	}
 }
 
 func TestHandlePostGitCredentials_ReturnsFailureOnReadFailure(t *testing.T) {
@@ -1331,6 +1362,53 @@ func TestHandlePostGitCredentials_RecordsRequestWhenResolutionFails(t *testing.T
 			actual := *entry
 			actual.Error = "" // Diagnostic prose is checked separately from stable audit metadata.
 			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestHandlePostGitCredentials_UnavailableProfilePrecedence(t *testing.T) {
+	store := profiletest.CreateTestProfileStore(t, invalidProfileYAML)
+	for _, tc := range []struct {
+		name, profile string
+		resolveApp    AppResolver
+		status        int
+	}{
+		{"invalid-profile", "broken-profile", testAppResolver, http.StatusNotFound},
+		{"unresolved-app", "valid-profile", func(string) (github.AppIdentity, bool) { return github.AppIdentity{}, false }, http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolve := NewOrgProfileResolver(store.GetOrganizationProfile, tc.resolveApp)
+			for _, target := range []struct{ name, body, repository string }{
+				{name: "empty"},
+				{name: "unsupported", body: "protocol=http\nhost=github.com\n", repository: "http://github.com"},
+				{name: "supported-omitted-path", body: "protocol=https\nhost=github.com\n", repository: "https://github.com"},
+				{name: "supported-empty-path", body: "protocol=https\nhost=github.com\npath=\n", repository: "https://github.com"},
+			} {
+				t.Run(target.name, func(t *testing.T) {
+					ctx, entry := audit.Context(claimsContext())
+					req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/organization/git-credentials/"+tc.profile, strings.NewReader(target.body))
+					req.SetPathValue("profile", tc.profile)
+					rr := httptest.NewRecorder()
+					handlePostGitCredentials(tv[orgAttr]("must-not-vend"), resolve, withheld).ServeHTTP(rr, req)
+
+					assert.Empty(t, rr.Body.String())
+					assert.Equal(t, "text/plain", rr.Header().Get("Content-Type"))
+					if target.repository == "https://github.com" {
+						assert.Equal(t, tc.status, rr.Code)
+						assert.NotEmpty(t, rr.Header().Get("Chinmina-Denied"))
+						assert.NotEmpty(t, entry.Error)
+						assert.NotEqual(t, audit.SkippedSuccessMessage, entry.Error)
+					} else {
+						assert.Equal(t, http.StatusOK, rr.Code)
+						assert.Equal(t, "0", rr.Header().Get("Content-Length"))
+						assert.NotContains(t, rr.Header(), "Chinmina-Denied")
+						assert.Equal(t, audit.SkippedSuccessMessage, entry.Error)
+					}
+					actual := *entry
+					actual.Error = ""
+					assert.Equal(t, audit.Entry{RequestedProfile: tc.profile, RequestedRepository: target.repository}, actual)
+				})
+			}
 		})
 	}
 }

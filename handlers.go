@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -91,14 +92,13 @@ type ProfileLookup[T any] func(name string) (profile.AuthorizedProfile[T], strin
 // parameter on the audit entry, and stamping a canonical URN for a name that
 // never resolved would make a rejected request read like a served one.
 //
-// Only /organization/token surfaces scope-mismatch errors to the caller:
-// implicitScope is always present on a git-credentials request, so it never
-// represents an explicit choice.
-//   - RepositoryScopeUnexpectedError (Reqs 2.2/5.2) can only originate from
-//     explicitScope, i.e. only at /organization/token.
-//   - RepositoryScopeRequiredError (Req 2.3) is caller-facing only at
-//     /organization/token; at git-credentials it arises only when the body
-//     URL fails to resolve to a repository at all.
+// Git credential routes supply only an implicit scope derived from a supported
+// target; missing or invalid repository paths yield no scope. An entirely empty
+// or unsupported target skips resolution altogether.
+//   - RepositoryScopeUnexpectedError can only originate from explicitScope,
+//     i.e. only at /organization/token.
+//   - RepositoryScopeRequiredError also arises at git-credentials when a
+//     supported target cannot supply a repository for a caller-scoped profile.
 type ProfileResolver[T any] struct {
 	// AcceptsRepositoryScope reports whether this family's profiles can be
 	// narrowed to a caller-supplied repository. It travels with the resolver
@@ -377,14 +377,24 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 
 		recordRequestedName(ctx, r)
 
-		// Read and reconstruct the Git-supplied URL first: the org path uses
-		// it to derive repository scope, so the resolver receives a normalised
-		// value. Keeping the order consistent across endpoints reads cleanly.
+		// Authentication has already run in middleware. These checks define the
+		// Git credential protocol response, not the caller's token authority.
 		requestedRepo, err := credentialhandler.ReadProperties(r.Body)
 		if err != nil {
 			writeTextError(ctx, w, fmt.Errorf("read repository properties from client failed: %w", err))
 			return
 		}
+
+		// No target is valid but unfulfillable. Never pass the empty-URL token
+		// endpoint sentinel into profile resolution, caching, or vending.
+		protocol, host := requestedRepo.Get("protocol"), requestedRepo.Get("host")
+		if protocol == "" && host == "" && requestedRepo.Get("path") == "" {
+			writeEmptyGitCredentials(ctx, w)
+			return
+		}
+
+		// A partial target requires non-empty protocol and host; path remains
+		// optional. Check completeness before considering destination support.
 
 		requestedRepoURL, err := credentialhandler.ConstructRepositoryURL(requestedRepo)
 		if err != nil {
@@ -392,6 +402,14 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			return
 		}
 		auditLog.RequestedRepository = requestedRepoURL
+
+		// Compare original values literally, without URL normalization. An
+		// unsupported destination permits helper fallback, independent of the
+		// requested profile. Supported host-only contexts still need resolution.
+		if protocol != "https" || host != "github.com" {
+			writeEmptyGitCredentials(ctx, w)
+			return
+		}
 
 		// Derive an implicit scope hint from the Git-supplied URL for org
 		// routes. The resolver uses this as a fallback for caller-scoped
@@ -417,13 +435,7 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			writeTextError(ctx, w, fmt.Errorf("token creation failed: %w", result.Err()))
 			return
 		case vendor.VendStatusSuccessUnmatched:
-			// Given repository doesn't match the pipeline: empty return this means
-			// that we understand the request but cannot fulfil it: this is a
-			// successful case for a credential helper, so we successfully return
-			// but don't offer credentials.
-			w.Header().Set("Content-Type", "text/plain")
-			w.Header().Add("Content-Length", "0")
-			w.WriteHeader(http.StatusOK)
+			writeEmptyGitCredentials(ctx, w)
 			return
 		}
 
@@ -443,6 +455,15 @@ func handlePostGitCredentials[T any](tokenVendor vendor.ProfileTokenVendor[T], r
 			return
 		}
 	})
+}
+
+// writeEmptyGitCredentials lets Git try another helper for an empty target,
+// unsupported destination, or repository mismatch. No profile need be resolved.
+func writeEmptyGitCredentials(ctx context.Context, w http.ResponseWriter) {
+	audit.Log(ctx).RecordSuccessfulSkip()
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Length", "0")
+	w.WriteHeader(http.StatusOK)
 }
 
 func handleHealthCheck() http.Handler {
@@ -510,7 +531,8 @@ func writeJSONError(ctx context.Context, w http.ResponseWriter, err error) {
 	w.WriteHeader(statusCode)
 
 	response := ErrorResponse{Error: message}
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	encoder := jsontext.NewEncoder(w, jsontext.EscapeForHTML(true), jsontext.EscapeForJS(true))
+	if err := json.MarshalEncode(encoder, response); err != nil {
 		// At this point the status code has been written, so we can only log
 		slog.Info("failed to write JSON error response", "error", err)
 	}
