@@ -443,98 +443,6 @@ func TestIntegrationPipelineGitCredentials_ProfileNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, apiErr.StatusCode)
 }
 
-// auditedGitCredentialRequest observes the entry after the real routing,
-// authentication, and vendor chain completes. Only the audit context is seeded;
-// identity still comes from the signed JWT sent over HTTP.
-func auditedGitCredentialRequest(t *testing.T, harness *APITestHarness) func(*testing.T, string, string, string) (*Response, audit.Entry) {
-	t.Helper()
-	entries := make(chan audit.Entry, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, entry := audit.Context(r.Context())
-		harness.Server.Config.Handler.ServeHTTP(w, r.WithContext(ctx))
-		entries <- *entry
-	}))
-	t.Cleanup(server.Close)
-	client := &TestClient{baseURL: server.URL, client: server.Client()}
-
-	return func(t *testing.T, endpoint, token, body string) (*Response, audit.Entry) {
-		t.Helper()
-		response, err := client.Request(http.MethodPost, endpoint, token, strings.NewReader(body))
-		require.NoError(t, err)
-		return response, <-entries
-	}
-}
-
-// These are wire inputs and literal expectations, not another URL constructor.
-// GitCredentialRequest cannot represent omission because it always writes path=.
-type credentialPathCase struct {
-	name, property, url, responsePath string
-}
-
-var hostCredentialPaths = []credentialPathCase{
-	{"omitted", "", "https://github.com", ""},
-	{"empty", "path=\n", "https://github.com", ""},
-}
-
-var repositorylessCredentialPaths = append(hostCredentialPaths, []credentialPathCase{
-	{"root", "path=/\n", "https://github.com/", ""},
-	{"matching-org/git-path", "path=test-org\n", "https://github.com/test-org", "test-org"},
-	{"matching-org/leading-slash", "path=/test-org\n", "https://github.com/test-org", "test-org"},
-	{"matching-org-slash/git-path", "path=test-org/\n", "https://github.com/test-org/", "test-org/"},
-	{"matching-org-slash/leading-slash", "path=/test-org/\n", "https://github.com/test-org/", "test-org/"},
-	{"other-org/git-path", "path=other-org\n", "https://github.com/other-org", "other-org"},
-	{"other-org/leading-slash", "path=/other-org\n", "https://github.com/other-org", "other-org"},
-	{"other-org-slash/git-path", "path=other-org/\n", "https://github.com/other-org/", "other-org/"},
-	{"other-org-slash/leading-slash", "path=/other-org/\n", "https://github.com/other-org/", "other-org/"},
-}...)
-
-func newCredentialPathHarness(t *testing.T) *APITestHarness {
-	t.Helper()
-	harness := NewAPITestHarness(t)
-	contents, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
-	require.NoError(t, err)
-	harness.UpdateProfiles(t, string(contents))
-	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
-	harness.GitHubMock.Token = "ghs_path_presence"
-	return harness
-}
-
-// Compare the HTTP contract without incidental transport headers such as Date.
-// The body is asserted separately: empty responses and credential properties
-// have different contracts, and credential property ordering is not significant.
-type credentialResponseHeaders struct {
-	Status              int
-	ContentType, Denied string
-}
-
-func credentialHeaders(response *Response) credentialResponseHeaders {
-	return credentialResponseHeaders{response.StatusCode, response.Headers.Get("Content-Type"), response.Headers.Get("Chinmina-Denied")}
-}
-
-// Only request intent and vending metadata belong to these tests. Middleware
-// identity/transport fields and the serialized audit schema have their own tests.
-// Error is checked separately by outcome, without pinning diagnostic prose.
-type credentialAudit struct {
-	RequestedProfile, RequestedRepository string
-	App                                   github.AppIdentity
-	ClaimsMatched                         []audit.ClaimMatch
-	ClaimsFailed                          []audit.ClaimFailure
-	VendedRepository                      string
-	Repositories, Permissions             []string
-	ExpirySecs                            int64
-	HashedToken                           string
-}
-
-func credentialAuditFields(entry audit.Entry) credentialAudit {
-	return credentialAudit{
-		RequestedProfile: entry.RequestedProfile, RequestedRepository: entry.RequestedRepository,
-		App:           github.AppIdentity{Name: entry.App, ApplicationID: entry.ApplicationID, InstallationID: entry.InstallationID},
-		ClaimsMatched: entry.ClaimsMatched, ClaimsFailed: entry.ClaimsFailed,
-		VendedRepository: entry.VendedRepository, Repositories: entry.Repositories,
-		Permissions: entry.Permissions, ExpirySecs: entry.ExpirySecs, HashedToken: entry.HashedToken,
-	}
-}
-
 func TestIntegrationGitCredentials_PathPresenceUnmatched(t *testing.T) {
 	profiles := []struct{ name, endpoint, urn string }{
 		{"pipeline", "/git-credentials", "profile://organization/test-org/pipeline/pipeline-123/test-pipeline/profile/default"},
@@ -1329,4 +1237,96 @@ func TestIntegrationPipelineGitCredentials_WithholdsAppIdentifiersByDefault(t *t
 		keys = append(keys, k)
 	}
 	assert.Equal(t, []string{"protocol", "host", "path", "username", "password", "password_expiry_utc"}, keys)
+}
+
+// auditedGitCredentialRequest observes the entry after the real routing,
+// authentication, and vendor chain completes. Only the audit context is seeded;
+// identity still comes from the signed JWT sent over HTTP.
+func auditedGitCredentialRequest(t *testing.T, harness *APITestHarness) func(*testing.T, string, string, string) (*Response, audit.Entry) {
+	t.Helper()
+	entries := make(chan audit.Entry, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, entry := audit.Context(r.Context())
+		harness.Server.Config.Handler.ServeHTTP(w, r.WithContext(ctx))
+		entries <- *entry
+	}))
+	t.Cleanup(server.Close)
+	client := &TestClient{baseURL: server.URL, client: server.Client()}
+
+	return func(t *testing.T, endpoint, token, body string) (*Response, audit.Entry) {
+		t.Helper()
+		response, err := client.Request(http.MethodPost, endpoint, token, strings.NewReader(body))
+		require.NoError(t, err)
+		return response, <-entries
+	}
+}
+
+// These are wire inputs and literal expectations, not another URL constructor.
+// GitCredentialRequest cannot represent omission because it always writes path=.
+type credentialPathCase struct {
+	name, property, url, responsePath string
+}
+
+var hostCredentialPaths = []credentialPathCase{
+	{"omitted", "", "https://github.com", ""},
+	{"empty", "path=\n", "https://github.com", ""},
+}
+
+var repositorylessCredentialPaths = append(hostCredentialPaths, []credentialPathCase{
+	{"root", "path=/\n", "https://github.com/", ""},
+	{"matching-org/git-path", "path=test-org\n", "https://github.com/test-org", "test-org"},
+	{"matching-org/leading-slash", "path=/test-org\n", "https://github.com/test-org", "test-org"},
+	{"matching-org-slash/git-path", "path=test-org/\n", "https://github.com/test-org/", "test-org/"},
+	{"matching-org-slash/leading-slash", "path=/test-org/\n", "https://github.com/test-org/", "test-org/"},
+	{"other-org/git-path", "path=other-org\n", "https://github.com/other-org", "other-org"},
+	{"other-org/leading-slash", "path=/other-org\n", "https://github.com/other-org", "other-org"},
+	{"other-org-slash/git-path", "path=other-org/\n", "https://github.com/other-org/", "other-org/"},
+	{"other-org-slash/leading-slash", "path=/other-org/\n", "https://github.com/other-org/", "other-org/"},
+}...)
+
+func newCredentialPathHarness(t *testing.T) *APITestHarness {
+	t.Helper()
+	harness := NewAPITestHarness(t)
+	contents, err := os.ReadFile("testdata/org-profiles-scoped.yaml")
+	require.NoError(t, err)
+	harness.UpdateProfiles(t, string(contents))
+	harness.BuildkiteMock.RepositoryURL = "https://github.com/test-org/test-repo"
+	harness.GitHubMock.Token = "ghs_path_presence"
+	return harness
+}
+
+// Compare the HTTP contract without incidental transport headers such as Date.
+// The body is asserted separately: empty responses and credential properties
+// have different contracts, and credential property ordering is not significant.
+type credentialResponseHeaders struct {
+	Status              int
+	ContentType, Denied string
+}
+
+func credentialHeaders(response *Response) credentialResponseHeaders {
+	return credentialResponseHeaders{response.StatusCode, response.Headers.Get("Content-Type"), response.Headers.Get("Chinmina-Denied")}
+}
+
+// Only request intent and vending metadata belong to these tests. Middleware
+// identity/transport fields and the serialized audit schema have their own tests.
+// Error is checked separately by outcome, without pinning diagnostic prose.
+type credentialAudit struct {
+	RequestedProfile, RequestedRepository string
+	App                                   github.AppIdentity
+	ClaimsMatched                         []audit.ClaimMatch
+	ClaimsFailed                          []audit.ClaimFailure
+	VendedRepository                      string
+	Repositories, Permissions             []string
+	ExpirySecs                            int64
+	HashedToken                           string
+}
+
+func credentialAuditFields(entry audit.Entry) credentialAudit {
+	return credentialAudit{
+		RequestedProfile: entry.RequestedProfile, RequestedRepository: entry.RequestedRepository,
+		App:           github.AppIdentity{Name: entry.App, ApplicationID: entry.ApplicationID, InstallationID: entry.InstallationID},
+		ClaimsMatched: entry.ClaimsMatched, ClaimsFailed: entry.ClaimsFailed,
+		VendedRepository: entry.VendedRepository, Repositories: entry.Repositories,
+		Permissions: entry.Permissions, ExpirySecs: entry.ExpirySecs, HashedToken: entry.HashedToken,
+	}
 }
