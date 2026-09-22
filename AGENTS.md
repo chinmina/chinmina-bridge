@@ -247,3 +247,4 @@ Run `just` (or `just --list`) to see all recipes, organised into `build`, `test`
 - Architecture and implementation: https://chinmina.github.io/introduction/
 - Configuration reference: https://chinmina.github.io/reference/configuration/
 - DeepWiki: https://deepwiki.com/chinmina/chinmina-bridge
+- urfave/cli v3 documentation: Context7 library ID `/urfave/cli` (scope queries to v3; the index includes other major versions).
