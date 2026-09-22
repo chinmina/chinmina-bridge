@@ -7,7 +7,7 @@ GO_BUILD_FLAGS := "-trimpath"
 GO_LD_FLAGS := "-w"
 
 # Packages containing fuzz targets
-FUZZ_PACKAGES := "internal/credentialhandler internal/jwt internal/profile internal/vendor ."
+FUZZ_PACKAGES := "internal/bridge internal/credentialhandler internal/jwt internal/profile internal/vendor"
 
 # List available recipes
 default:
@@ -79,13 +79,13 @@ build-container:
     # in future we will need "ko" or "goreleaser" to produce images across the
     # required architectures.
     mkdir -p dist
-    GOOS=linux go build {{GO_BUILD_FLAGS}} -ldflags="{{GO_LD_FLAGS}}" -o dist/chinmina-bridge .
+    GOOS=linux go build {{GO_BUILD_FLAGS}} -ldflags="{{GO_LD_FLAGS}}" -o dist/chinmina-bridge ./cmd/chinmina-bridge
 
 # Build the local dev binary; extra go build args are forwarded, e.g. `just build-local -v`
 [group('build')]
 build-local *args:
     mkdir -p dist
-    go build {{args}} {{GO_BUILD_FLAGS}} -ldflags="{{GO_LD_FLAGS}}" -o dist/chinmina-bridge-local .
+    go build {{args}} {{GO_BUILD_FLAGS}} -ldflags="{{GO_LD_FLAGS}}" -o dist/chinmina-bridge-local ./cmd/chinmina-bridge
 
 # Build the oidc-local test helper binary
 [group('build')]

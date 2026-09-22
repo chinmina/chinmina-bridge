@@ -11,6 +11,7 @@ env:
 
 builds:
   - id: release
+    main: ./cmd/chinmina-bridge
     binary: chinmina-bridge
     flags:
       - "-trimpath" # don't include the full path of the source files

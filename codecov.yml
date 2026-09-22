@@ -7,8 +7,8 @@ ignore:
   - "internal/audit/response.go"
   # telemetry configuration
   - "internal/observe/telemetry.go"
-  # bootstrap only
-  - "main.go"
+  # process entry point only
+  - "cmd/chinmina-bridge"
 
 flag_management:
   default_rules:
