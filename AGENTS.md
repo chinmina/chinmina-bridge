@@ -54,7 +54,7 @@ Note: `just test`/`just integration` always run against `./...` — any extra ar
 - All integration test functions must be named with the `TestIntegration` prefix
 - Run integration tests only: `just integration` or `go test -tags=integration -run="^TestIntegration" ./...`
 - Integration tests use `APITestHarness` which provides real HTTP handlers with mocked external services
-- Located in `api_integration_test.go` alongside unit tests in the same package
+- Located in `internal/bridge/api_integration_test.go` alongside unit tests in the same package
 
 ### Dependencies
 
@@ -74,6 +74,28 @@ direnv allow .
 Create `.envrc.private` (gitignored) for local configuration overrides. See `.envrc` for all available configuration options.
 
 ## Architecture
+
+### Command Dispatch
+
+```
+cmd/chinmina-bridge/main.go   → process entry: final error reporting and exit
+  → internal/cli              → urfave/cli v3 command tree: parsing, help, selection
+    → internal/bridge.Run     → service construction and lifecycle
+```
+
+- `serve` runs the service and is the default command: the ko-built image
+  entrypoint is the bare binary and cannot carry arguments.
+- `serve` rejects positional arguments. With a default command, urfave/cli
+  routes an unknown command name to `serve` as an argument, so this is what
+  stops a typo from starting the service.
+- Nothing in the root command may load configuration, configure logging or
+  start telemetry: help and usage errors must work without credentials.
+  Each command loads only its own configuration.
+- `internal/bridge` must not import the CLI framework.
+- The entry point reports errors once and owns `os.Exit`. The library's exit
+  handler and usage printing are disabled; return errors from commands.
+  `cli.ServiceError` marks service failures, which keep the structured
+  `server failed to start` log record.
 
 ### Request Flow
 
@@ -116,6 +138,9 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
 
 ### Internal Package Responsibilities
 
+- `internal/cli` - Command tree and dispatch; no service logic
+- `internal/bridge` - Service startup wiring, routes, handlers and response marshalling
+- `internal/server` - Shutdown hook utility shared by the service lifecycle
 - `internal/jwt` - OIDC token validation, custom Buildkite claims validation
 - `internal/audit` - Structured audit logging with custom log level, response writer wrapping
 - `internal/vendor` - Token vending abstraction with caching and audit decorators
@@ -209,7 +234,7 @@ tokenVendor := vendor.Auditor(vendorCache(vendor.New(bk.RepositoryLookup, gh.Cre
   - Good: `expected: ProfileRef{Organization: "acme", Type: TypeRepo, ...}`
   - Avoid: `expectedOrg: "acme", expectedType: TypeRepo, ...`
 - Some packages use `package xxx_test` for black-box testing (see `internal/github/token_test.go`)
-- Helper functions for common test setup (see `handlers_test.go` for context creation)
+- Helper functions for common test setup (see `internal/bridge/handlers_test.go` for context creation)
 
 ### Logging
 
