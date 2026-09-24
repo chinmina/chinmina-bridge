@@ -105,9 +105,16 @@ func probeTarget(cmd *urfave.Command) (string, error) {
 		return "", err
 	}
 
-	host := net.JoinHostPort("127.0.0.1", strconv.FormatUint(port, 10))
+	// The server matches its base path against the decoded request path, so
+	// the path is escaped rather than concatenated: a '?' or '#' in it must not
+	// become a query or fragment.
+	target := url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort("127.0.0.1", strconv.FormatUint(port, 10)),
+		Path:   basePath + "/healthcheck",
+	}
 
-	return "http://" + host + basePath + "/healthcheck", nil
+	return target.String(), nil
 }
 
 func validateProbeURL(raw string) error {

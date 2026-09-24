@@ -236,6 +236,13 @@ func TestHealthcheck_ResolvesTarget(t *testing.T) {
 			expected: "/api/healthcheck",
 		},
 		{
+			// The server matches its base path against the decoded request
+			// path, so URL delimiters in it must reach the server escaped.
+			name:     "base path with URL delimiters is escaped",
+			args:     func(e *endpoint) []string { return []string{"--port", e.port(), "--base-path", "/a b?c#d"} },
+			expected: "/a b?c#d/healthcheck",
+		},
+		{
 			name:     "root base path is no prefix",
 			args:     func(e *endpoint) []string { return []string{"--port", e.port(), "--base-path", "/"} },
 			expected: "/healthcheck",
