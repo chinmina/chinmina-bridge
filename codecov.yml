@@ -9,6 +9,8 @@ ignore:
   - "internal/observe/telemetry.go"
   # process entry point only
   - "cmd/chinmina-bridge"
+  # bootstrap only
+  - "internal/bridge/bootstrap.go"
 
 flag_management:
   default_rules:

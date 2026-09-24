@@ -123,6 +123,7 @@ func TestDispatch_ServeErrorIsReturned(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, d.serveErr)
+	assert.EqualError(t, err, "startup failed", "the entry point logs the service's message undecorated")
 	assert.Equal(t, 1, d.serveCalls)
 
 	_, isServiceErr := errors.AsType[*cli.ServiceError](err)
@@ -139,4 +140,12 @@ func TestDispatch_ExitCoderDoesNotExitProcess(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, d.serveErr)
+}
+
+// Run binds the real service, so this proves the production wiring answers
+// help without loading configuration: the test environment holds none.
+func TestRun_HelpDoesNotStartTheService(t *testing.T) {
+	err := cli.Run(t.Context(), []string{"chinmina-bridge", "--help"})
+
+	require.NoError(t, err)
 }
