@@ -186,7 +186,11 @@ services:
     volumes:
       - "..:/src"
     healthcheck:
-      test: ["CMD", "httpcheck", "http://127.0.0.1:80/healthcheck"]
+      # The binary probes its own service. It reads SERVER_PORT and
+      # SERVER_BASE_PATH from the worker's environment, so the probe follows any
+      # override of either. It needs no service configuration, so a pool whose
+      # `command` runs a different build is still probed by this one.
+      test: ["CMD", "./dist/chinmina-bridge", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 5

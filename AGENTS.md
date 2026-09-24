@@ -95,7 +95,12 @@ cmd/chinmina-bridge/main.go   → process entry: final error reporting and exit
 - The entry point reports errors once and owns `os.Exit`. The library's exit
   handler and usage printing are disabled; return errors from commands.
   `cli.ServiceError` marks service failures, which keep the structured
-  `server failed to start` log record.
+  `server failed to start` log record. `cli.UnhealthyError` marks a failed
+  probe, reported without the usage hint.
+- `healthcheck` probes a running service's health endpoint. It must not load
+  the service configuration: it reads only its flags, with `SERVER_PORT` and
+  `SERVER_BASE_PATH` as environment sources, so it works without credentials.
+  Its client is uninstrumented, bypasses proxies and never follows redirects.
 
 ### Request Flow
 

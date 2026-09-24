@@ -20,6 +20,8 @@ func main() {
 		// Structured, through the service's configured logger: operators may
 		// alert on this record.
 		slog.Error("server failed to start", "error", err)
+	} else if _, ok := errors.AsType[*cli.UnhealthyError](err); ok {
+		fmt.Fprintf(os.Stderr, "chinmina-bridge: %v\n", err)
 	} else {
 		fmt.Fprintf(os.Stderr, "chinmina-bridge: %v\nRun 'chinmina-bridge --help' for usage.\n", err)
 	}

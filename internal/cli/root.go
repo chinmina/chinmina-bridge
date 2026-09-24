@@ -44,6 +44,7 @@ func New(opts Options) *urfave.Command {
 
 		Commands: []*urfave.Command{
 			serveCommand(opts.Serve),
+			healthcheckCommand(),
 		},
 	}
 }
