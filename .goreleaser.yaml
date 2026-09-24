@@ -113,6 +113,26 @@ kos:
     # Whether to use the base path without the MD5 hash after the repository name.
     base_import_paths: true
 
+    # Without these, the image inherits the base image's OCI labels and
+    # identifies itself as Chainguard's static image. Annotations mirror the
+    # labels so registry tooling reading either sees the same metadata.
+    labels: &oci-metadata
+      org.opencontainers.image.title: "chinmina-bridge"
+      org.opencontainers.image.description: "Short-lived GitHub access tokens for Buildkite pipelines"
+      org.opencontainers.image.source: "https://github.com/chinmina/chinmina-bridge"
+      org.opencontainers.image.url: "https://chinmina.github.io"
+      org.opencontainers.image.documentation: "https://chinmina.github.io"
+      org.opencontainers.image.vendor: "Chinmina"
+      org.opencontainers.image.authors: "Chinmina"
+      org.opencontainers.image.licenses: "GPL-3.0-only"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .CommitDate }}"
+    annotations: *oci-metadata
+
+    # Otherwise the config's created timestamp is inherited from the base image.
+    creation_time: "{{ .CommitTimestamp }}"
+
 # Sign with cosign -- this picks up the OIDC token from the environment in GHA.
 # If you do this locally, sign with an OAuth identity you don't mind being permanently
 # published to a transparency log.
