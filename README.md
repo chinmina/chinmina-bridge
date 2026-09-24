@@ -87,6 +87,37 @@ chinmina-bridge          # same as: chinmina-bridge serve
 chinmina-bridge --help
 ```
 
+### Health checks
+
+`chinmina-bridge healthcheck` probes a running service's `GET /healthcheck`
+endpoint. It sends one request and exits 0 on an HTTP 200 response, printing
+nothing. Any other status, a redirect, a connection failure or the timeout
+exits 1 with a diagnostic on stderr. There are no retries: the orchestrator
+owns the retry policy.
+
+By default the probe targets
+`http://127.0.0.1:<SERVER_PORT><SERVER_BASE_PATH>/healthcheck`, from the same
+settings the service listens with. Command-line flags take precedence over
+their environment variables, and `--url` replaces the whole target.
+
+| Flag          | Environment        | Default | Description                                                      |
+|---------------|--------------------|---------|------------------------------------------------------------------|
+| `--url`       |                    |         | Absolute `http(s)` URL to probe; ignores `--port`, `--base-path` |
+| `--port`      | `SERVER_PORT`      | `8080`  | Port the local service listens on                                |
+| `--base-path` | `SERVER_BASE_PATH` |         | Path prefix of the local service's routes                        |
+| `--timeout`   |                    | `2s`    | Fail if no response arrives within this duration                 |
+
+The probe needs no service configuration or credentials. The image entrypoint
+is the bare binary, so a container health check appends the subcommand:
+
+```yaml
+healthcheck:
+  test: ["CMD", "/ko-app/chinmina-bridge", "healthcheck"]
+  timeout: 3s
+```
+
+Keep the container's health check timeout longer than `--timeout`.
+
 ## Verifying releases
 
 Release artifacts carry a [build-provenance
