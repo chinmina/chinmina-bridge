@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
+	"strconv"
 	"testing"
 	"time"
 
@@ -37,6 +41,14 @@ type result struct {
 func runMain(t *testing.T, args ...string) result {
 	t.Helper()
 
+	return runMainWithEnv(t, nil, args...)
+}
+
+// runMainWithEnv runs the entry point with args, adding env to the otherwise
+// empty environment.
+func runMainWithEnv(t *testing.T, env []string, args ...string) result {
+	t.Helper()
+
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
@@ -47,6 +59,7 @@ func runMain(t *testing.T, args ...string) result {
 		// write its counters.
 		"GOCOVERDIR=" + t.TempDir(),
 	}
+	cmd.Env = append(cmd.Env, env...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -73,6 +86,7 @@ func TestEntryPoint_Help(t *testing.T) {
 		{name: "root help", args: []string{"--help"}},
 		{name: "help command", args: []string{"help"}},
 		{name: "serve help", args: []string{"serve", "--help"}},
+		{name: "healthcheck help", args: []string{"healthcheck", "--help"}},
 	}
 
 	for _, tt := range tests {
@@ -95,6 +109,8 @@ func TestEntryPoint_UsageError(t *testing.T) {
 		{name: "unknown command", args: []string{"bogus"}},
 		{name: "unknown flag", args: []string{"--bogus"}},
 		{name: "extra serve argument", args: []string{"serve", "extra"}},
+		{name: "invalid healthcheck timeout", args: []string{"healthcheck", "--timeout", "0s"}},
+		{name: "invalid healthcheck URL", args: []string{"healthcheck", "--url", "/healthcheck"}},
 	}
 
 	for _, tt := range tests {
@@ -130,4 +146,43 @@ func TestEntryPoint_ServiceFailure(t *testing.T) {
 			assert.Empty(t, res.stderr, "a service failure is reported once, through the service logger")
 		})
 	}
+}
+
+// Service settings the probe does not use are deliberately invalid: loading
+// the service configuration would fail on every one of them.
+var invalidServiceConfig = []string{
+	"GITHUB_APP_ID=not-a-number",
+	"CACHE_TYPE=bogus",
+	"SERVER_SHUTDOWN_TIMEOUT_SECS=soon",
+}
+
+func TestEntryPoint_HealthcheckHealthy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	port := strconv.Itoa(srv.Listener.Addr().(*net.TCPAddr).Port)
+	env := append([]string{"SERVER_PORT=" + port}, invalidServiceConfig...)
+
+	res := runMainWithEnv(t, env, "healthcheck")
+
+	assert.Equal(t, 0, res.exitCode)
+	assert.Empty(t, res.stdout, "a successful probe is silent")
+	assert.Empty(t, res.stderr, "a successful probe is silent")
+}
+
+func TestEntryPoint_HealthcheckUnhealthy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	res := runMainWithEnv(t, invalidServiceConfig, "healthcheck", "--url", srv.URL+"/healthcheck")
+
+	assert.Equal(t, 1, res.exitCode)
+	assert.Empty(t, res.stdout)
+	assert.Contains(t, res.stderr, "chinmina-bridge: ")
+	assert.Contains(t, res.stderr, "503")
+	assert.NotContains(t, res.stderr, "--help", "an unhealthy service is not a usage error")
 }

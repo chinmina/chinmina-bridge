@@ -68,6 +68,8 @@ func TestDispatch_Help(t *testing.T) {
 		{name: "help command", args: []string{"help"}, expected: "serve"},
 		{name: "serve flag", args: []string{"serve", "--help"}, expected: "chinmina-bridge serve"},
 		{name: "help for serve", args: []string{"help", "serve"}, expected: "chinmina-bridge serve"},
+		{name: "root lists healthcheck", args: []string{"--help"}, expected: "healthcheck"},
+		{name: "healthcheck flag", args: []string{"healthcheck", "--help"}, expected: "chinmina-bridge healthcheck"},
 	}
 
 	for _, tt := range tests {
