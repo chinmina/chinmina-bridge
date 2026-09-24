@@ -1,6 +1,6 @@
 //go:build fuzz
 
-package main
+package bridge
 
 import (
 	"net/http"

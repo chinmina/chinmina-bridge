@@ -26,6 +26,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/tink-crypto/tink-go-awskms/v3 v3.0.0
 	github.com/tink-crypto/tink-go/v2 v2.8.0
+	github.com/urfave/cli/v3 v3.13.0
 	github.com/valkey-io/valkey-go v1.0.78
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.71.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0

@@ -76,6 +76,17 @@ install -m 0755 chinmina-bridge ~/.local/bin/
 
 </details>
 
+## Running
+
+The binary runs the bridge service by default, configured from the
+environment (see the [configuration reference][docs-config]). `serve` selects
+the service explicitly; `--help` lists the available commands.
+
+```sh
+chinmina-bridge          # same as: chinmina-bridge serve
+chinmina-bridge --help
+```
+
 ## Verifying releases
 
 Release artifacts carry a [build-provenance
