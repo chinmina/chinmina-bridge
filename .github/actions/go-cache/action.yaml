@@ -1,0 +1,43 @@
+name: Go cache
+description: >-
+  Restores the Go module and build caches for the Go on PATH. A key is written
+  once, so exactly one job per `name` sets `save`: any other saver would race
+  it for the key.
+
+inputs:
+  name:
+    description: Separates caches for jobs whose builds share little.
+    default: build
+  save:
+    description: Save the caches at the end of a successful job when the key missed.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Locate Go caches
+      id: go
+      shell: bash
+      env:
+        CACHE_NAME: ${{ inputs.name }}
+        GO_SUM_HASH: ${{ hashFiles('go.sum') }}
+      run: |
+        {
+          echo "key=go-${CACHE_NAME}-${RUNNER_OS}-${RUNNER_ARCH}-$(go env GOVERSION)-${GO_SUM_HASH}"
+          echo "paths<<EOF"
+          go env GOCACHE GOMODCACHE
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    # actions/cache saves in its post step, at the end of the job.
+    - if: inputs.save == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.go.outputs.paths }}
+        key: ${{ steps.go.outputs.key }}
+
+    - if: inputs.save != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.go.outputs.paths }}
+        key: ${{ steps.go.outputs.key }}

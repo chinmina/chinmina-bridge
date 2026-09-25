@@ -69,6 +69,10 @@ jobs:
         install_args: go just
         cache_save: ${{ github.event_name == 'push' }}
 
+    # Restore only: `build (code)` in the verification workflow saves this cache.
+    - uses: ./.github/actions/go-cache
+      if: matrix.language == 'go'
+
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4

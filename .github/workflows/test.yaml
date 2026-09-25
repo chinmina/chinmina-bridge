@@ -16,10 +16,17 @@ jobs:
       fail-fast: false
       matrix:
         type: # define the types that will run
+          - code
           - unit
           - integration
           - fuzz
         include: # add complete just target for each type
+          # Sole writer of the shared Go cache. It compiles without running
+          # tests, so no test results are cached and every test run executes.
+          - type: code
+            just-target: ci-build
+            upload-coverage: false
+            save-go-cache: true
           - type: unit
             just-target: ci-unit
             upload-coverage: true
@@ -42,7 +49,11 @@ jobs:
           install_args: go just
           cache_save: ${{ github.event_name == 'push' }}
 
-      - name: Run ${{ matrix.type }} tests
+      - uses: ./.github/actions/go-cache
+        with:
+          save: ${{ matrix.save-go-cache || false }}
+
+      - name: Run ${{ matrix.just-target }}
         run: just ${{ matrix.just-target }}
 
       - name: Upload coverage to Codecov
@@ -65,6 +76,12 @@ jobs:
         with:
           install_args: go golangci-lint
           cache_save: ${{ github.event_name == 'push' }}
+
+      # Own cache: golangci-lint's type-check builds share little with the others.
+      - uses: ./.github/actions/go-cache
+        with:
+          name: lint
+          save: true
 
       # install-mode: none uses the golangci-lint mise installed.
       - name: lint
