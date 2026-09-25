@@ -35,17 +35,12 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: 'go.mod'
-
-      # mise is the single version authority; install only just from
-      # mise.toml, matching the lint job's approach for golangci-lint. Only
-      # write the tool cache from main pushes so PRs don't pollute it.
+      # mise.toml is the only source of tool versions. Its cache is saved from
+      # main pushes only, since a PR's cache is visible to that PR alone.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: just
-          cache_save: ${{ github.event_name != 'pull_request' }}
+          install_args: go just
+          cache_save: ${{ github.event_name == 'push' }}
 
       - name: Run ${{ matrix.type }} tests
         run: just ${{ matrix.just-target }}
@@ -66,19 +61,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: 'go.mod'
-
-      # mise is the single version authority; install only golangci-lint from
-      # mise.toml (the lint job needs nothing else) and let the lint action use
-      # that binary (install-mode: none).
-      # Only write the tool cache from main pushes so PRs don't pollute it.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: golangci-lint
-          cache_save: ${{ github.event_name != 'pull_request' }}
+          install_args: go golangci-lint
+          cache_save: ${{ github.event_name == 'push' }}
 
+      # install-mode: none uses the golangci-lint mise installed.
       - name: lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
