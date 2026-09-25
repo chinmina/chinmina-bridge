@@ -68,6 +68,12 @@ ci-integration:
 [group('ci')]
 ci-fuzz: (fuzz env('FUZZING_CI_SECS', "10"))
 
+# CI: build the binaries without cgo, then every package with cgo and -race to
+# match the test jobs' builds, which reuse these objects from the Go cache
+[group('ci')]
+ci-build: build
+    CGO_ENABLED=1 go build -race ./...
+
 # Build the container, local, and oidc-local binaries (in parallel)
 [group('build')]
 [parallel]

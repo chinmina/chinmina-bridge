@@ -58,24 +58,20 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-    # Add any setup steps before running the `github/codeql-action/init` action.
-    # This includes steps like installing compilers or runtimes (`actions/setup-node`
-    # or others). This is typically only required for manual builds.
-    # - name: Setup runtime (example)
-
-    #   uses: actions/setup-example@v1
-    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
       with:
-        go-version-file: 'go.mod'
+        persist-credentials: false
 
-    # mise is the single version authority; install only just from
-    # mise.toml, matching the lint job's approach for golangci-lint. Only
-    # write the tool cache from main pushes so PRs don't pollute it.
+    # mise.toml is the only source of tool versions. Its cache is saved from
+    # main pushes only, since a PR's cache is visible to that PR alone.
     - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+      if: matrix.language == 'go'
       with:
-        install_args: just
+        install_args: go just
         cache_save: ${{ github.event_name == 'push' }}
+
+    # Restore only: `build (code)` in the verification workflow saves this cache.
+    - uses: ./.github/actions/go-cache
+      if: matrix.language == 'go'
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
