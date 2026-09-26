@@ -1,4 +1,3 @@
-// Package repeat schedules repeating background work.
 package repeat
 
 import (

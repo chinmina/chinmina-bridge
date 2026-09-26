@@ -1,6 +1,3 @@
-// This command is only used for local testing: it is executed by the local
-// credential helper used to run commands with a locally-signed JWT against a
-// local server.
 package main
 
 import (

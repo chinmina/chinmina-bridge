@@ -1,113 +1,68 @@
 # AGENTS.md
 
-Repository-specific guidance for coding agents. Keep this file focused on constraints and workflows that are not reliably inferred from the code or standard Go practice.
+## Local instructions and safety
 
-If `~/.agents/local/chinmina-bridge.md` exists, load it as additional local guidance. Do not fail if it is absent.
+- If `~/.agents/local/chinmina-bridge.md` exists, load it as additional guidance.
+- Edit `AGENTS.md`, not its `CLAUDE.md` symlink. Give each nested `AGENTS.md` a sibling `CLAUDE.md` symlink so both entry points receive the same instructions.
+- Put local runtime configuration in gitignored `.envrc.private`; keep real credentials out of committed files and command output. Load local configuration with `direnv allow .`.
+- Return errors instead of introducing `panic`, unless the task or an approved plan explicitly permits it.
 
-## Project
+## Verification
 
-Chinmina Bridge is a Go HTTP service that exchanges Buildkite OIDC identity for short-lived, least-privilege GitHub App tokens. It supports pipeline and organization profiles, multiple GitHub Apps, optional distributed caching, and OpenTelemetry instrumentation.
+Run commands from the repository root with the toolchain selected by `mise.toml`.
+If the shell has another toolchain active, prefix the command with `mise exec --`.
 
-User and operator documentation: <https://docs.chinmina.dev>
+Fast, targeted examples; substitute the package and test for the change:
 
-## Source of truth
-
-Before changing behavior, inspect the implementation and adjacent tests. Prefer these sources over descriptions in this file:
-
-- `justfile`: supported development and CI commands
-- `mise.toml`: development and CI toolchain versions
-- `go.mod`: Go version requirement and dependencies
-- `.envrc`: local configuration variables
-- `cmd/chinmina-bridge/main.go`: process entry, final error reporting, and exit
-- `internal/cli`: command parsing and dispatch
-- `internal/bridge`: service wiring, lifecycle, middleware, and HTTP routes
-- `internal/config`: environment configuration
-- `internal/profile`: profile loading, compilation, matching, and reloads
-- `internal/vendor`: authorization, token vending, auditing, and caching
-- `internal/github`, `internal/buildkite`, `internal/jwt`: external-service boundaries
-- `internal/cache`: memory and Valkey cache implementations
-- `internal/observe`: telemetry and profiling
-- `internal/server`: shutdown behavior
-
-Do not copy changing configuration or architecture details into this file when they are already clear in those sources.
-
-## Workflow
-
-Use the toolchain pinned in `mise.toml` and the `just` recipes. JSON v2 no longer needs an experiment flag.
-
-```bash
-just test                         # unit tests across ./...
-just test -run TestName           # narrow by test name
-just integration                  # integration-tagged TestIntegration* tests
-just integration -run TestName    # narrow integration tests by name
-just lint
-just format
-just build
-just ensure-deps                  # after dependency changes
-just agent                        # format, lint, unit tests, and build
+```sh
+go test ./internal/credentialhandler -run '^TestReadProperties$'
+go test -tags=integration ./internal/bridge -run '^TestIntegrationHealthCheck$'
+CGO_ENABLED=1 go test -race ./internal/server
+go test -tags=fuzz ./internal/credentialhandler -run='^$' -fuzz=FuzzReadProperties -fuzztime=5s
 ```
 
-`just test` and `just integration` always include `./...`; appended package paths do not narrow them. To test one package, run `go test ./path/to/package`.
+- `just test` and `just integration` include `./...`; appending a package path does not narrow them. Use direct `go test` commands for package-scoped runs.
+- For code changes, run `just agent` before declaring completion; it formats, lints, unit-tests, and builds, but excludes integration, race, and fuzz checks. Lint rules live in `.golangci.yaml`.
+- Run `just integration` for changes crossing handlers, profiles, caches, or external-service adapters. Cache integration tests require Docker/testcontainers and may pull images.
+- Run `just ci-unit` and, where integration behavior is affected, `just ci-integration` for concurrency-sensitive changes. For parser/validation changes, run the affected fuzz target; `just fuzz 5` runs the registered package list.
+- Name integration tests `TestIntegration...` and use the `integration` build tag: the integration recipe selects tests by both.
+- After dependency changes, run `just ensure-deps`. It runs `go mod tidy` and fails if `go.mod` or `go.sum` differs from the index; review intended dependency changes rather than undoing them to satisfy this check.
+- Use `just --list` for other recipes. Use `just docker logs` or `just docker-up` for the local Compose stack rather than invoking Compose directly: the wrapper generates `integration/.docker-endpoint.env` for the host's Docker endpoint.
 
-Run the smallest relevant test while iterating, then run `just agent` before declaring the change complete. Run `just integration` when behavior crosses HTTP handlers, profiles, caches, or external-service adapters. Integration tests can require Docker/testcontainers.
+## Coverage review
 
-Local runtime configuration belongs in the gitignored `.envrc.private`; never commit credentials. Use `direnv allow .` to load `.envrc`.
+- Review behavior and failure modes, not compiler-enforced structure or lines in isolation.
+- Combined unit and integration coverage is currently above 90%. GitHub Actions coverage checks fail on a decrease, but accepting that decrease is a review judgement, not an automatic merge prohibition.
+- A decrease must prompt: **Which expected or unexpected behaviors introduced or affected by this change are not yet tested?** Add tests for missing behavior; if behavior is adequately covered, explain why the decrease is acceptable.
 
-For the local Compose stack, use `just docker ...` rather than invoking Compose directly. It resolves the host Docker endpoint into `integration/.docker-endpoint.env`. Use `just docker-up` to build and start the stack.
+## Project-specific conventions
 
-## Required conventions
+- Wrap propagated errors with `fmt.Errorf` and `%w` where the caller can add useful context: the operation that failed and safe identifying details. Each layer should explain its part of the failure, not merely repeat the underlying message. Preserve deliberate credential-redaction boundaries rather than wrapping sensitive parser errors.
+- Return wrapped errors to the handling boundary instead of logging and returning the same failure; log where the error is handled.
+- Prefer APIs and idioms supported by the Go version in `go.mod` over older model defaults: `t.Context()`, `testing/synctest` for deterministic concurrent tests, `sync.WaitGroup.Go`, and `errors.AsType` where appropriate. Verify unfamiliar APIs with the selected toolchain's `go doc`.
+- Use `encoding/json/v2` and `encoding/json/jsontext`, not legacy JSON APIs.
+- Use `github.com/stretchr/testify/assert` for non-fatal checks and `require` for prerequisites instead of hand-written assertion boilerplate.
+- Prefer `github.com/gkampitakis/go-snaps` snapshots for structured output contracts such as audit records. Follow `internal/audit/log_test.go:125`, normalize volatile fields, and review snapshot diffs against intended behavior rather than blindly accepting updates.
+- When decoding requests or configuration, reject unknown JSON members with `json.RejectUnknownMembers(true)` and explicitly reject `null` wherever it must differ from absence. This prevents silently accepted invalid input.
+- Keep lock-protected regions in small functions with deferred unlocks; return protected state before I/O or callbacks. See `internal/server/shutdown.go` for the pattern.
+- Keep success and failure test tables separate when that improves clarity. Prefer complete expected structs over field-by-field assertions; HTTP status/header checks are an exception.
+- Go filenames are lowercase without separators except `_test.go`. Other filenames use lowercase hyphen-separated words where practical.
+- If committing, use a conventional commit prefix and keep implementation and its tests together; explain why the change is needed.
 
-### JSON v2
+## Deeper documentation
 
-All Go code, including tests, must use `encoding/json/v2` and, where needed, `encoding/json/jsontext`. The `depguard` linter prohibits `encoding/json` (v1), including in integration- and fuzz-tagged tests.
-
-When decoding requests or configuration:
-
-- reject unknown object members with `json.RejectUnknownMembers(true)`;
-- explicitly reject `null` where it must differ from an absent value; and
-- preserve JSON v2's strict handling of duplicate members and trailing data.
-
-Use `omitzero` to omit zero-valued numeric or boolean fields; v2's `omitempty` omits empty JSON values, not Go zero values.
-
-### Errors, logging, and safety
-
-- Wrap returned errors with useful context using `fmt.Errorf(... %w ...)`.
-- Do not log an error and return it; log only where the error is handled.
-- Do not introduce `panic` unless the task or an approved plan explicitly calls for it.
-- Preserve middleware order and audit behavior when changing request handling.
-- Do not expose tokens, private keys, OIDC assertions, or other credentials in logs, errors, tests, or fixtures.
-
-### CLI boundaries
-
-- Keep configuration, logging, and telemetry initialization out of the root command so help and usage errors work without credentials. Each command loads only its own configuration.
-- `serve` is the default for bare-binary image entrypoints. Preserve rejection of positional arguments so unknown command names cannot silently start the service.
-- `internal/bridge` must not import the CLI framework.
-- The process entry point owns error reporting and `os.Exit`; commands return errors. Preserve `cli.ServiceError` and `cli.UnhealthyError` reporting semantics and keep the library's exit handler and usage printing disabled.
-- `healthcheck` must not load service configuration or require credentials. Its HTTP client is uninstrumented, bypasses proxies, and never follows redirects.
-
-### Concurrency
-
-Keep lock-protected regions in small functions and `defer` the unlock. Return the protected state, then perform I/O, slow work, and callbacks after releasing the lock. See `internal/server/shutdown.go` for the established pattern.
-
-### Tests
-
-- Test observable behavior and failure modes, not compiler-enforced structure.
-- Use table-driven tests when cases share setup and assertions; keep materially different workflows separate.
-- Keep success and failure tables separate when that improves clarity.
-- Use `testify/assert` for non-fatal checks and `testify/require` for prerequisites.
-- Prefer equality on complete expected structs over field-by-field assertions. HTTP status and header assertions are a reasonable exception.
-- Name integration tests `TestIntegration...` and compile them with the `integration` build tag.
-- Follow the package style of adjacent tests (`package x` versus `package x_test`).
-
-### Naming and dependencies
-
-- Go filenames are lowercase without separators except the required `_test.go` suffix.
-- Non-Go filenames use lowercase words separated by hyphens where practical.
-- After dependency changes, run `go mod tidy` and `just ensure-deps`.
-
-## Change discipline
-
-- Keep changes scoped; do not refactor unrelated code or update generated artifacts without need.
-- Preserve public behavior unless the task explicitly changes it.
-- Update tests and relevant documentation with behavior or configuration changes.
-- If committing, use a conventional commit prefix such as `feat`, `fix`, `test`, `docs`, or `ci`. Keep implementation and its tests in the same commit, and explain why the change is needed.
+- Use Context7 for up-to-date language and library documentation before choosing unfamiliar APIs or relying on remembered behavior. Match the version in `go.mod`; use these verified library IDs:
+  - Go language and standard library: `/golang/go`
+  - Testify assertions: `/stretchr/testify`
+  - Snapshot testing: `/gkampitakis/go-snaps`
+  - CLI parsing (urfave/cli v3): `/urfave/cli`
+  - JWT/JWK operations (jwx v3): `/lestrrat-go/jwx`
+  - GitHub API client: `/google/go-github`
+  - AWS SDK v2, including KMS and Secrets Manager: `/aws/aws-sdk-go-v2`
+  - Authenticated encryption (Tink Go v2): `/tink-crypto/tink-go`
+  - OpenTelemetry Go SDK: `/open-telemetry/opentelemetry-go`
+  - OpenTelemetry HTTP instrumentation: `/open-telemetry/opentelemetry-go-contrib`
+- Resolve the correct Context7 ID for other dependencies rather than guessing. If Context7 lacks the required version or is unavailable, use the selected toolchain's `go doc` or official documentation.
+- Check `go.mod` replacements before applying upstream documentation: the Tink AWS KMS adapter uses a fork, whose selected source takes precedence.
+- Package responsibilities and invariants live in each package's `doc.go`, discoverable with `go doc ./internal/bridge` (substitute the package).
+- User and operator documentation: <https://docs.chinmina.dev>.

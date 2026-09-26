@@ -1,6 +1,3 @@
-// Package cli adapts command-line invocation onto the bridge service. It owns
-// parsing, help, and command selection; the commands it dispatches to own
-// their configuration.
 package cli
 
 import (
