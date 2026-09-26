@@ -39,13 +39,17 @@ go test -tags=fuzz ./internal/credentialhandler -run='^$' -fuzz=FuzzReadProperti
 
 - Wrap propagated errors with `fmt.Errorf` and `%w` where the caller can add useful context: the operation that failed and safe identifying details. Each layer should explain its part of the failure, not merely repeat the underlying message. Preserve deliberate credential-redaction boundaries rather than wrapping sensitive parser errors.
 - Return wrapped errors to the handling boundary instead of logging and returning the same failure; log where the error is handled.
+- Use `log/slog` for structured logging. Implement `slog.LogValuer` for complex logged objects to control their fields and representation.
 - Prefer APIs and idioms supported by the Go version in `go.mod` over older model defaults: `t.Context()`, `testing/synctest` for deterministic concurrent tests, `sync.WaitGroup.Go`, and `errors.AsType` where appropriate. Verify unfamiliar APIs with the selected toolchain's `go doc`.
 - Use `encoding/json/v2` and `encoding/json/jsontext`, not legacy JSON APIs.
+- Use `omitzero` to omit zero-valued numeric or boolean fields; JSON v2's `omitempty` omits empty JSON values, not Go zero values.
 - Use `github.com/stretchr/testify/assert` for non-fatal checks and `require` for prerequisites instead of hand-written assertion boilerplate.
 - Prefer `github.com/gkampitakis/go-snaps` snapshots for structured output contracts such as audit records. Follow `internal/audit/log_test.go:125`, normalize volatile fields, and review snapshot diffs against intended behavior rather than blindly accepting updates.
 - When decoding requests or configuration, reject unknown JSON members with `json.RejectUnknownMembers(true)` and explicitly reject `null` wherever it must differ from absence. This prevents silently accepted invalid input.
 - Keep lock-protected regions in small functions with deferred unlocks; return protected state before I/O or callbacks. See `internal/server/shutdown.go` for the pattern.
-- Keep success and failure test tables separate when that improves clarity. Prefer complete expected structs over field-by-field assertions; HTTP status/header checks are an exception.
+- Use table-driven tests when cases share setup and assertions, with descriptive `t.Run` names. Keep success and failure tables separate; use individual tests for materially different workflows.
+- Put complete expected structs in table cases rather than separate expected fields, and prefer whole-struct equality over field-by-field assertions; HTTP status/header checks are an exception.
+- Follow the adjacent tests' package style (`package x` versus `package x_test`).
 - Go filenames are lowercase without separators except `_test.go`. Other filenames use lowercase hyphen-separated words where practical.
 - If committing, use a conventional commit prefix and keep implementation and its tests together; explain why the change is needed.
 
