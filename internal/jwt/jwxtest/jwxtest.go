@@ -1,5 +1,3 @@
-// Package jwxtest provides test utilities for JWT operations using lestrrat-go/jwx.
-// This package has no dependency on internal/jwt to avoid import cycles.
 package jwxtest
 
 import (
