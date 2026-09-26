@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.16.0](https://github.com/chinmina/chinmina-bridge/compare/v0.15.2...v0.16.0) (2026-09-26)
+
+
+### Features
+
+* add a healthcheck command and use it for integration worker probes ([#422](https://github.com/chinmina/chinmina-bridge/issues/422)) ([87da522](https://github.com/chinmina/chinmina-bridge/commit/87da522baef96a29495aa639adffb20cbff1ec25))
+* dispatch through a CLI command tree, serving by default ([#420](https://github.com/chinmina/chinmina-bridge/issues/420)) ([5a07483](https://github.com/chinmina/chinmina-bridge/commit/5a07483133077f668d88970a38ea50b51f69b3af))
+
+
+### Bug Fixes
+
+* **deps:** update codecov/codecov-action digest to 303a32d ([#418](https://github.com/chinmina/chinmina-bridge/issues/418)) ([0b78e78](https://github.com/chinmina/chinmina-bridge/commit/0b78e7859d66c3990e6c48362545b8986ef57529))
+* **deps:** update dependency goreleaser to v2.18.2 ([#419](https://github.com/chinmina/chinmina-bridge/issues/419)) ([23dd717](https://github.com/chinmina/chinmina-bridge/commit/23dd717b9f629900a7a1e6e03dd545368af28fca))
+* **deps:** update go dependencies ([#415](https://github.com/chinmina/chinmina-bridge/issues/415)) ([9b2402a](https://github.com/chinmina/chinmina-bridge/commit/9b2402a6e7d9ef3b12684095f0fe5720669ba9a1))
+* **deps:** update go dependencies ([#417](https://github.com/chinmina/chinmina-bridge/issues/417)) ([a7642ab](https://github.com/chinmina/chinmina-bridge/commit/a7642abec4319523af6b70832bfaabe82d5c6d38))
+* **deps:** update module github.com/google/go-github/v91 to v92 ([#416](https://github.com/chinmina/chinmina-bridge/issues/416)) ([cc0ce51](https://github.com/chinmina/chinmina-bridge/commit/cc0ce518b4450ff2249386bff996d84cd140331c))
+* set OCI labels and annotations on the published image ([#421](https://github.com/chinmina/chinmina-bridge/issues/421)) ([cfbaca6](https://github.com/chinmina/chinmina-bridge/commit/cfbaca6fd306b7d4e180cf4421bef8843eaa9151))
+
 ## [0.15.2](https://github.com/chinmina/chinmina-bridge/compare/v0.15.1...v0.15.2) (2026-09-18)
 
 
