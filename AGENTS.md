@@ -37,6 +37,7 @@ go test -tags=fuzz ./internal/credentialhandler -run='^$' -fuzz=FuzzReadProperti
 
 ## Project-specific conventions
 
+- Write Go in the style of the Go standard library.
 - Wrap propagated errors with `fmt.Errorf` and `%w` where the caller can add useful context: the operation that failed and safe identifying details. Each layer should explain its part of the failure, not merely repeat the underlying message. Preserve deliberate credential-redaction boundaries rather than wrapping sensitive parser errors.
 - Return wrapped errors to the handling boundary instead of logging and returning the same failure; log where the error is handled.
 - Use `log/slog` for structured logging. Implement `slog.LogValuer` for complex logged objects to control their fields and representation.
