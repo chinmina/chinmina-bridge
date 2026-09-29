@@ -11,7 +11,7 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwt"
 
 	localjwt "github.com/chinmina/chinmina-bridge/internal/jwt"
-	"github.com/sethvargo/go-envconfig"
+	"github.com/sethvargo/go-envconfig/v2"
 )
 
 type Config struct {
