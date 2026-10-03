@@ -63,7 +63,7 @@ jobs:
 
     # mise.toml is the only source of tool versions. Its cache is saved from
     # main pushes only, since a PR's cache is visible to that PR alone.
-    - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+    - uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5
       if: matrix.language == 'go'
       with:
         install_args: go just
