@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/chinmina/chinmina-bridge/compare/v0.16.0...v0.16.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **deps:** update go dependencies ([#426](https://github.com/chinmina/chinmina-bridge/issues/426)) ([ba16999](https://github.com/chinmina/chinmina-bridge/commit/ba169997fd8a7990c6a11d473db79d3adbbe4742))
+
 ## [0.16.0](https://github.com/chinmina/chinmina-bridge/compare/v0.15.2...v0.16.0) (2026-09-26)
 
 
