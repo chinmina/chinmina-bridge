@@ -36,14 +36,14 @@ runs:
     # a go.sum change recompiles only what changed. A fallback match is not a
     # hit, so the saving job still writes the exact key.
     - if: inputs.save == 'true'
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.go.outputs.paths }}
         key: ${{ steps.go.outputs.key }}
         restore-keys: ${{ steps.go.outputs.fallback }}
 
     - if: inputs.save != 'true'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.go.outputs.paths }}
         key: ${{ steps.go.outputs.key }}
