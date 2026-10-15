@@ -1,5 +1,5 @@
 [tools]
-go            = "1.27.1"
+go            = "1.27.2"
 golangci-lint = "2.14.0"
 goreleaser    = "2.18.3"
 cosign        = "3.1.3"
