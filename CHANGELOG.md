@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.1](https://github.com/chinmina/chinmina-bridge/compare/v0.16.0...v0.16.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **deps:** pin dependencies ([#428](https://github.com/chinmina/chinmina-bridge/issues/428)) ([6db9c1c](https://github.com/chinmina/chinmina-bridge/commit/6db9c1c98b15c94adf10f214b4476b7193079c0a))
+* **deps:** update dependency go to v1.27.2 ([#434](https://github.com/chinmina/chinmina-bridge/issues/434)) ([9224fee](https://github.com/chinmina/chinmina-bridge/commit/9224feefc7681226580a1c1721afcd01eb6a6440))
+* **deps:** update go dependencies ([#426](https://github.com/chinmina/chinmina-bridge/issues/426)) ([ba16999](https://github.com/chinmina/chinmina-bridge/commit/ba169997fd8a7990c6a11d473db79d3adbbe4742))
+* **deps:** update go dependencies ([#433](https://github.com/chinmina/chinmina-bridge/issues/433)) ([3a50a47](https://github.com/chinmina/chinmina-bridge/commit/3a50a473dff5cf175a0be3a303c0b1d4924694bb))
+* **deps:** update jdx/mise-action action to v5 ([#430](https://github.com/chinmina/chinmina-bridge/issues/430)) ([a20edda](https://github.com/chinmina/chinmina-bridge/commit/a20edda1fbbb4680e5b895b4781e67de2859ae8d))
+* **deps:** update mise packages ([#429](https://github.com/chinmina/chinmina-bridge/issues/429)) ([82f3d60](https://github.com/chinmina/chinmina-bridge/commit/82f3d60e4bbe038eb60a46703891a7eb40a729c6))
+* **deps:** update module github.com/sethvargo/go-envconfig to v2 ([#427](https://github.com/chinmina/chinmina-bridge/issues/427)) ([acf647f](https://github.com/chinmina/chinmina-bridge/commit/acf647f4a3b2057258699b050a98f4053fdea959))
+
 ## [0.16.0](https://github.com/chinmina/chinmina-bridge/compare/v0.15.2...v0.16.0) (2026-09-26)
 
 
