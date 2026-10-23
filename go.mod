@@ -3,7 +3,7 @@ module github.com/chinmina/chinmina-bridge
 go 1.27
 
 require (
-	github.com/auth0/go-jwt-middleware/v3 v3.3.0
+	github.com/auth0/go-jwt-middleware/v3 v3.4.0
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
