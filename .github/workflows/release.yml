@@ -30,6 +30,7 @@ jobs:
       # Channels off for this repo; GitHub Release + Docker/ko image stay on.
       disable-binstaller: true
       disable-homebrew: true
+      disable-nix: true
       disable-npm: true
       # cosign reaches PATH for the goreleaser ko/cosign signing config. Docker
       # login is left ON (no disable-docker-login) since we publish an image.
