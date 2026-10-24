@@ -18,7 +18,7 @@ require (
 	github.com/grafana/pyroscope-go v1.4.3
 	github.com/jferrl/go-githubauth v1.9.1
 	github.com/justinas/alice v1.2.0
-	github.com/lestrrat-go/jwx/v3 v3.3.0
+	github.com/lestrrat-go/jwx/v3 v3.4.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/phuslu/log v1.0.138
 	github.com/sethvargo/go-envconfig/v2 v2.0.0
