@@ -13,7 +13,7 @@ require (
 	github.com/chinmina/iamcacheauth v1.0.1
 	github.com/gkampitakis/go-snaps v0.5.23
 	github.com/go-logr/logr v1.4.4
-	github.com/google/go-github/v92 v92.0.0
+	github.com/google/go-github/v93 v93.0.0
 	github.com/grafana/otel-profiling-go v0.7.0
 	github.com/grafana/pyroscope-go v1.4.3
 	github.com/jferrl/go-githubauth v1.9.1
