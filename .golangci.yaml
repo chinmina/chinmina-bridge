@@ -32,7 +32,7 @@ linters:
     # Additional useful checks
     - gocritic      # Comprehensive diagnostics
     - gosec         # Security issues (some noise, but valuable)
-    - depguard     # Require JSON v2, including tests
+    - depguard     # Require JSON v2; forbid x/crypto/openpgp, including tests
 
   disable:
     - dupl          # Code duplication (too noisy)
@@ -47,6 +47,13 @@ linters:
           deny:
             - pkg: encoding/json$
               desc: Use encoding/json/v2 (or encoding/json/jsontext for raw values).
+        no-openpgp:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: golang.org/x/crypto/openpgp
+              desc: Unmaintained and unsafe by design (GO-2026-5932); osv-scanner.toml ignores the advisory on the basis that it is never imported. Use github.com/ProtonMail/go-crypto/openpgp if OpenPGP is required.
 
     staticcheck:
       checks: ["all", "-ST1000"]  # Disable package comment requirement

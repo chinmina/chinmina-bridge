@@ -19,6 +19,9 @@ on:
   schedule:
     - cron: '36 7 * * 6'
 
+# Default-deny at the workflow level; the analyze job grants what it needs.
+permissions: {}
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
