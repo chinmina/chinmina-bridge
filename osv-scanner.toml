@@ -1,0 +1,13 @@
+# OSV-Scanner configuration, also honoured by the OpenSSF Scorecard
+# Vulnerabilities check. https://google.github.io/osv-scanner/configuration/
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = """
+Module-level advisory against golang.org/x/crypto for the deprecated \
+golang.org/x/crypto/openpgp/... packages; it affects every version and has no \
+fixed release. This module neither imports nor references any openpgp package \
+(govulncheck reports no reachable symbols); it uses other x/crypto packages \
+(chacha20poly1305, hkdf, curve25519, pbkdf2, ssh), so the module cannot be \
+removed. The depguard no-openpgp rule in .golangci.yaml fails lint on any \
+future import of golang.org/x/crypto/openpgp."""
