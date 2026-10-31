@@ -4,14 +4,14 @@ go 1.27
 
 require (
 	github.com/auth0/go-jwt-middleware/v3 v3.4.0
-	github.com/aws/aws-sdk-go-v2 v1.47.3
-	github.com/aws/aws-sdk-go-v2/config v1.33.9
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
-	github.com/aws/aws-sdk-go-v2/service/kms v1.61.4
-	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.4
-	github.com/buildkite/go-buildkite/v5 v5.23.0
+	github.com/aws/aws-sdk-go-v2 v1.47.4
+	github.com/aws/aws-sdk-go-v2/config v1.33.11
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.11
+	github.com/aws/aws-sdk-go-v2/service/kms v1.62.0
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.6
+	github.com/buildkite/go-buildkite/v5 v5.26.0
 	github.com/chinmina/iamcacheauth v1.0.1
-	github.com/gkampitakis/go-snaps v0.5.23
+	github.com/gkampitakis/go-snaps v0.5.24
 	github.com/go-logr/logr v1.4.4
 	github.com/google/go-github/v93 v93.0.0
 	github.com/grafana/otel-profiling-go v0.7.0
@@ -19,7 +19,7 @@ require (
 	github.com/jferrl/go-githubauth v1.9.1
 	github.com/justinas/alice v1.2.0
 	github.com/lestrrat-go/jwx/v3 v3.4.0
-	github.com/maypok86/otter/v2 v2.3.0
+	github.com/maypok86/otter/v2 v2.4.0
 	github.com/phuslu/log v1.0.138
 	github.com/sethvargo/go-envconfig/v2 v2.0.0
 	github.com/stretchr/testify v1.12.1
@@ -49,17 +49,17 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20261013165250-51075c6ea6bc // indirect
 	github.com/Microsoft/go-winio v0.6.4 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.6 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.6 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.6 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.21 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.6 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.10.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.38.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4 // indirect
-	github.com/aws/smithy-go v1.28.5 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.4 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.7 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.7 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.22 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.11.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.38.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.5 // indirect
+	github.com/aws/smithy-go v1.28.6 // indirect
 	github.com/aws/smithy-go/aws-http-auth v1.2.1 // indirect
 	github.com/buildkite/roko v1.4.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
@@ -133,8 +133,8 @@ require (
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e // indirect
 	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
