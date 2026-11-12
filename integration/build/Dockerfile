@@ -6,4 +6,4 @@
 #
 # The worker health check runs `chinmina-bridge healthcheck` from the same
 # mount, so the image needs no HTTP probe of its own.
-FROM cgr.dev/chainguard/busybox:latest@sha256:77beab05a39883aab436c4613b31c29aa68a686be4f4610c14f8f1da75d6bd6b
+FROM cgr.dev/chainguard/busybox:latest@sha256:01c4029ff15de19e67307803fa8c4e8c913f71048c854303c80cc7bbca2323d7
